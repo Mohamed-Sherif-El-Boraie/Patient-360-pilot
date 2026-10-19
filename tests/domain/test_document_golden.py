@@ -66,3 +66,14 @@ def test_values_pass_through_exactly_as_the_backend_sent_them(flow):
     for before, after in zip(sent, got, strict=True):
         assert after["value"] == before["value"] and type(after["value"]) is type(before["value"])
         assert after.get("previous_value") == before.get("previous_value")
+
+
+def test_numbers_from_the_backend_stay_numbers_and_still_classify(flow):
+    raw = copy.deepcopy(flow("02-batch-critical/1-backend-input.json"))
+    row = raw["tests"][0]["results"][0]
+    row["value"], row["previous_value"] = 177, 200
+    row["reference"]["low"], row["reference"]["high"] = 13, 43
+    out = build_visit_document(raw).document["tests"][0]["results"][0]
+    assert out["value"] == 177 and out["previous_value"] == 200
+    assert out["reference"]["low"] == 13 and out["reference"]["high"] == 43
+    assert out["status"] == "high"
