@@ -23,13 +23,13 @@ def parse_numeric(value: Any) -> int | float | None:
     return int(number) if number.is_integer() else number
 
 
-def prune(value: Any) -> Any:
+def remove_empty_values(value: Any) -> Any:
     """Drop ``None``, ``""`` and empty containers recursively. Keeps ``0`` and ``False``."""
     if isinstance(value, list):
-        items = [kept for kept in (prune(item) for item in value) if kept is not None]
+        items = [kept for kept in (remove_empty_values(item) for item in value) if kept is not None]
         return items or None
     if isinstance(value, dict):
-        out = {key: kept for key, item in value.items() if (kept := prune(item)) is not None}
+        out = {key: kept for key, item in value.items() if (kept := remove_empty_values(item)) is not None}
         return out or None
     if value is None or value == "":
         return None

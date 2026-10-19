@@ -1,6 +1,6 @@
 import pytest
 
-from patient360.domain.document import apply_logic
+from patient360.domain.document import build_visit_document
 from patient360.domain.logic import critical_bounds, reference_bounds
 
 
@@ -34,7 +34,7 @@ def test_critical_not_set_markers_count_only_as_a_pair(low, high, expected):
 def row(value, reference, critical):
     raw = {"source": "urgent", "patient": {"age_years": 30, "sex": "male"}, "tests": [{"test_name": "T", "results": [
         {"parameter_name": "P", "value": value, "reference": reference, "critical": critical}]}]}
-    return apply_logic(raw).doc["tests"][0]["results"][0]
+    return build_visit_document(raw).document["tests"][0]["results"][0]
 
 
 def test_a_real_critical_limit_is_shown_exactly_as_sent():

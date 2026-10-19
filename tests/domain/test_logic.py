@@ -1,7 +1,7 @@
 import pytest
 
 from patient360.domain.logic import (
-    alert_for,
+    alert_level_for,
     classify_qualitative,
     classify_result,
     critical_breach,
@@ -98,8 +98,8 @@ def test_normal_status_ignores_an_incoherent_critical_low():
 
 
 def test_alert_for():
-    assert alert_for("low", "low") == "CRITICAL"
-    assert alert_for("high", None) == "MEDICAL_ATTENTION"
-    assert alert_for("abnormal", None) == "MEDICAL_ATTENTION"
-    assert alert_for("normal", None) == "NORMAL"
-    assert alert_for(None, None) == "NOT_CLASSIFIED"
+    assert alert_level_for("low", "low") == "CRITICAL"
+    assert alert_level_for("high", None) == "MEDICAL_ATTENTION"
+    assert alert_level_for("abnormal", None) == "MEDICAL_ATTENTION"
+    assert alert_level_for("normal", None) == "NORMAL"
+    assert alert_level_for(None, None) == "NOT_CLASSIFIED"

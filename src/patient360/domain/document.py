@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from patient360.domain.logic import (
-    alert_for,
+    alert_level_for,
     classify_qualitative,
     classify_result,
     critical_bounds,
@@ -15,15 +15,15 @@ from patient360.domain.logic import (
     parse_text_range,
     reference_bounds,
 )
-from patient360.domain.values import prune
+from patient360.domain.values import remove_empty_values
 
 LAB_FLAG_WORDS = {"H": "High", "L": "Low"}
 
 
 @dataclass(frozen=True)
-class LogicResult:
-    doc: dict[str, Any]          # what goes to AWS (before RAG): keys added/removed, nulls pruned
-    flat: list[dict[str, Any]]   # one row per parameter, for classify_patient and the lab_results table
+class ProcessedVisit:
+    document: dict[str, Any]     # what goes to AWS (before RAG): keys added/removed, empty values removed
+    rows: list[dict[str, Any]]   # one row per parameter, for decide_tier and the lab_results table
 
 
 def _result(raw: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -61,7 +61,7 @@ def _result(raw: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         "reference": {"low": shown_low, "high": shown_high, "range": ref.get("range")},
         "status": status,
         "lab_flag": LAB_FLAG_WORDS.get(str(raw.get("lab_flag") or "").strip().upper()),
-        "alert": alert_for(status, direction),
+        "alert": alert_level_for(status, direction),
         "critical": {**shown_critical, "direction": f"critical_{direction}" if direction else None}
         if shown_critical else None,
         "previous_value": raw.get("previous_value"),
@@ -79,7 +79,7 @@ def _result(raw: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     return out, flat
 
 
-def apply_logic(raw: Mapping[str, Any]) -> LogicResult:
+def build_visit_document(raw: Mapping[str, Any]) -> ProcessedVisit:
     """Remove keys (ids, company name, nulls), add keys (status, alert, direction, mapped flag...)."""
     flat: list[dict[str, Any]] = []
     tests = []
@@ -94,11 +94,11 @@ def apply_logic(raw: Mapping[str, Any]) -> LogicResult:
             "test_remark": test.get("test_remark"),
             "results": results,
         })
-    doc = prune({
+    doc = remove_empty_values({
         "source": raw.get("source"),
         "patient": raw.get("patient"),
         "tests": tests,
         "descriptive_results": raw.get("descriptive_results"),
         "visitAnswerList": raw.get("visitAnswerList"),
     }) or {}
-    return LogicResult(doc=doc, flat=flat)
+    return ProcessedVisit(document=doc, rows=flat)

@@ -15,9 +15,9 @@ def _has_result(row: Mapping[str, Any]) -> bool:
     return str(row.get("value") if row.get("value") is not None else "").strip() != ""
 
 
-def classify_patient(flat: Sequence[Mapping[str, Any]]) -> str:
+def decide_tier(result_rows: Sequence[Mapping[str, Any]]) -> str:
     """First matching rule wins: critical > unrangeable (fail safe) > 3+ abnormal > 1-2 abnormal > normal."""
-    rows = [row for row in flat if _has_result(row)]
+    rows = [row for row in result_rows if _has_result(row)]
     if not rows:  # no data is not "no findings": escalate rather than call it normal
         return "MODERATE"
     if any(row["is_critical"] for row in rows):
@@ -30,5 +30,5 @@ def classify_patient(flat: Sequence[Mapping[str, Any]]) -> str:
     return "MILD" if abnormal else "NORMAL"
 
 
-def lane_for(tier: str) -> str:
+def lane_for_tier(tier: str) -> str:
     return LANE_BY_TIER[tier]

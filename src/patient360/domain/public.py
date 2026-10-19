@@ -8,7 +8,7 @@ from typing import Any
 PRIVATE_PATHS = ("meta.model_id", "meta.translation_model_id", "meta.usage")
 
 
-def to_public(record: Mapping[str, Any]) -> dict[str, Any]:
+def strip_internal_fields(record: Mapping[str, Any]) -> dict[str, Any]:
     out = copy.deepcopy(dict(record))
     for path in PRIVATE_PATHS:
         *parents, leaf = path.split(".")

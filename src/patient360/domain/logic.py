@@ -92,7 +92,7 @@ def normalise_text(text: Any) -> str:
     return " ".join(str(text if text is not None else "").split()).lower()
 
 
-def polarity(text: Any) -> str | None:
+def text_polarity(text: Any) -> str | None:
     """``negative`` / ``positive`` / ``conflicting`` / None for a word result."""
     value = normalise_text(text)
     if not value:
@@ -116,7 +116,7 @@ def classify_qualitative(value: Any, expected_text: Any) -> str | None:
     result = normalise_text(value)
     if not result:
         return None
-    kind = polarity(result)
+    kind = text_polarity(result)
     if kind == "conflicting":
         return None
     if kind == "negative":
@@ -175,7 +175,7 @@ def critical_breach(
     return None
 
 
-def alert_for(status: str | None, direction: str | None) -> str:
+def alert_level_for(status: str | None, direction: str | None) -> str:
     if direction:
         return "CRITICAL"
     if status in ABNORMAL:
