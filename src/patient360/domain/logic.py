@@ -14,8 +14,10 @@ from typing import Any
 from patient360.domain.values import parse_numeric
 
 ABNORMAL = frozenset({"high", "low", "abnormal"})
-NOT_SET_PAIRS = ((0, 0), (-1, 9999))  # LIMS markers for "no range recorded"
-SENTINEL_BOUNDS = frozenset({-1, 9999})  # "no limit" markers in critical columns
+# LIMS markers for "no range recorded". They count only as a PAIR: a lone -1 or 9999 is a real number.
+NOT_SET_PAIRS = ((0, 0), (-1, 9999), (-1, 99999999))
+CRITICAL_NOT_SET_LOWS = frozenset({-1, -9999, -99999})
+CRITICAL_NOT_SET_HIGHS = frozenset({9999, 99999, 999999})
 
 _MUTATION = r"(?:mutation|mutations|deletion|deletions|variant|variants)"
 NEGATIVE_PATTERNS = (
@@ -129,14 +131,15 @@ def lab_flag_status(flag: Any) -> str | None:
     return {"H": "high", "L": "low"}.get(str(flag or "").strip().upper())
 
 
-def clean_bound(value: Any, *, is_low: bool) -> int | float | None:
-    """A critical bound, or None for the -1 / 9999 placeholders (and any negative critical LOW)."""
-    number = parse_numeric(value)
-    if number is None or number in SENTINEL_BOUNDS:
-        return None
-    if is_low and number < 0:
-        return None
-    return number
+def critical_bounds(low: Any, high: Any) -> tuple[int | float | None, int | float | None]:
+    """Numeric critical limits, or (None, None) when low and high are BOTH "no limit" markers.
+
+    ``{-1, 6}`` keeps -1 (a real limit); ``{-1, 9999}`` means no critical limits at all.
+    """
+    num_low, num_high = parse_numeric(low), parse_numeric(high)
+    if num_low in CRITICAL_NOT_SET_LOWS and num_high in CRITICAL_NOT_SET_HIGHS:
+        return None, None
+    return num_low, num_high
 
 
 def _coherent_sides(bounds: Mapping[str, Any], ref_low: Any, ref_high: Any) -> tuple[bool, bool]:
