@@ -16,7 +16,7 @@ class Package:
     package_id: int
     name: str                    # the workbook's "Profile name"
     category: str | None         # ROUTINE / NON-ROUTINE (more may come)
-    gender: str | None           # "male", "female" or None = any gender
+    gender: str                  # "male", "female" or "any"
     age_min: int | None          # years, None = no lower limit
     age_max: int | None          # years, None = no upper limit
     test_ids: frozenset[int]

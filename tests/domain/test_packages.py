@@ -59,4 +59,5 @@ def test_forward_fill_rejects_a_test_row_before_any_package():
 def test_a_package_holds_category_gender_age_group_and_tests():
     package = Package(5, "Routine check-up", "ROUTINE", "female", 18, 40, frozenset({1, 2, 3}))
     assert (package.category, package.gender, package.age_min, package.age_max) == ("ROUTINE", "female", 18, 40)
-    assert Package(6, "Any age", "NON-ROUTINE", None, None, None, frozenset()).gender is None
+    everyone = Package(6, "Any age and gender", "NON-ROUTINE", "any", None, None, frozenset())
+    assert everyone.gender == "any" and everyone.age_min is None
