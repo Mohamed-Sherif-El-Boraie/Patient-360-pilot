@@ -130,3 +130,15 @@ def test_performed_test_names_include_numeric_and_descriptive_tests(sample):
     names = build_ai_input(sample("descriptive_only")).performed_test_names
     assert "B -Thalassemia genetic defects by PCR" in names
     assert "Calcium" in build_ai_input(sample("batch_critical")).performed_test_names
+
+
+def test_descriptive_text_and_its_history_are_plain_text_for_the_ai_and_the_database_row(sample):
+    raw = sample("descriptive_only")
+    raw["descriptive_results"][0]["text"] = "<p>Negative for <b>mutations</b></p><p>No variant &amp; no deletion</p>"
+    raw["descriptive_results"][0]["history"] = [
+        {"history_visit_id": 5, "history_date": "2026-01-10", "history_value": "<i>Negative</i>"}]
+    processed = build_ai_input(raw)
+    assert processed.ai_json["descriptive_results"][0]["text"] == "Negative for mutations\nNo variant & no deletion"
+    assert processed.ai_json["descriptive_results"][0]["history"][0]["history_value"] == "Negative"
+    assert processed.descriptive_rows[0]["text_value"] == "Negative for mutations\nNo variant & no deletion"
+    assert "<" not in str(processed.ai_json)

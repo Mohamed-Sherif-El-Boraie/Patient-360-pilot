@@ -17,7 +17,7 @@ from patient360.domain.logic import (
     parse_text_range,
     reference_bounds,
 )
-from patient360.domain.values import remove_empty_values
+from patient360.domain.values import html_to_plain_text, remove_empty_values
 
 SOURCE_NAMES = frozendict({1: "urgent", 2: "batch", 3: "symptom-checker", 4: "on-demand"})
 SEX_NAMES = frozendict({1: "Male", 2: "Female"})
@@ -27,12 +27,15 @@ SEX_NAMES = frozendict({1: "Male", 2: "Female"})
 class AiInput:
     ai_json: dict[str, Any]               # the JSON sent to the AI model: no ids, no status; empty values removed
     rows: list[dict[str, Any]]            # one per parameter: ids, value, status, alert (for the tier and the output)
-    descriptive_rows: list[dict[str, Any]]  # one per descriptive result: test id and name, status always "text"
+    descriptive_rows: list[dict[str, Any]]  # one per descriptive result: ids, status "text", the text without HTML
     performed_test_names: tuple[str, ...]  # every test the patient already did (numeric and descriptive)
 
 
-def _history(points: Any) -> list[dict[str, Any]]:
-    return [{"history_date": p.get("history_date"), "history_value": p.get("history_value")} for p in points or []]
+def _history(points: Any, *, plain_text: bool = False) -> list[dict[str, Any]]:
+    """History as the AI model gets it. ``plain_text``: the values are texts that may contain HTML tags."""
+    return [{"history_date": p.get("history_date"),
+             "history_value": html_to_plain_text(p.get("history_value")) if plain_text else p.get("history_value")}
+            for p in points or []]
 
 
 def _result(test: Mapping[str, Any], raw: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -102,8 +105,8 @@ def build_ai_input(raw: Mapping[str, Any]) -> AiInput:
             rows.append(row)
         tests.append({"test_name": test.get("test_name"), "test_remark": test.get("test_remark"), "results": results})
     descriptive = [
-        {"test_name": d.get("test_name"), "result_date": d.get("result_date"), "text": d.get("text"),
-         "history": _history(d.get("history"))}
+        {"test_name": d.get("test_name"), "result_date": d.get("result_date"),
+         "text": html_to_plain_text(d.get("text")), "history": _history(d.get("history"), plain_text=True)}
         for d in raw.get("descriptive_results") or []
     ]
     answers = [{"preparation_name": a.get("preparation_name"), "answer": a.get("answer")}
@@ -120,7 +123,8 @@ def build_ai_input(raw: Mapping[str, Any]) -> AiInput:
         [t.get("test_name") for t in raw.get("tests") or []]
         + [d.get("test_name") for d in raw.get("descriptive_results") or []]
     ))
-    descriptive_rows = [{"test_id": d.get("test_id"), "test_name": d.get("test_name"), "status": "text"}
+    descriptive_rows = [{"test_id": d.get("test_id"), "test_name": d.get("test_name"), "status": "text",
+                         "text_value": html_to_plain_text(d.get("text"))}
                         for d in raw.get("descriptive_results") or []]
     return AiInput(
         ai_json=ai_json, rows=rows, descriptive_rows=descriptive_rows, performed_test_names=performed)
