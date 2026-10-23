@@ -1,4 +1,4 @@
-from patient360.domain.values import parse_numeric, prune
+from patient360.domain.values import parse_numeric, remove_empty_values
 
 
 def test_parse_numeric_reads_the_leading_number_like_v3():
@@ -13,7 +13,7 @@ def test_parse_numeric_reads_the_leading_number_like_v3():
     assert parse_numeric("") is None and parse_numeric(None) is None
 
 
-def test_prune_drops_none_empty_and_empty_containers_but_keeps_zero_and_false():
+def test_remove_empty_values_drops_none_empty_and_empty_containers_but_keeps_zero_and_false():
     source = {"a": None, "b": "", "c": [], "d": {"e": None}, "f": 0, "g": False, "h": [1, None, ""]}
-    assert prune(source) == {"f": 0, "g": False, "h": [1]}
-    assert prune([None, ""]) is None
+    assert remove_empty_values(source) == {"f": 0, "g": False, "h": [1]}
+    assert remove_empty_values([None, ""]) is None
