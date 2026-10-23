@@ -1,4 +1,4 @@
-"""Trust boundary: bytes in -> Valid | Invalid. One endpoint: the payload's `source` picks the model."""
+"""Trust boundary: bytes in -> Valid | Invalid. One endpoint: the payload's `source` number picks the model."""
 from __future__ import annotations
 
 import json
@@ -12,12 +12,7 @@ from patient360.domain.models import SymptomPayload, VisitPayload
 
 MAX_LOC_PART = 60   # an unknown key name is sender-chosen text; keep what we store and return short
 
-MODELS = frozendict({
-    "urgent": VisitPayload,
-    "on-demand": VisitPayload,
-    "batch": VisitPayload,
-    "symptom-checker": SymptomPayload,
-})
+MODELS = frozendict({1: VisitPayload, 2: VisitPayload, 3: SymptomPayload, 4: VisitPayload})   # source id -> model
 
 
 @dataclass(frozen=True)
@@ -35,13 +30,17 @@ def _error(loc: list[Any], msg: str, kind: str) -> dict[str, Any]:
     return {"loc": loc, "msg": msg, "type": kind}
 
 
+def _reject_constant(name: str) -> None:
+    raise ValueError(name)   # NaN / Infinity are not JSON, and PostgreSQL jsonb refuses them
+
+
 def validate_payload(raw: bytes) -> Valid | Invalid:
     try:
-        obj = json.loads(raw)
-    except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):   # RecursionError: absurdly deep nesting
+        obj = json.loads(raw, parse_constant=_reject_constant)
+    except (ValueError, RecursionError):   # bad JSON, bad bytes, NaN / Infinity, absurdly deep nesting
         return Invalid([_error([], "body is not valid JSON", "json_invalid")])
     source = obj.get("source") if isinstance(obj, dict) else None
-    model = MODELS.get(source) if isinstance(source, str) else None
+    model = MODELS.get(source) if type(source) is int else None
     if model is None:
         return Invalid([_error(["source"], f"source must be one of {sorted(MODELS)}", "unknown_source")])
     try:

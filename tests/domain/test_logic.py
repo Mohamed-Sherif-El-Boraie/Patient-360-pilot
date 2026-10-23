@@ -97,9 +97,8 @@ def test_normal_status_ignores_an_incoherent_critical_low():
     assert critical_breach("4.28", {"low": 500, "high": None}, status="normal", ref_low=2.0, ref_high=7.0) is None
 
 
-def test_alert_for():
-    assert alert_level_for("low", "low") == "CRITICAL"
-    assert alert_level_for("high", None) == "MEDICAL_ATTENTION"
-    assert alert_level_for("abnormal", None) == "MEDICAL_ATTENTION"
-    assert alert_level_for("normal", None) == "NORMAL"
-    assert alert_level_for(None, None) == "NOT_CLASSIFIED"
+def test_alert_level_follows_the_status_and_none_means_no_alert():
+    assert alert_level_for("critical") == "CRITICAL"
+    assert alert_level_for("high") == alert_level_for("low") == alert_level_for("abnormal") == "MEDICAL_ATTENTION"
+    assert alert_level_for("normal") == "NORMAL"
+    assert alert_level_for("text") is None

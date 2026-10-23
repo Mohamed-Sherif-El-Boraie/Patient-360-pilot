@@ -1,6 +1,6 @@
 import pytest
 
-from patient360.domain.document import build_visit_document
+from patient360.domain.ai_input import build_ai_input
 from patient360.domain.logic import critical_bounds, reference_bounds
 
 
@@ -31,23 +31,25 @@ def test_critical_not_set_markers_count_only_as_a_pair(low, high, expected):
     assert critical_bounds(low, high) == expected
 
 
-def row(value, reference, critical):
-    raw = {"source": "urgent", "patient": {"age_years": 30, "sex": "male"}, "tests": [{"test_name": "T", "results": [
-        {"parameter_name": "P", "value": value, "reference": reference, "critical": critical}]}]}
-    return build_visit_document(raw).document["tests"][0]["results"][0]
+def result(sample, value, reference, critical):
+    raw = sample("urgent_mild")
+    raw["tests"] = [{"test_id": 1, "test_name": "T", "test_remark": None, "results": [{
+        "parameter_id": 1, "parameter_name": "P", "result_date": "2026-10-20", "value": value, "unit": None,
+        "reference": reference, "lab_flag": None, "critical": critical, "parameter_remark": None, "history": []}]}]
+    processed = build_ai_input(raw)
+    return processed.rows[0], processed.ai_json["tests"][0]["results"][0]
 
 
-def test_a_real_critical_limit_is_shown_exactly_as_sent():
-    shown = row("5", {"low": "1", "high": "9"}, {"low": -1, "high": 6})["critical"]
-    assert shown["low"] == -1 and shown["high"] == 6
+def test_a_real_critical_limit_is_shown_exactly_as_sent(sample):
+    _, shown = result(sample, "5", {"low": "1", "high": "9"}, {"low": -1, "high": 6, "range_text": None})
+    assert shown["critical"]["low"] == -1 and shown["critical"]["high"] == 6
 
 
-def test_a_marker_pair_is_left_out_of_the_document():
-    result = row("5", {"low": "1", "high": "9"}, {"low": -1, "high": 9999})
-    assert "critical" not in result or ("low" not in result["critical"] and "high" not in result["critical"])
+def test_a_marker_pair_is_left_out_of_the_ai_input(sample):
+    _, shown = result(sample, "5", {"low": "1", "high": "9"}, {"low": -1, "high": 9999, "range_text": None})
+    assert "critical" not in shown or ("low" not in shown["critical"] and "high" not in shown["critical"])
 
 
-def test_a_negative_critical_low_is_a_real_limit_base_excess():
-    result = row("-12", {"low": "-2", "high": "2"}, {"low": -10, "high": 9999})
-    assert result["status"] == "low" and result["critical"]["direction"] == "critical_low"
-    assert result["alert"] == "CRITICAL"
+def test_a_negative_critical_low_is_a_real_limit_base_excess(sample):
+    row, shown = result(sample, "-12", {"low": "-2", "high": "2"}, {"low": -10, "high": 9999, "range_text": None})
+    assert row["status"] == "critical" and row["critical_direction"] == "critical_low" and shown["alert"] == "CRITICAL"

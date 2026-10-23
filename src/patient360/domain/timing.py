@@ -8,10 +8,11 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-# validate: check the payload | process: build the AI document, tier and lane
+# validate: check the payload | process: build the AI input JSON, tier and lane
+# queue_wait: processed until it is sent to AWS (a batch waits for 100 records)
 # aws_round_trip: sent to AWS until the answer is back | post_process: packages, html, strip internal fields
 # deliver: POST to the Backend
-PHASES = ("validate", "process", "aws_round_trip", "post_process", "deliver")
+PHASES = ("validate", "process", "queue_wait", "aws_round_trip", "post_process", "deliver")
 
 
 @dataclass(frozen=True)

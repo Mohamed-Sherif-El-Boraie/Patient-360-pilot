@@ -1,0 +1,136 @@
+{
+  "source": 2,
+  "patient_id": 2141109993,
+  "visit_id": 2071739799,
+  "company_name": 10,
+  "patient": {
+    "birthdate": "2007-03-15",
+    "sex": 1
+  },
+  "tests": [
+    {
+      "test_id": 104,
+      "test_name": "Blood Urea",
+      "test_remark": null,
+      "results": [
+        {
+          "parameter_id": 5004,
+          "parameter_name": "Blood Urea",
+          "result_date": "2026-09-29",
+          "value": "177",
+          "unit": "mg/dL",
+          "reference": {
+            "low": "13",
+            "high": "43",
+            "range": "13 - 43"
+          },
+          "lab_flag": "H",
+          "critical": null,
+          "parameter_remark": null,
+          "history": []
+        }
+      ]
+    },
+    {
+      "test_id": 105,
+      "test_name": "Calcium",
+      "test_remark": "Result confirmed on repeat analysis by the laboratory consultant.",
+      "results": [
+        {
+          "parameter_id": 5005,
+          "parameter_name": "Calcium",
+          "result_date": "2026-09-29",
+          "value": "5.3",
+          "unit": "mg/dL",
+          "reference": {
+            "low": "8.6",
+            "high": "10.2",
+            "range": "8.6 - 10.2"
+          },
+          "lab_flag": "L",
+          "critical": {
+            "low": 6.5,
+            "high": 13,
+            "range_text": "< 6.5 OR >13 mg/dl"
+          },
+          "parameter_remark": null,
+          "history": []
+        }
+      ]
+    },
+    {
+      "test_id": 102,
+      "test_name": "Creatinine, serum",
+      "test_remark": null,
+      "results": [
+        {
+          "parameter_id": 5002,
+          "parameter_name": "CREATININE (serum)",
+          "result_date": "2026-09-29",
+          "value": "13.67",
+          "unit": "mg/dL",
+          "reference": {
+            "low": "0.7",
+            "high": "1.3",
+            "range": "0.7 - 1.3"
+          },
+          "lab_flag": "H",
+          "critical": {
+            "low": null,
+            "high": 6,
+            "range_text": "> 6 mg/dl"
+          },
+          "parameter_remark": "Cystatin C and eGFR are recommended.",
+          "history": []
+        }
+      ]
+    },
+    {
+      "test_id": 106,
+      "test_name": "Glucose After 2 Hours",
+      "test_remark": null,
+      "results": [
+        {
+          "parameter_id": 5006,
+          "parameter_name": "Glucose After 2 Hours",
+          "result_date": "2026-08-02",
+          "value": "280",
+          "unit": "mg/dL",
+          "reference": {
+            "low": "70",
+            "high": "139",
+            "range": "Normal: 70 - 139\r\nPrediabetes: 140 - 199\r\nDiabetes: More than 200"
+          },
+          "lab_flag": "H",
+          "critical": null,
+          "parameter_remark": "Fructosamine and HBA1c are recommended.",
+          "history": [
+            {
+              "history_visit_id": 2071739699,
+              "history_date": "2026-01-10",
+              "history_value": "241"
+            },
+            {
+              "history_visit_id": 2071739698,
+              "history_date": "2026-05-02",
+              "history_value": "205.5"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "descriptive_results": [],
+  "visit_answer_list": [
+    {
+      "preparation_id": 900,
+      "preparation_name": "عدد ساعات الصيام 6-8 ساعات",
+      "answer": "10"
+    },
+    {
+      "preparation_id": 901,
+      "preparation_name": "مريض سكر - علاج سكر -  اعراض سكر",
+      "answer": "No"
+    }
+  ]
+}

@@ -175,11 +175,12 @@ def critical_breach(
     return None
 
 
-def alert_level_for(status: str | None, direction: str | None) -> str:
-    if direction:
+def alert_level_for(status: str) -> str | None:
+    """CRITICAL / MEDICAL_ATTENTION / NORMAL, or None (no alert) for a result that could not be judged."""
+    if status == "critical":
         return "CRITICAL"
     if status in ABNORMAL:
         return "MEDICAL_ATTENTION"
     if status == "normal":
         return "NORMAL"
-    return "NOT_CLASSIFIED"
+    return None

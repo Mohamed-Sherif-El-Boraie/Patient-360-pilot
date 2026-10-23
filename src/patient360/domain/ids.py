@@ -1,15 +1,11 @@
-"""Opaque record id: the same patient, visit and source always give the same id (a duplicate)."""
+"""The idempotency key: one per visit. The same patient and visit always give the same key (a duplicate)."""
 from __future__ import annotations
 
 import hashlib
 import hmac
 
 
-def make_record_id(key: bytes, *, patient_id: int, visit_id: int, source: str) -> str:
-    """HMAC (not plain SHA-256: short numeric ids can be guessed). Also the Backend idempotency key.
-
-    ``source`` is part of the id because one visit can have two records: its normal visit record and its
-    symptom check.
-    """
-    message = f"{patient_id}|{visit_id}|{source}".encode()
+def make_idempotency_key(key: bytes, *, patient_id: int, visit_id: int) -> str:
+    """HMAC (not plain SHA-256: short numeric ids can be guessed). Sent to the Backend with the visit's results."""
+    message = f"{patient_id}|{visit_id}".encode()
     return hmac.new(key, message, hashlib.sha256).hexdigest()[:32]

@@ -49,5 +49,5 @@ def test_the_real_clock_gives_a_non_negative_duration():
     assert t.timings[0].duration_ms >= 0 and t.timings[0].started_at.tzinfo is not None
 
 
-def test_the_phases_are_the_five_the_owner_asked_to_trace():
-    assert PHASES == ("validate", "process", "aws_round_trip", "post_process", "deliver")
+def test_the_phases_are_the_ones_the_owner_asked_to_trace():
+    assert PHASES == ("validate", "process", "queue_wait", "aws_round_trip", "post_process", "deliver")
