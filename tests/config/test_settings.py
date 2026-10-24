@@ -1,4 +1,4 @@
-import pytest
+﻿import pytest
 
 from patient360.config.settings import REQUIRED, SettingsError, load_settings
 
@@ -106,3 +106,11 @@ def test_the_request_size_limit_is_off_until_it_is_set():
     for bad in ("big", "0", "-5"):
         with pytest.raises(SettingsError, match="MAX_REQUEST_BYTES"):
             load_settings(env(MAX_REQUEST_BYTES=bad))
+
+
+def test_the_batch_size_is_100_unless_it_is_set_and_stays_between_100_and_50000():
+    assert load_settings(env()).batch_size == 100
+    assert [load_settings(env(BATCH_SIZE=value)).batch_size for value in ("100", "250", "50000")] == [100, 250, 50000]
+    for bad in ("many", "0", "-3", "99", "50001", "2.5"):
+        with pytest.raises(SettingsError, match="BATCH_SIZE"):
+            load_settings(env(BATCH_SIZE=bad))

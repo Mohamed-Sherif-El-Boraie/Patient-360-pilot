@@ -1,4 +1,4 @@
-"""Test packages: the data type and the ``ai.packages`` entries. The SELECTION RULE is not written yet (owner)."""
+﻿"""Test packages: the data type and the ``ai.packages`` entries. The SELECTION RULE is not written yet (owner)."""
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
@@ -9,7 +9,7 @@ from dataclasses import dataclass
 class Package:
     package_id: int
     name: str                    # package_name_en
-    sex_id: int                  # 1 Male, 2 Female, 3 Any
+    sex_id: int                  # 1 Male, 2 Female, 3 Both
     age_min: int | None          # years, None = no lower limit
     age_max: int | None          # years, None = no upper limit
     test_ids: frozenset[int]

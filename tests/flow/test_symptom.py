@@ -1,4 +1,4 @@
-import json
+﻿import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -16,7 +16,7 @@ from tests.fakes import FakeBackend, FakeBlobs, FakeCatalogue, FakeS3, FakeStore
 
 SECRET = b"a-long-test-secret-value"
 NOW = datetime(2026, 10, 24, 9, 0, tzinfo=UTC)
-EXTRA_TEST = CatalogueTest(900, "Extra test", "why", "X")
+EXTRA_TEST = CatalogueTest(900, "Extra test", "why")
 VISIT_ID, PATIENT_ID = 2071739799, 2141109993          # the ids of the symptom_check sample
 
 
@@ -43,11 +43,11 @@ class World:
     def __init__(self, sample, visit_sample="urgent_mild"):
         self.sample, self.store, self.blobs, self.out = sample, FakeStore(), FakeBlobs(), FakeBlobs()
         self.s3, self.clock = FakeS3(), NOW
-        self.catalogue = FakeCatalogue(tests_by_category={"X": [EXTRA_TEST]}, names_ar={"Extra test": "AR-Extra test"})
+        self.catalogue = FakeCatalogue(tests_by_category={1: [EXTRA_TEST]}, names_ar={"Extra test": "AR-Extra test"})
         visit = sample(visit_sample)
         visit.update(visit_id=VISIT_ID, patient_id=PATIENT_ID)
-        self.catalogue = FakeCatalogue({p["parameter_id"]: "X" for t in visit["tests"] for p in t["results"]},
-                                       {"X": [EXTRA_TEST]}, {"Extra test": "AR-Extra test"})
+        self.catalogue = FakeCatalogue({p["parameter_id"]: [1] for t in visit["tests"] for p in t["results"]},
+                                       {1: [EXTRA_TEST]}, {"Extra test": "AR-Extra test"})
         Intake(self.store, self.blobs, SECRET, lambda: NOW).receive(json.dumps(visit).encode())
         Processor(self.store, self.catalogue, self.blobs).process(VISIT_ID)
         self.visit = self.store.visits[VISIT_ID]

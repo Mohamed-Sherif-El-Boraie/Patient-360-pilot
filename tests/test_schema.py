@@ -1,4 +1,4 @@
-"""Pins the schema decisions (no database needed). Run the migration on a real PostgreSQL for the real check."""
+﻿"""Pins the schema decisions (no database needed). Run the migration on a real PostgreSQL for the real check."""
 import re
 from pathlib import Path
 
@@ -7,7 +7,7 @@ from patient360.domain.common.timing import PHASES
 SQL = re.sub(r"[ \t]+", " ", (Path(__file__).parent.parent / "migrations" / "001_init.sql").read_text(encoding="utf-8"))
 
 TABLES = [
-    "sources", "companies", "sex", "tests", "parameters", "packages", "test_package_map", "batches",
+    "sources", "companies", "sex", "categories", "tests", "parameters", "packages", "test_package_map", "batches",
     "visits", "record_payloads", "rejected_payloads", "visit_tests", "lab_results", "lab_result_history",
     "descriptive_results", "descriptive_result_history", "visit_answers", "ai_outputs", "ai_model_calls",
     "ai_critical_alerts", "ai_recommendations", "record_packages", "record_package_tests", "guardrail_checks",
@@ -49,14 +49,14 @@ def test_runs_of_a_visit_are_told_apart_by_the_analysis_column():
 def test_the_backend_numbers_have_lookup_tables_with_the_agreed_values():
     assert "(1, 'urgent'), (2, 'batch'), (3, 'symptom-checker'), (4, 'on-demand')" in SQL
     assert "(15, 'El-Borg'), (10, 'Al-Mokhtbar')" in SQL
-    assert "(1, 'Male'), (2, 'Female'), (3, 'Any')" in SQL
+    assert "(1, 'Male'), (2, 'Female'), (3, 'Both')" in SQL
     visits = table("visits")
     for reference in (
         "REFERENCES sources (source_id)", "REFERENCES companies (company_id)", "REFERENCES sex (sex_id)",
     ):
         assert reference in visits
     assert "source_id IN (1, 2, 4)" in visits          # a visit's own source is never the symptom check
-    assert "sex_id IN (1, 2)" in visits                # a patient is Male or Female, never Any
+    assert "sex_id IN (1, 2)" in visits                # a patient is Male or Female, never Both
     assert "company_name" not in visits and "sex text" not in visits
 
 
@@ -212,13 +212,20 @@ def test_children_of_a_visit_are_deleted_with_it_but_reference_tables_are_not_ca
                r"|record_packages \(visit_id, package_id\)|guardrail_checks \(guardrail_check_id\)")
     assert re.search(rf"REFERENCES ({parents})", SQL)
     assert not re.search(rf"REFERENCES ({parents})(?! ON DELETE CASCADE)", SQL)
-    reference = r"tests|parameters|packages|sources|companies|sex|batches"
+    reference = r"tests|parameters|packages|categories|sources|companies|sex|batches"
     assert not re.search(rf"REFERENCES ({reference}) \([^)]*\) ON DELETE CASCADE", SQL)
 
 
-def test_tests_and_parameters_share_a_category_for_the_retrieval_rule():
-    assert "category text" in table("tests") and "category text" in table("parameters")
-    assert "CREATE INDEX tests_category ON tests (category)" in SQL
+def test_tests_and_parameters_each_hold_a_list_of_category_ids_for_the_retrieval_rule():
+    categories = table("categories")
+    assert "category_id int PRIMARY KEY" in categories and "category_name text NOT NULL UNIQUE" in categories
+    for name in ("tests", "parameters"):
+        assert "category_id int[] NOT NULL DEFAULT '{}'" in table(name)       # a list: several categories each
+    for name in ("categories", "tests", "parameters"):
+        assert "active boolean NOT NULL DEFAULT true" in table(name)          # inactive = kept for history only
+    assert "CREATE INDEX tests_category ON tests USING gin (category_id)" in SQL
+    assert "CREATE INDEX parameters_category ON parameters USING gin (category_id)" in SQL
+    assert "test_categories" not in SQL and "parameter_categories" not in SQL
 
 
 def test_the_visit_keeps_the_age_in_days_only():

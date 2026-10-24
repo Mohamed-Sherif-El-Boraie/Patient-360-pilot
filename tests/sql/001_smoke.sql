@@ -1,4 +1,4 @@
--- Smoke test for 001_init.sql on a REAL PostgreSQL. Run it right after the migration; it rolls back and leaves nothing.
+﻿-- Smoke test for 001_init.sql on a REAL PostgreSQL. Run it right after the migration; it rolls back and leaves nothing.
 --   docker exec -i pg-test psql -U postgres -d patient360 -v ON_ERROR_STOP=1 < tests\sql\001_smoke.sql
 BEGIN;
 
@@ -56,7 +56,7 @@ DO $$ BEGIN
 EXCEPTION WHEN check_violation THEN NULL; END $$;
 DO $$ BEGIN
   INSERT INTO visits (visit_id, patient_id, idempotency_key, source_id, sex_id) VALUES (11, 7, 'key-11', 2, 3);
-  RAISE EXCEPTION 'a patient cannot be sex Any';
+  RAISE EXCEPTION 'a patient cannot be sex Both';
 EXCEPTION WHEN check_violation THEN NULL; END $$;
 DO $$ BEGIN
   UPDATE visits SET stage = 'nonsense' WHERE visit_id = 9;

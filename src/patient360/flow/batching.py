@@ -1,4 +1,4 @@
-"""The batch trigger: when 100 batch visits of one lane are waiting, make a batch and write its files."""
+﻿"""The batch trigger: when a full batch (``BATCH_SIZE``, 100 by default) of one lane is waiting, make a batch."""
 from __future__ import annotations
 
 import json
@@ -6,10 +6,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
+from patient360.config.settings import DEFAULT_BATCH_SIZE
 from patient360.domain.common.blob_paths import batch_jsonl_path, blob_day, processed_path
 from patient360.ports import BatchVisit, BlobStore, BlobUnavailable, ClaimedBatch, VisitStore
 
-BATCH_SIZE = 100
 LANES = ("normal", "critical")
 
 
@@ -31,7 +31,7 @@ def build_jsonl(visits: Sequence[BatchVisit]) -> str:
 
 
 class BatchTrigger:
-    def __init__(self, store: VisitStore, blobs: BlobStore, size: int = BATCH_SIZE) -> None:
+    def __init__(self, store: VisitStore, blobs: BlobStore, size: int = DEFAULT_BATCH_SIZE) -> None:
         self._store, self._blobs, self._size = store, blobs, size
 
     def run(self) -> list[CreatedBatch]:

@@ -1,4 +1,4 @@
--- Patient-360 pilot: initial schema (PostgreSQL 16+). One transaction, no circular foreign keys.
+﻿-- Patient-360 pilot: initial schema (PostgreSQL 16+). One transaction, no circular foreign keys.
 -- One visit = one row. The symptom check is a second ANALYSIS of the same visit: it moves the stage on
 -- (received_symptom ...) and its data lives in rows with analysis = 'symptom'.
 BEGIN;
@@ -31,9 +31,15 @@ CREATE TABLE sex (
   sex_id   int PRIMARY KEY,
   sex_name text NOT NULL UNIQUE
 );
-INSERT INTO sex (sex_id, sex_name) VALUES (1, 'Male'), (2, 'Female'), (3, 'Any');   -- 3 is for packages only
+INSERT INTO sex (sex_id, sex_name) VALUES (1, 'Male'), (2, 'Female'), (3, 'Both');   -- 3 is for packages only
 
 -- ===== reference data: tests, parameters and packages ==============================================
+CREATE TABLE categories (                                -- one list of categories for tests and parameters (retrieval rule)
+  category_id   int PRIMARY KEY,
+  category_name text NOT NULL UNIQUE,
+  active        boolean NOT NULL DEFAULT true              -- inactive = kept for history, not used to pick tests
+);
+
 CREATE TABLE tests (
   test_id              int PRIMARY KEY,
   test_name_en         text NOT NULL,
@@ -42,15 +48,18 @@ CREATE TABLE tests (
   test_description_ar  text,
   test_precautions_en  text,
   test_precautions_ar  text,
-  category             text                    -- groups tests; matches parameters.category (retrieval rule)
+  category_id          int[] NOT NULL DEFAULT '{}',  -- the categories of this test (a list of categories.category_id)
+  active               boolean NOT NULL DEFAULT true -- inactive = never recommended, old results still show it
 );
-CREATE INDEX tests_category ON tests (category);
+CREATE INDEX tests_category ON tests USING gin (category_id);
 
 CREATE TABLE parameters (                                -- a result parameter (one test can have several)
   parameter_id   int PRIMARY KEY,
   parameter_name text NOT NULL,
-  category       text                          -- same list of categories as tests.category
+  category_id    int[] NOT NULL DEFAULT '{}',          -- the categories of this parameter (retrieval rule)
+  active         boolean NOT NULL DEFAULT true         -- inactive = its results are still judged but pick no tests
 );
+CREATE INDEX parameters_category ON parameters USING gin (category_id);
 
 CREATE TABLE packages (
   package_id              int PRIMARY KEY,
@@ -59,8 +68,7 @@ CREATE TABLE packages (
   package_type            text NOT NULL CHECK (package_type IN ('WELLNESS','GENERAL')),
   package_description_en  text,
   package_description_ar  text,
-  category                text,                         -- ROUTINE / NON-ROUTINE (no CHECK: a new one needs no migration)
-  sex_id                  int NOT NULL DEFAULT 3 REFERENCES sex (sex_id),   -- 1 Male, 2 Female, 3 Any
+  sex_id                  int NOT NULL DEFAULT 3 REFERENCES sex (sex_id),   -- 1 Male, 2 Female, 3 Both
   age_min                 int CHECK (age_min >= 0),     -- years, NULL = no lower limit
   age_max                 int,                          -- years, NULL = no upper limit
   active                  boolean NOT NULL DEFAULT true,

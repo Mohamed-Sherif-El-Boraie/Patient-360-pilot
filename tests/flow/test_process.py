@@ -11,7 +11,7 @@ from tests.fakes import FakeBlobs, FakeCatalogue, FakeStore
 
 SECRET = b"a-long-test-secret-value"
 NOW = datetime(2026, 10, 24, 9, 0, tzinfo=UTC)
-EXTRA_TEST = CatalogueTest(900, "Extra test", "why", "X")
+EXTRA_TEST = CatalogueTest(900, "Extra test", "why")
 
 
 def receive(sample, name, blobs=None):
@@ -29,8 +29,8 @@ def patient_data(model_input):
 
 
 def catalogue_for(visit):
-    ids = {p["parameter_id"]: "X" for t in visit["tests"] for p in t["results"]}
-    return FakeCatalogue(ids, {"X": [EXTRA_TEST]})
+    ids = {p["parameter_id"]: [1] for t in visit["tests"] for p in t["results"]}
+    return FakeCatalogue(ids, {1: [EXTRA_TEST]})
 
 
 @pytest.mark.parametrize(("name", "tier", "lane", "folder"), [

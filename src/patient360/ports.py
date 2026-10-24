@@ -1,7 +1,7 @@
 ﻿"""The few things the core flow asks of the outside world. Real versions come later; tests use ``tests/fakes.py``."""
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal, Protocol
@@ -98,12 +98,16 @@ class WorkUnit:
 class Catalogue(Protocol):
     """The reference data behind the retrieval rule."""
 
-    def parameter_categories(self) -> Mapping[int, str | None]: ...
+    def parameter_categories(self) -> Mapping[int, Collection[int]]:
+        """parameter_id -> its list of category ids (``parameters.category_id``). Both maps come from
+        ``build_catalogue_maps``, which keeps only what is ``active``."""
 
-    def tests_by_category(self) -> Mapping[str, Sequence[CatalogueTest]]: ...
+    def tests_by_category(self) -> Mapping[int, Sequence[CatalogueTest]]:
+        """category_id -> the tests that list it in ``tests.category_id`` (a test can be in several categories)."""
 
     def test_names_ar(self) -> Mapping[str, str]:
-        """English test name -> Arabic test name (``tests.test_name_ar``), for the Arabic html."""
+        """English test name -> Arabic test name (``tests.test_name_ar``), for the Arabic html. All tests, active or
+        not: a result saved when a test was active still needs its name."""
 
 
 class VisitStore(Protocol):

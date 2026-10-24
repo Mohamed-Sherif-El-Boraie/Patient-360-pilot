@@ -1,4 +1,4 @@
-"""All configuration comes from environment variables (a local ``.env`` file or the App Service settings).
+﻿"""All configuration comes from environment variables (a local ``.env`` file or the App Service settings).
 
 ``load_settings`` reads them once and checks them all; a mistake lists every problem by NAME, never by value, so a
 secret can not end up in an error message or a log.
@@ -15,12 +15,14 @@ REQUIRED = (
 )
 OPTIONAL = (
     "APP_ENV", "TELEMETRY_ENABLED", "LOG_LEVEL", "LOG_FORMAT", "PGPORT", "PGSSLMODE", "AWS_REGION", "AWS_ROLE_ARN",
-    "BACKEND_RESULTS_URL", "BACKEND_CONNECT_TIMEOUT_S", "BACKEND_READ_TIMEOUT_S", "MAX_REQUEST_BYTES",
+    "BACKEND_RESULTS_URL", "BACKEND_CONNECT_TIMEOUT_S", "BACKEND_READ_TIMEOUT_S", "MAX_REQUEST_BYTES", "BATCH_SIZE",
 )
 APP_ENVS = ("development", "pilot", "production")   # pilot logs like production: INFO, json
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 LOG_FORMATS = ("console", "json")
 MIN_SECRET_LENGTH = 16
+DEFAULT_BATCH_SIZE = 100
+MIN_BATCH_SIZE, MAX_BATCH_SIZE = 100, 50_000       # the limits of one Bedrock batch inference job in our project
 
 
 class SettingsError(ValueError):
@@ -50,6 +52,7 @@ class Settings:
     aws_role_arn: str | None = None
     backend_results_url: str | None = None
     max_request_bytes: int | None = None            # None = no limit, until we know the real size of the Backend JSONs
+    batch_size: int = DEFAULT_BATCH_SIZE            # visits per batch (per lane), 100 to 50000; change it in .env
 
 
 S3_SETTINGS = {
@@ -94,6 +97,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     connect_timeout = number("BACKEND_CONNECT_TIMEOUT_S", 5.0)
     read_timeout = number("BACKEND_READ_TIMEOUT_S", 30.0)
     max_request_bytes = number("MAX_REQUEST_BYTES", None, int)
+    batch_size = number("BATCH_SIZE", DEFAULT_BATCH_SIZE, int, low=MIN_BATCH_SIZE - 1, high=MAX_BATCH_SIZE)
     secret = values["IDEMPOTENCY_KEY_SECRET"]
     if secret and len(secret) < MIN_SECRET_LENGTH:
         problems.append(f"IDEMPOTENCY_KEY_SECRET is too short (at least {MIN_SECRET_LENGTH} characters)")
@@ -110,4 +114,5 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         aws_region=values["AWS_REGION"] or None, aws_role_arn=values["AWS_ROLE_ARN"] or None,
         s3_buckets=tuple((source, values[name]) for source, name in S3_SETTINGS.items() if values[name]),
         backend_results_url=values["BACKEND_RESULTS_URL"] or None, max_request_bytes=max_request_bytes,
+        batch_size=batch_size,
     )
