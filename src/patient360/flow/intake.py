@@ -38,6 +38,12 @@ class VisitNotFound:   # answer 404 VISIT_NOT_FOUND: a symptom check for a visit
     visit_id: int
 
 
+@dataclass(frozen=True)
+class TooLarge:        # answer 413: over MAX_REQUEST_BYTES; nothing is read, saved or logged
+    size: int
+    limit: int
+
+
 def _peek(raw: bytes) -> tuple[int | None, int | None]:
     """The source number and visit id of a payload that failed validation, if they are usable."""
     try:
@@ -53,10 +59,13 @@ def _peek(raw: bytes) -> tuple[int | None, int | None]:
 
 
 class Intake:
-    def __init__(self, store: VisitStore, blobs: BlobStore, secret: bytes, now: Callable[[], datetime]) -> None:
-        self._store, self._blobs, self._secret, self._now = store, blobs, secret, now
+    def __init__(self, store: VisitStore, blobs: BlobStore, secret: bytes, now: Callable[[], datetime],
+                 max_bytes: int | None = None) -> None:
+        self._store, self._blobs, self._secret, self._now, self._max_bytes = store, blobs, secret, now, max_bytes
 
-    def receive(self, raw: bytes) -> Accepted | Duplicate | Rejected | VisitNotFound:
+    def receive(self, raw: bytes) -> Accepted | Duplicate | Rejected | VisitNotFound | TooLarge:
+        if self._max_bytes is not None and len(raw) > self._max_bytes:
+            return TooLarge(len(raw), self._max_bytes)
         received_at = self._now()
         result = validate_payload(raw)
         if isinstance(result, Invalid):

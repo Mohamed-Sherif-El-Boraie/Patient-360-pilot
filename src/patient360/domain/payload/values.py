@@ -11,8 +11,14 @@ _NUMBER_PREFIX = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?")
 
 
 def parse_numeric(value: Any) -> int | float | None:
-    """Port of v3 ``labValues.parseNumeric``: drop commas/spaces, read the leading number."""
+    """Port of v3 ``labValues.parseNumeric``: drop spaces, read the leading number.
+
+    A comma between digits ("0,5" or "1,000") is a decimal comma or a thousands comma and we cannot tell which, so it is
+    not a number: the value stays as sent, its status becomes "text" and the visit is treated as not normal.
+    """
     if value is None or value == "":
+        return None
+    if re.search(r"\d,\d", str(value)):
         return None
     text = re.sub(r"[,\s]", "", str(value))
     match = _NUMBER_PREFIX.match(text)

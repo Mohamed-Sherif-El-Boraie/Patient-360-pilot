@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 import pytest
 
 from patient360.domain.common.ids import make_idempotency_key
-from patient360.flow.intake import Accepted, Duplicate, Intake, Rejected, VisitNotFound
+from patient360.flow.intake import Accepted, Duplicate, Intake, Rejected, TooLarge, VisitNotFound
 from tests.fakes import FakeBlobs, FakeStore
 
 SECRET = b"a-long-test-secret-value"
@@ -173,3 +173,18 @@ def test_an_invalid_symptom_check_is_rejected(parts, sample):
     symptom = sample("symptom_check")
     symptom["patient_symptoms"] = "   "
     assert isinstance(intake.receive(raw(symptom)), Rejected) and len(store.rejected) == 1
+
+
+def test_no_size_limit_by_default_and_a_set_limit_refuses_a_bigger_body_without_saving_it(sample):
+    visit = sample("urgent_mild")
+    body = raw(visit)
+    store, blobs = FakeStore(), FakeBlobs()
+    assert isinstance(Intake(store, blobs, SECRET, lambda: NOW).receive(body), Accepted)
+
+    store, blobs = FakeStore(), FakeBlobs()
+    limited = Intake(store, blobs, SECRET, lambda: NOW, max_bytes=len(body) - 1)
+    assert limited.receive(body) == TooLarge(len(body), len(body) - 1)
+    assert not store.visits and not store.rejected and not blobs.files
+
+    exact = Intake(store, blobs, SECRET, lambda: NOW, max_bytes=len(body))
+    assert isinstance(exact.receive(body), Accepted)

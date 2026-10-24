@@ -76,7 +76,7 @@ def _result(test: Mapping[str, Any], raw: Mapping[str, Any]) -> tuple[dict[str, 
         "value": value,
         "unit": raw.get("unit"),
         "reference": {"low": shown_low, "high": shown_high, "range": ref.get("range")},
-        "alert": alert,
+        "alert": alert if alert != "NORMAL" else None,   # the model only gets CRITICAL or MEDICAL_ATTENTION
         "lab_flag": flag.capitalize() if flag else None,
         "critical": {**shown_critical, "direction": f"critical_{direction}" if direction else None}
         if shown_critical else None,

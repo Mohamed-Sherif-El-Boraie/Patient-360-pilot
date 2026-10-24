@@ -98,3 +98,11 @@ def test_aws_and_backend_settings_are_optional_until_they_are_used():
     assert full.s3_buckets == (("urgent", "urgent-bucket"), ("batch", "batch-bucket"))
     assert full.aws_region == "eu-west-1"
     assert full.backend_results_url == "https://backend.example/results"
+
+
+def test_the_request_size_limit_is_off_until_it_is_set():
+    assert load_settings(env()).max_request_bytes is None
+    assert load_settings(env(MAX_REQUEST_BYTES="1048576")).max_request_bytes == 1_048_576
+    for bad in ("big", "0", "-5"):
+        with pytest.raises(SettingsError, match="MAX_REQUEST_BYTES"):
+            load_settings(env(MAX_REQUEST_BYTES=bad))

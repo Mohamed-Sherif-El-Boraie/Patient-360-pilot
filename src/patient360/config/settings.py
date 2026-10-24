@@ -15,7 +15,7 @@ REQUIRED = (
 )
 OPTIONAL = (
     "APP_ENV", "TELEMETRY_ENABLED", "LOG_LEVEL", "LOG_FORMAT", "PGPORT", "PGSSLMODE", "AWS_REGION", "AWS_ROLE_ARN",
-    "BACKEND_RESULTS_URL", "BACKEND_CONNECT_TIMEOUT_S", "BACKEND_READ_TIMEOUT_S",
+    "BACKEND_RESULTS_URL", "BACKEND_CONNECT_TIMEOUT_S", "BACKEND_READ_TIMEOUT_S", "MAX_REQUEST_BYTES",
 )
 APP_ENVS = ("development", "pilot", "production")   # pilot logs like production: INFO, json
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
@@ -49,6 +49,7 @@ class Settings:
     s3_buckets: tuple[tuple[str, str], ...] = ()   # (source, bucket name), only the buckets that are set
     aws_role_arn: str | None = None
     backend_results_url: str | None = None
+    max_request_bytes: int | None = None            # None = no limit, until we know the real size of the Backend JSONs
 
 
 S3_SETTINGS = {
@@ -92,6 +93,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     pg_port = number("PGPORT", 5432, int, high=65535)
     connect_timeout = number("BACKEND_CONNECT_TIMEOUT_S", 5.0)
     read_timeout = number("BACKEND_READ_TIMEOUT_S", 30.0)
+    max_request_bytes = number("MAX_REQUEST_BYTES", None, int)
     secret = values["IDEMPOTENCY_KEY_SECRET"]
     if secret and len(secret) < MIN_SECRET_LENGTH:
         problems.append(f"IDEMPOTENCY_KEY_SECRET is too short (at least {MIN_SECRET_LENGTH} characters)")
@@ -107,5 +109,5 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         backend_connect_timeout_s=connect_timeout, backend_read_timeout_s=read_timeout,
         aws_region=values["AWS_REGION"] or None, aws_role_arn=values["AWS_ROLE_ARN"] or None,
         s3_buckets=tuple((source, values[name]) for source, name in S3_SETTINGS.items() if values[name]),
-        backend_results_url=values["BACKEND_RESULTS_URL"] or None,
+        backend_results_url=values["BACKEND_RESULTS_URL"] or None, max_request_bytes=max_request_bytes,
     )

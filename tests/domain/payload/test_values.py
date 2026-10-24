@@ -5,7 +5,7 @@ def test_parse_numeric_reads_the_leading_number_like_v3():
     assert parse_numeric("13") == 13 and isinstance(parse_numeric("13"), int)
     assert parse_numeric("8.6") == 8.6
     assert parse_numeric("1.08  L") == 1.08
-    assert parse_numeric("1,000") == 1000
+    assert parse_numeric("1,000") is None and parse_numeric("0,5") is None   # decimal or thousands: we can not tell
     assert parse_numeric("<5") is None
     assert parse_numeric("1:64") is None and parse_numeric("5/10") is None      # titre, ratio
     assert parse_numeric("2026-01-10") is None and parse_numeric("5-10") is None  # date, range text

@@ -67,8 +67,16 @@ def test_normal_values_get_alert_normal_and_no_direction(sample):
     assert {row["status"] for row in processed.rows} == {"normal"}
     assert {row["alert"] for row in processed.rows} == {"NORMAL"}
     results = [r for t in processed.ai_json["tests"] for r in t["results"]]
+    assert all("alert" not in r for r in results)   # the model never gets "NORMAL": only CRITICAL or MEDICAL_ATTENTION
     creatinine = next(r for r in results if "CREATININE" in r["parameter_name"])
     assert "direction" not in creatinine.get("critical", {})
+
+
+def test_a_comma_number_stays_as_sent_and_is_not_judged(sample):
+    row, shown = row_for(sample, "0,5", {"low": 0, "high": 1, "range": "0 - 1"})
+    assert shown["value"] == "0,5" and (row["status"], row["alert"]) == ("text", None)
+    comma_bound = {"low": "0,5", "high": None, "range": None}
+    assert row_for(sample, "5", comma_bound)[0]["status"] == "text"
 
 
 def row_for(sample, value, reference, critical=None, lab_flag=None):
