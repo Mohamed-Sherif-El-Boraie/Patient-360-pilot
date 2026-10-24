@@ -71,8 +71,9 @@ class OutputReceiver:
         try:
             ai = AiAnswer.model_validate_json(record["content"][0]["text"]).for_backend()
         except (ValidationError, KeyError, IndexError, TypeError):
+            rejected = self._reject(found, text, record_id, "invalid_output")   # the file first: if Blob fails, retry
             self._store.mark_output_failed(stored.visit_id, "invalid_ai_output")
-            return self._reject(found, text, record_id, "invalid_output")
+            return rejected
         self._save(found, text, stored, record, ai)
         return Received(record_id, "saved")
 

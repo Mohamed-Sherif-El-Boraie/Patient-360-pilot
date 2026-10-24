@@ -1,4 +1,4 @@
-"""A result the guardrail blocked: the Backend gets one fixed message and nothing the model wrote.
+﻿"""A result the guardrail blocked: the Backend gets one fixed message and nothing the model wrote.
 
 The message depends on WHY it was blocked, read from the guardrail trace of the AWS record. Only the kind of reason is
 used. Nothing from the trace text (matched words, topic names, personal data) is ever copied into the message.
@@ -20,14 +20,8 @@ BLOCKED_MESSAGES = {
     },
     "input": {
         "en": "We could not process some of the information provided because it contains content that is not "
-              "allowed. Please remove it and try again, or speak with your doctor about your results.",
+              "allowed. Please speak with your doctor about your results.",
         "ar": "تعذّرت معالجة بعض المعلومات المُدخلة لأنها تحتوي على محتوى غير مسموح به. "
-              "يرجى حذفه والمحاولة مرة أخرى، أو مراجعة طبيبك بخصوص نتائجك.",
-    },
-    "sensitive_information": {
-        "en": "The AI summary for this result could not be shown because it would have contained personal "
-              "information. Please speak with your doctor about your results.",
-        "ar": "تعذّر عرض الملخص الذكي لهذه النتيجة لأنه كان سيحتوي على معلومات شخصية. "
               "يرجى مراجعة طبيبك بخصوص نتائجك.",
     },
     "ungrounded": {
@@ -37,7 +31,7 @@ BLOCKED_MESSAGES = {
               "يرجى مراجعة طبيبك بخصوص نتائجك.",
     },
 }
-_REASON_BY_POLICY = {"sensitiveInformationPolicy": "sensitive_information", "contextualGroundingPolicy": "ungrounded"}
+_REASON_BY_POLICY = {"contextualGroundingPolicy": "ungrounded"}
 
 
 def _guardrail_action(record: Mapping[str, Any]) -> Any:
@@ -67,7 +61,7 @@ def _blocked_paths(node: Any, path: tuple[str, ...] = ()) -> Iterator[tuple[str,
 
 
 def blocked_reason(record: Mapping[str, Any]) -> str:
-    """``input`` (the text we sent was refused), ``sensitive_information``, ``ungrounded`` or ``default``."""
+    """``input`` (the text we sent was refused), ``ungrounded`` or ``default``."""
     trace = record.get(TRACE_KEY) or {}
     paths = list(_blocked_paths(trace))
     if any("input" in path for path in paths):

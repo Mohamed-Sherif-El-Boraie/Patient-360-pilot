@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any, Literal
 
 from patient360.domain.builders.ai_input import SOURCE_NAMES, build_ai_input
@@ -15,6 +16,7 @@ from patient360.ports import BlobStore, BlobUnavailable, Catalogue, StoredVisit,
 from patient360.prompts import PROMPT_AND_SCHEMA_BY_SOURCE
 
 BATCH = 2
+STUCK_AFTER = timedelta(minutes=5)   # still "received" after this long: cut short by a restart, not in progress
 
 
 @dataclass(frozen=True)
@@ -55,3 +57,9 @@ class Processor:
         except BlobUnavailable:
             return "postgresql"
         return "blob"
+
+
+def process_stuck_visits(store: VisitStore, processor: Processor, now: datetime) -> list[Processed]:
+    """The 5-minute timer calls this: process every visit that was accepted but never processed.
+    Processing a visit twice is safe (same file, a new database version), so two instances may overlap."""
+    return [processor.process(visit_id) for visit_id in store.visits_waiting_for_processing(now - STUCK_AFTER)]

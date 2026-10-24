@@ -1,11 +1,11 @@
 ﻿import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from patient360.domain.rules.retrieval import CatalogueTest
 from patient360.flow.intake import Accepted, Intake
-from patient360.flow.process import Processor
+from patient360.flow.process import Processor, process_stuck_visits
 from patient360.prompts import PROMPT_AND_SCHEMA_BY_SOURCE
 from tests.fakes import FakeBlobs, FakeCatalogue, FakeStore
 
@@ -91,3 +91,25 @@ def test_each_source_gets_its_own_prompt_and_schema(sample, name, source):
     assert model_input["output_config"]["format"]["schema"] == schema
     assert patient_data(model_input)["source"] == source
 
+
+
+def test_a_visit_accepted_but_never_processed_is_picked_up_after_five_minutes(sample):
+    visit, _, store, blobs = receive(sample, "urgent_mild")
+    processor = Processor(store, catalogue_for(visit), blobs)
+    assert process_stuck_visits(store, processor, NOW + timedelta(minutes=4)) == []       # still being processed
+    assert store.visits[visit["visit_id"]]["stage"] == "received"
+    [done] = process_stuck_visits(store, processor, NOW + timedelta(minutes=6))
+    assert done.visit_id == visit["visit_id"] and store.visits[visit["visit_id"]]["stage"] == "processed"
+    assert process_stuck_visits(store, processor, NOW + timedelta(minutes=60)) == []      # never again
+
+
+def test_the_sweep_takes_the_oldest_first_and_leaves_processed_visits_alone(sample):
+    store, blobs = FakeStore(), FakeBlobs()
+    intake = Intake(store, blobs, SECRET, lambda: NOW)
+    for visit_id, name in ((7, "urgent_mild"), (8, "on_demand_critical")):
+        visit = sample(name)
+        visit["visit_id"] = visit_id
+        intake.receive(json.dumps(visit).encode())
+    processor = Processor(store, FakeCatalogue(), blobs)
+    processor.process(8)                                                                  # this one was fine
+    assert [p.visit_id for p in process_stuck_visits(store, processor, NOW + timedelta(hours=1))] == [7]

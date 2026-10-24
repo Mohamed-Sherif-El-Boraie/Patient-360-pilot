@@ -31,7 +31,7 @@ def test_only_an_intervened_record_is_blocked():
 @pytest.mark.parametrize(("record", "reason"), [
     (intervened(**output(TOPIC)), "default"),
     (intervened(**output(WORD)), "default"),
-    (intervened(**output(PII)), "sensitive_information"),
+    (intervened(**output(PII)), "default"),                                       # no special message for personal data
     (intervened(**output(GROUNDING)), "ungrounded"),
     (intervened(input={"guardrail-id": TOPIC}), "input"),
     (intervened(input={"guardrail-id": PII}, **output(GROUNDING)), "input"),     # an input block wins

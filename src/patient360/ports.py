@@ -136,6 +136,10 @@ class VisitStore(Protocol):
     def mark_failed_attempt(self, unit: WorkUnit, error_type: str, retry_at: datetime | None) -> None:
         """Count the failure and release the unit for ``retry_at``; ``None`` = give up: stage ``failed``."""
 
+    def visits_waiting_for_processing(self, received_before: datetime) -> list[int]:
+        """Ids of visits still at stage ``received`` that arrived before ``received_before``, oldest first. These are
+        visits whose processing was cut short (a restart), not the ones being processed right now."""
+
     def find_visit(self, idempotency_key: str) -> StoredVisit | None:
         """The visit that owns this key (AWS calls it ``recordId``), or ``None``."""
 

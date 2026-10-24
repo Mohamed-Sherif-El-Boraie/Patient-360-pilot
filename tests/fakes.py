@@ -96,7 +96,12 @@ class FakeStore:
         if self.fail_on_save:
             raise RuntimeError("database down")
         self.visits[payload["visit_id"]] = {"payload": payload, "raw": raw, "idempotency_key": idempotency_key,
-                                            "received_at": received_at, "read_from": read_from}
+                                            "received_at": received_at, "read_from": read_from, "stage": "received"}
+
+    def visits_waiting_for_processing(self, received_before):
+        waiting = [(v["received_at"], visit_id) for visit_id, v in self.visits.items()
+                   if v.get("stage") == "received" and v["received_at"] < received_before]
+        return [visit_id for _, visit_id in sorted(waiting)]
 
     def stored_visit(self, visit_id):
         visit = self.visits[visit_id]

@@ -9,6 +9,7 @@ from patient360.flow.intake import Intake
 from patient360.flow.process import Processor
 from patient360.flow.results import OutputReceiver
 from patient360.flow.send_result import ResultSender
+from patient360.ports import BlobUnavailable
 from tests.fakes import FakeBackend, FakeBlobs, FakeCatalogue, FakeStore
 
 SECRET = b"a-long-test-secret-value"
@@ -201,4 +202,23 @@ def test_files_that_are_not_a_visit_result_are_ignored(world, path):
 
 def test_a_file_that_is_not_there_is_ignored(world):
     assert world.receiver().receive("aws-output-merged/urgent/normal/2026/10/24/" + "a" * 32 + ".json") == []
+
+
+
+def test_if_blob_fails_while_keeping_a_bad_file_the_visit_is_not_marked_failed_so_a_retry_can_finish(world):
+    [visit] = world.add("urgent_mild", 1)
+    key = visit["idempotency_key"]
+    path = world.write(f"aws-output-merged/urgent/normal/2026/10/24/{key}.json", record(key, '{"summary": "bad"}'))
+
+    class CannotWrite(FakeBlobs):
+        def put(self, path, data):
+            raise BlobUnavailable
+
+    world.out.__class__ = CannotWrite
+    with pytest.raises(BlobUnavailable):
+        world.receiver().receive(path)
+    assert visit["stage"] == "processed"                       # not "failed": the retry will see it again
+    world.out.__class__ = FakeBlobs
+    assert [r.outcome for r in world.receiver().receive(path)] == ["invalid_output"]
+    assert visit["stage"] == "failed"
 
