@@ -11,7 +11,7 @@ from tests.fakes import FakeBlobs, FakeCatalogue, FakeStore
 
 SECRET = b"a-long-test-secret-value"
 RECEIVED = datetime(2026, 10, 24, 9, 0, tzinfo=UTC)
-TICK = datetime(2026, 10, 25, 0, 30, tzinfo=UTC)   # the next day: the batch folder uses the day of the batch
+# The fake database makes every batch on 2026-10-25: the day of the batch, not of the visits, names its folder.
 
 
 @pytest.fixture
@@ -31,7 +31,7 @@ def add_visits(sample, store, blobs, name, first_visit_id, count):
 
 
 def trigger(store, blobs, size=3):
-    return BatchTrigger(store, blobs, lambda: TICK, size)
+    return BatchTrigger(store, blobs, size)
 
 
 def test_fewer_than_a_full_batch_creates_nothing(sample, parts):
@@ -52,7 +52,7 @@ def test_a_full_batch_writes_one_file_per_visit_and_the_jsonl(sample, parts):
         assert f"processed/batch/{lane}/2026/10/25/{batch.batch_id}/{key}.json" in blobs.files
     jsonl_path = f"processed/batch/{lane}-jsonls/2026/10/25/{batch.batch_id}.jsonl"
     lines = [json.loads(line) for line in blobs.files[jsonl_path].decode().splitlines()]
-    assert sorted(line["recordId"] for line in lines) == sorted(keys) and blobs.files[jsonl_path] == batch.jsonl
+    assert sorted(line["recordId"] for line in lines) == sorted(keys)
     assert all(set(line) == {"recordId", "modelInput"} for line in lines)
     batch_prompt, _ = PROMPT_AND_SCHEMA_BY_SOURCE["batch"]
     assert all(line["modelInput"]["system"][0]["text"] == batch_prompt for line in lines)
@@ -62,10 +62,11 @@ def test_a_full_batch_writes_one_file_per_visit_and_the_jsonl(sample, parts):
 def test_the_default_batch_is_100_visits(sample, parts):
     store, blobs = parts
     add_visits(sample, store, blobs, "batch_normal", 1000, 99)
-    assert BatchTrigger(store, blobs, lambda: TICK).run() == []
+    assert BatchTrigger(store, blobs).run() == []
     add_visits(sample, store, blobs, "batch_normal", 2000, 1)
-    [batch] = BatchTrigger(store, blobs, lambda: TICK).run()
-    assert len(batch.jsonl.decode().splitlines()) == 100
+    [batch] = BatchTrigger(store, blobs).run()
+    jsonl = blobs.files[f"processed/batch/{batch.lane}-jsonls/2026/10/25/{batch.batch_id}.jsonl"]
+    assert len(jsonl.decode().splitlines()) == 100
 
 
 def test_a_visit_is_never_batched_twice_and_the_rest_wait(sample, parts):
@@ -97,5 +98,5 @@ def test_when_blob_is_down_the_batch_is_still_made_and_read_from_the_database(sa
     add_visits(sample, store, blobs, "batch_normal", 100, 3)
     blobs.down = True
     [batch] = trigger(store, blobs).run()
-    assert batch.read_from == "postgresql" and len(batch.jsonl.decode().splitlines()) == 3
-    assert all(v["processed_read_from"] == "postgresql" for v in store.visits.values())
+    assert batch.read_from == "postgresql" and store.batches[batch.batch_id]["read_from"] == "postgresql"
+    assert len(store.batch_model_inputs(batch.batch_id)) == 3     # the visits are in the database: rebuild the JSONL

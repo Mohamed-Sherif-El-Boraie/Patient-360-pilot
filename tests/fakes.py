@@ -1,9 +1,13 @@
 ﻿"""In-memory stand-ins for the stores, used by the core flow tests."""
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
+from patient360.domain.builders.ai_input import SOURCE_NAMES
 from patient360.domain.common.ids import format_batch_id
 from patient360.domain.rules.classify import LANE_BY_TIER
-from patient360.ports import BatchVisit, BlobUnavailable, ClaimedBatch, StoredVisit
+from patient360.domain.rules.dispatch import SOURCE_PRIORITY
+from patient360.ports import BatchVisit, BlobUnavailable, ClaimedBatch, S3Unavailable, StoredVisit, WorkUnit
 
 
 class FakeCatalogue:
@@ -31,14 +35,34 @@ class FakeBlobs:
         self.files[path] = data
         return True
 
+    def get(self, path: str) -> bytes | None:
+        if self.down:
+            raise BlobUnavailable
+        return self.files.get(path)
+
+
+class FakeS3:
+    def __init__(self, down: bool = False) -> None:
+        self.files: dict[tuple[str, str], bytes] = {}      # (source, key) -> bytes
+        self.uploads: list[tuple[str, str]] = []           # in the order they arrived
+        self.down = down
+
+    def put(self, source: str, key: str, data: bytes) -> None:
+        if self.down:
+            raise S3Unavailable
+        self.files[(source, key)] = data
+        self.uploads.append((source, key))
+
 
 class FakeStore:
     def __init__(self) -> None:
         self.visits: dict[int, dict] = {}
         self.symptom_checks: dict[int, dict] = {}
+        self.batches: dict[str, dict] = {}
         self.rejected: list[dict] = []
         self.fail_on_save = False
         self.batch_numbers = {"normal": 0, "critical": 0}
+        self.batch_created_at = datetime(2026, 10, 25, 0, 30, tzinfo=UTC)   # the database time of a new batch
 
     def visit_exists(self, visit_id):
         return visit_id in self.visits
@@ -69,13 +93,89 @@ class FakeStore:
         batch_id = format_batch_id(lane, self.batch_numbers[lane])
         for visit in waiting[:size]:
             visit.update(batch_id=batch_id, stage="queued")
-        return ClaimedBatch(batch_id, [BatchVisit(v["idempotency_key"], v["model_input"]) for v in waiting[:size]])
+        self.batches[batch_id] = {"lane": lane, "created_at": self.batch_created_at, "status": "created",
+                                  "claimed": False, "attempts": 0, "read_from": "postgresql",
+                                  "visit_ids": [v["payload"]["visit_id"] for v in waiting[:size]]}
+        visits = [BatchVisit(v["idempotency_key"], v["model_input"]) for v in waiting[:size]]
+        return ClaimedBatch(batch_id, visits, self.batch_created_at)
 
     def set_batch_read_from(self, batch_id, read_from):
-        for visit in self.visits.values():
-            if visit.get("batch_id") == batch_id:
-                visit["processed_read_from"] = read_from
+        self.batches[batch_id]["read_from"] = read_from
 
+    # ---- the dispatcher ---------------------------------------------------------------------
+    def add_symptom_check_ready(self, visit_id, model_input, read_from="postgresql"):
+        """Stand-in for the symptom flow (a later task): a symptom check whose request is ready to upload."""
+        self.symptom_checks.setdefault(visit_id, {}).update(
+            stage="processed_symptom", model_input=model_input, processed_read_from=read_from,
+            received_at=self.visits[visit_id]["received_at"])
+
+    def _work(self):
+        """Every unit that could be uploaded: (priority, created_at, id, record, unit)."""
+        for visit_id, v in self.visits.items():
+            name = SOURCE_NAMES[v["payload"]["source"]]
+            if name != "batch" and v.get("stage") in ("processed", "queued"):
+                unit = WorkUnit(name, LANE_BY_TIER[v["tier"]], v["received_at"], v["processed_read_from"],
+                                v.get("attempts", 0), visit_id=visit_id, idempotency_key=v["idempotency_key"])
+                yield SOURCE_PRIORITY[name], v["received_at"], visit_id, v, unit
+        for visit_id, s in self.symptom_checks.items():
+            if s.get("stage") in ("processed_symptom", "queued_symptom"):
+                v = self.visits[visit_id]
+                unit = WorkUnit("symptom-checker", LANE_BY_TIER[v["tier"]], s["received_at"], s["processed_read_from"],
+                                s.get("attempts", 0), visit_id=visit_id, idempotency_key=v["idempotency_key"],
+                                analysis="symptom")
+                yield SOURCE_PRIORITY["symptom-checker"], s["received_at"], visit_id, s, unit
+        for batch_id, b in self.batches.items():
+            if b["status"] == "created":
+                unit = WorkUnit("batch", b["lane"], b["created_at"], b["read_from"], b["attempts"], batch_id=batch_id)
+                yield SOURCE_PRIORITY["batch"], b["created_at"], batch_id, b, unit
+
+    def claim_next_work(self, now):
+        ready = [item for item in self._work()
+                 if not item[3].get("claimed") and (item[3].get("next_retry_at") or now) <= now]
+        if not ready:
+            return None
+        _, _, _, record, unit = min(ready, key=lambda item: item[:2])
+        record["claimed"] = True
+        if "stage" in record:
+            record["stage"] = "queued_symptom" if unit.analysis == "symptom" else "queued"
+        return unit
+
+    def _record(self, unit):
+        if unit.batch_id:
+            return self.batches[unit.batch_id]
+        return (self.symptom_checks if unit.analysis == "symptom" else self.visits)[unit.visit_id]
+
+    def model_input_of(self, unit):
+        return self._record(unit)["model_input"]
+
+    def batch_model_inputs(self, batch_id):
+        return [BatchVisit(self.visits[i]["idempotency_key"], self.visits[i]["model_input"])
+                for i in self.batches[batch_id]["visit_ids"]]
+
+    def _set_stage(self, unit, stage):
+        if unit.batch_id:
+            for visit_id in self.batches[unit.batch_id]["visit_ids"]:
+                self.visits[visit_id]["stage"] = stage
+        else:
+            self._record(unit)["stage"] = stage + ("_symptom" if unit.analysis == "symptom" else "")
+
+    def mark_sent(self, unit):
+        record = self._record(unit)
+        record["claimed"] = False
+        if unit.batch_id:
+            record["status"] = "submitted"
+        self._set_stage(unit, "sent_to_aws")
+
+    def mark_failed_attempt(self, unit, error_type, retry_at):
+        record = self._record(unit)
+        record.update(claimed=False, attempts=record.get("attempts", 0) + 1, last_error=error_type,
+                      next_retry_at=retry_at)
+        if retry_at is None:
+            if unit.batch_id:
+                record["status"] = "failed"
+            self._set_stage(unit, "failed")
+
+    # ---- the symptom check and the rejected payloads ------------------------------------------
     def symptom_check_state(self, visit_id, patient_id):
         visit = self.visits.get(visit_id)
         if visit is None or visit["payload"]["patient_id"] != patient_id:

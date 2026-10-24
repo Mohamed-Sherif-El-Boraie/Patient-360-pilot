@@ -17,6 +17,18 @@ class BlobStore(Protocol):
     def put(self, path: str, data: bytes) -> bool:
         """Create the file. ``False`` if it already exists ("already stored"). Raises ``BlobUnavailable``."""
 
+    def get(self, path: str) -> bytes | None:
+        """The file, or ``None`` if it is not there. Raises ``BlobUnavailable``."""
+
+
+class S3Unavailable(Exception):
+    """S3 can not be reached, or refused the file (the dispatcher retries later)."""
+
+
+class S3Store(Protocol):
+    def put(self, source: str, key: str, data: bytes) -> None:
+        """Upload to the bucket of ``source``. Writing here starts the AWS automation. Raises ``S3Unavailable``."""
+
 
 @dataclass(frozen=True)
 class StoredVisit:
@@ -37,6 +49,21 @@ class BatchVisit:
 class ClaimedBatch:
     batch_id: str
     visits: list[BatchVisit]
+    created_at: datetime          # the database time of the batch: its day names the folders
+
+
+@dataclass(frozen=True)
+class WorkUnit:
+    """One thing to upload to S3: a visit's file, a symptom check's file, or a whole batch (its JSONL)."""
+    source: str                                   # urgent, on-demand, symptom-checker or batch
+    lane: Literal["normal", "critical"]
+    created_at: datetime                          # when the visit was received, or the batch was made
+    read_from: Literal["blob", "postgresql"]
+    attempts: int                                 # failed tries so far
+    visit_id: int | None = None                   # None for a batch
+    idempotency_key: str | None = None            # None for a batch
+    batch_id: str | None = None
+    analysis: Literal["visit", "symptom"] = "visit"
 
 
 class Catalogue(Protocol):
@@ -66,6 +93,23 @@ class VisitStore(Protocol):
         """One transaction: if ``size`` processed batch visits of the lane wait, take the oldest ``size`` (rows locked,
         so two workers never take the same visit), create the ``batches`` row (next id of the lane's sequence), mark
         the visits batched and ``queued``. ``None`` when fewer wait."""
+
+    def claim_next_work(self, now: datetime) -> WorkUnit | None:
+        """The next unit to upload, best source first (urgent, symptom-checker, on-demand, batch), oldest first; units
+        waiting for a retry are skipped until their time. One transaction with ``FOR UPDATE SKIP LOCKED``: a unit is
+        claimed by one worker only. Marks it ``queued`` and ``processing``."""
+
+    def model_input_of(self, unit: WorkUnit) -> dict[str, Any]:
+        """The saved Bedrock request of a visit or symptom check (the database copy)."""
+
+    def batch_model_inputs(self, batch_id: str) -> list[BatchVisit]:
+        """Every visit of a batch with its saved request, in the order of the batch: to rebuild a lost JSONL."""
+
+    def mark_sent(self, unit: WorkUnit) -> None:
+        """Stage ``sent_to_aws`` (and the batch ``submitted``), work row ``sent``, the attempt recorded."""
+
+    def mark_failed_attempt(self, unit: WorkUnit, error_type: str, retry_at: datetime | None) -> None:
+        """Count the failure and release the unit for ``retry_at``; ``None`` = give up: stage ``failed``."""
 
     def set_batch_read_from(self, batch_id: str, read_from: Literal["blob", "postgresql"]) -> None:
         """Where the batch's visits are read from once the batch files were (or could not be) written."""

@@ -103,11 +103,13 @@ def merged_output_jsonl_path(lane: str, day: date, batch_id: str) -> str:
     return f"aws-output-merged/batch/{lane}-jsonls/{_day(day)}/{_name(batch_id, 'batch_id')}.jsonl"
 
 
-def s3_processed_key(source: str, lane: str, day: date, idempotency_key: str, batch_id: str | None = None) -> str:
-    """The key inside the S3 bucket of this source (one bucket per source). A batch uploads its JSONL."""
+def s3_processed_key(
+    source: str, lane: str, day: date, idempotency_key: str | None, batch_id: str | None = None,
+) -> str:
+    """The key inside the S3 bucket of this source (one bucket per source). A batch uploads its JSONL, so it has no
+    idempotency key."""
     _check(source, lane)
     _batch_rules(source, batch_id)
-    key = _key(idempotency_key)
     if batch_id is not None:
         return f"processed/{lane}-jsonls/{_day(day)}/{_name(batch_id, 'batch_id')}.jsonl"
-    return f"processed/{lane}/{_day(day)}/{key}.json"
+    return f"processed/{lane}/{_day(day)}/{_key(idempotency_key)}.json"
