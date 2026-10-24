@@ -1,4 +1,4 @@
-﻿"""The few things the core flow asks of the outside world. Real versions come later; tests use ``tests/fakes.py``."""
+"""The few things the core flow asks of the outside world. Real versions come later; tests use ``tests/fakes.py``."""
 from __future__ import annotations
 
 from collections.abc import Collection, Mapping, Sequence

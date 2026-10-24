@@ -1,4 +1,4 @@
-﻿"""Receiving what AWS wrote to Azure Blob 2: save it, build the Backend result, hand it to the sender."""
+"""Receiving what AWS wrote to Azure Blob 2: save it, build the Backend result, hand it to the sender."""
 from __future__ import annotations
 
 import json

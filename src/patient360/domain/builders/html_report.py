@@ -1,4 +1,4 @@
-﻿"""The ``html`` key of a result, for the Backend's PDF: the summary and the names of the recommended tests."""
+"""The ``html`` key of a result, for the Backend's PDF: the summary and the names of the recommended tests."""
 from __future__ import annotations
 
 from collections.abc import Mapping

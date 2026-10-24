@@ -1,4 +1,4 @@
-﻿"""All configuration comes from environment variables (a local ``.env`` file or the App Service settings).
+"""All configuration comes from environment variables (a local ``.env`` file or the App Service settings).
 
 ``load_settings`` reads them once and checks them all; a mistake lists every problem by NAME, never by value, so a
 secret can not end up in an error message or a log.

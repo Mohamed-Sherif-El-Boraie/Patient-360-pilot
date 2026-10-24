@@ -1,4 +1,4 @@
-﻿-- Patient-360 pilot: initial schema (PostgreSQL 16+). One transaction, no circular foreign keys.
+-- Patient-360 pilot: initial schema (PostgreSQL 16+). One transaction, no circular foreign keys.
 -- One visit = one row. The symptom check is a second ANALYSIS of the same visit: it moves the stage on
 -- (received_symptom ...) and its data lives in rows with analysis = 'symptom'.
 BEGIN;
@@ -92,7 +92,12 @@ CREATE TABLE batches (                                   -- one batch of 100 vis
   status      text NOT NULL DEFAULT 'created'
               CHECK (status IN ('created','submitted','completed','partially_completed','failed')),
   -- partially_completed: AWS finished but some visits failed; those are retried until every visit is good
-  created_at  timestamptz NOT NULL DEFAULT now()
+  read_from     text NOT NULL DEFAULT 'postgresql' CHECK (read_from IN ('blob','postgresql')),   -- where the JSONL is read from
+  claimed_at    timestamptz,                             -- set while one worker uploads the JSONL; NULL = free
+  attempts      int NOT NULL DEFAULT 0 CHECK (attempts >= 0),     -- failed uploads so far
+  next_retry_at timestamptz,
+  last_error    text,
+  created_at    timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE visits (                                    -- ONE row per visit; the JSON is in record_payloads
@@ -343,6 +348,7 @@ CREATE INDEX guardrail_findings_check ON guardrail_findings (guardrail_check_id)
 CREATE TABLE record_processing (                         -- exactly ONE current row per visit and analysis
   visit_id        bigint NOT NULL REFERENCES visits (visit_id) ON DELETE CASCADE,
   analysis        analysis_kind NOT NULL DEFAULT 'visit',
+  step            text NOT NULL DEFAULT 'upload' CHECK (step IN ('upload','deliver')),   -- upload to S3, then deliver to the Backend
   read_from       text NOT NULL CHECK (read_from IN ('blob','postgresql')),
   status          text NOT NULL DEFAULT 'pending'
                   CHECK (status IN ('pending','processing','sent','delivered','failed')),
@@ -353,7 +359,7 @@ CREATE TABLE record_processing (                         -- exactly ONE current 
   updated_at      timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (visit_id, analysis)
 ) WITH (fillfactor = 70, autovacuum_vacuum_scale_factor = 0.02);
-CREATE INDEX record_processing_pending ON record_processing (updated_at) WHERE status = 'pending';
+CREATE INDEX record_processing_pending ON record_processing (step, updated_at) WHERE status IN ('pending','processing');
 
 CREATE TABLE record_processing_attempts (                -- insert-only history of every attempt
   record_processing_attempt_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

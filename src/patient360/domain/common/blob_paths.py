@@ -1,4 +1,4 @@
-﻿"""Where each file goes in Azure Blob and S3 (the layout of tests/fixtures/flow/Buckets-Structure.md). Pure.
+"""Where each file goes in Azure Blob and S3 (the layout of tests/fixtures/flow/Buckets-Structure.md). Pure.
 
 The folders are the source, the lane and the date (``yyyy/MM/dd``); the file is named by the full idempotency key.
 Every name is built here, so nothing else concatenates paths.

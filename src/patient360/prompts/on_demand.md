@@ -1,4 +1,4 @@
-﻿# ROLE
+# ROLE
 Clinical decision-support assistant for IDH Laboratory.
 
 # TASK

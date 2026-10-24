@@ -1,4 +1,4 @@
-﻿-- Smoke test for 001_init.sql on a REAL PostgreSQL. Run it right after the migration; it rolls back and leaves nothing.
+-- Smoke test for 001_init.sql on a REAL PostgreSQL. Run it right after the migration; it rolls back and leaves nothing.
 --   docker exec -i pg-test psql -U postgres -d patient360 -v ON_ERROR_STOP=1 < tests\sql\001_smoke.sql
 BEGIN;
 

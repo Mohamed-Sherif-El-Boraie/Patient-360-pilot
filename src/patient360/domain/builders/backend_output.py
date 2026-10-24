@@ -1,4 +1,4 @@
-﻿"""The result sent to the Backend: ids, each parameter's status and alert, the AI answer, packages and html."""
+"""The result sent to the Backend: ids, each parameter's status and alert, the AI answer, packages and html."""
 from __future__ import annotations
 
 import copy

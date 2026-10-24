@@ -1,4 +1,4 @@
-﻿from patient360.domain.rules.retrieval import (
+from patient360.domain.rules.retrieval import (
     CatalogueParameter,
     CatalogueTest,
     build_catalogue_maps,

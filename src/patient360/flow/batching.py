@@ -1,4 +1,4 @@
-﻿"""The batch trigger: when a full batch (``BATCH_SIZE``, 100 by default) of one lane is waiting, make a batch."""
+"""The batch trigger: when a full batch (``BATCH_SIZE``, 100 by default) of one lane is waiting, make a batch."""
 from __future__ import annotations
 
 import json

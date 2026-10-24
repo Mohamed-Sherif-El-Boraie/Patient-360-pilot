@@ -1,4 +1,4 @@
-﻿"""In-memory stand-ins for the stores, used by the core flow tests."""
+"""In-memory stand-ins for the stores, used by the core flow tests."""
 from __future__ import annotations
 
 from datetime import UTC, datetime

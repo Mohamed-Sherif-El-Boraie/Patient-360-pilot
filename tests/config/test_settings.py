@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 
 from patient360.config.settings import REQUIRED, SettingsError, load_settings
 

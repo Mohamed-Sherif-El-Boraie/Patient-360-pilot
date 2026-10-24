@@ -1,4 +1,4 @@
-﻿"""Test packages: the data type and the ``ai.packages`` entries. The SELECTION RULE is not written yet (owner)."""
+"""Test packages: the data type and the ``ai.packages`` entries. The SELECTION RULE is not written yet (owner)."""
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence

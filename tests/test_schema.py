@@ -1,4 +1,4 @@
-﻿"""Pins the schema decisions (no database needed). Run the migration on a real PostgreSQL for the real check."""
+"""Pins the schema decisions (no database needed). Run the migration on a real PostgreSQL for the real check."""
 import re
 from pathlib import Path
 

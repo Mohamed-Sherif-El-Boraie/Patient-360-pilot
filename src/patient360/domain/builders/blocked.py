@@ -1,4 +1,4 @@
-﻿"""A result the guardrail blocked: the Backend gets one fixed message and nothing the model wrote.
+"""A result the guardrail blocked: the Backend gets one fixed message and nothing the model wrote.
 
 Two messages only: the guardrail refused what we sent (input), or it refused what the model wrote (output). Nothing from
 the trace (matched words, topic names, personal data) is ever copied into a message.

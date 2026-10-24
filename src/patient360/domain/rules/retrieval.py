@@ -1,4 +1,4 @@
-﻿"""Deterministic stand-in for the RAG step (pilot): catalogue tests in the category of a not-normal parameter."""
+"""Deterministic stand-in for the RAG step (pilot): catalogue tests in the category of a not-normal parameter."""
 from __future__ import annotations
 
 from collections.abc import Collection, Iterable, Mapping, Sequence
