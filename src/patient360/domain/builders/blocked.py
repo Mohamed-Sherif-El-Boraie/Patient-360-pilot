@@ -63,6 +63,11 @@ def blocked_reason(record: Mapping[str, Any]) -> str:
     return "output"
 
 
+def is_blocked_ai(ai: Mapping[str, Any]) -> bool:
+    """Is this the ``ai`` of a blocked result? Only its summary is filled (see ``blocked_ai``)."""
+    return all(ai.get(key) is None for key in ("simple_summary", "critical_alerts", "note", "recommendations"))
+
+
 def blocked_ai(record: Mapping[str, Any]) -> dict[str, Any]:
     """The ``ai`` part of a blocked result: only the summary is filled, the rest is null."""
     return {"summary": dict(BLOCKED_MESSAGES[blocked_reason(record)]), "simple_summary": None,

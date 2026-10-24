@@ -28,16 +28,21 @@ def select_retrieved_tests(
     tests_by_category: Mapping[str, Sequence[CatalogueTest]],
     performed_test_names: Iterable[str],
     max_tests: int = MAX_RETRIEVED_TESTS,
+    include_normal: bool = False,
 ) -> list[dict[str, Any]]:
     """All parameters normal -> nothing. Otherwise every catalogue test in the categories of the not-normal parameters,
     minus the tests the patient already did, at most ``max_tests``. Categories of CRITICAL parameters come first, then
     the other not-normal ones; inside a category the order is by test id.
+    ``include_normal`` (a symptom check of a NORMAL patient: the symptoms may call for a test) also takes the
+    categories of the normal parameters, after the others.
     Output: ``retrieved_tests`` for the AI input JSON.
     """
-    not_normal = [row for row in rows if has_value(row) and row["status"] != "normal"]
+    valued = [row for row in rows if has_value(row)]
+    not_normal = [row for row in valued if row["status"] != "normal"]
     critical = {parameter_categories.get(r["parameter_id"]) for r in not_normal if r["status"] == "critical"} - {None}
     others = {parameter_categories.get(r["parameter_id"]) for r in not_normal} - {None} - critical
-    ordered = sorted(critical) + sorted(others)
+    normal = {parameter_categories.get(r["parameter_id"]) for r in valued} - {None} - critical - others
+    ordered = sorted(critical) + sorted(others) + (sorted(normal) if include_normal else [])
     performed = {_same(name) for name in performed_test_names}
     seen: set[int] = set()
     retrieved: list[dict[str, Any]] = []

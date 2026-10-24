@@ -62,3 +62,13 @@ def test_each_entry_has_the_name_and_the_description():
 def test_a_parameter_without_a_category_or_a_value_adds_nothing():
     assert run([row(12, "high")]) == []
     assert run([row(10, "text", value="")]) == []
+
+
+def test_include_normal_also_takes_the_categories_of_normal_parameters_after_the_others():
+    rows = [row(11, "normal"), row(10, "high")]
+    names = [t["test_name"] for t in select_retrieved_tests(rows, CATEGORIES, CATALOGUE, (), include_normal=True)]
+    assert names == ["Estimated (eGFR)", "Urea", "Cystatin C", "HbA1c"]        # not-normal category first
+    all_normal = [row(11, "normal"), row(10, "normal")]
+    names = [t["test_name"] for t in select_retrieved_tests(all_normal, CATEGORIES, CATALOGUE, (), include_normal=True)]
+    assert names == ["Estimated (eGFR)", "Urea", "Cystatin C", "HbA1c"]
+    assert select_retrieved_tests(all_normal, CATEGORIES, CATALOGUE, ()) == []   # off by default

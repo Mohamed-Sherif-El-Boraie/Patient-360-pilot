@@ -190,3 +190,36 @@ def test_a_blocked_symptom_text_gets_the_input_message(world):
     public = world.store.symptom_checks[VISIT_ID]["public_output"]
     assert public["source"] == 3 and public["ai"]["summary"] == BLOCKED_MESSAGES["input"]
     assert public["ai"]["recommendations"] is None
+
+
+def test_a_normal_patients_symptom_check_still_gets_tests_from_the_parameter_categories(sample):
+    world = World(sample, "batch_normal")
+    world.source = 4
+    assert world.visit["tier"] == "NORMAL"
+    assert "retrieved_tests" not in patient_data(world.visit["model_input"])           # the visit itself: none
+    world.store.visits[VISIT_ID]["public_output"] = {"ai": json.loads(answer())}        # the visit has its result
+    world.receive_the_symptom_check()
+    world.symptom_processor().process(VISIT_ID)
+    data = patient_data(world.store.symptom_checks[VISIT_ID]["model_input"])
+    assert [t["test_name"] for t in data["retrieved_tests"]] == ["Extra test"]
+
+
+def test_a_not_normal_patients_symptom_check_keeps_the_same_rule_as_the_visit(sample):
+    world = World(sample, "urgent_mild")
+    assert world.visit["tier"] == "MILD"
+    world.give_the_visit_its_result()
+    world.receive_the_symptom_check()
+    world.symptom_processor().process(VISIT_ID)
+    data = patient_data(world.store.symptom_checks[VISIT_ID]["model_input"])
+    assert [t["test_name"] for t in data["retrieved_tests"]] == ["Extra test"]
+
+
+def test_a_visit_whose_result_was_blocked_is_never_symptom_checked(world):
+    blocked = aws_record(world.key, answer(), **{"amazon-bedrock-guardrailAction": "INTERVENED"})
+    path = f"aws-output-merged/urgent/normal/2026/10/24/{world.key}.json"
+    world.out.files[path] = json.dumps(blocked).encode()
+    world.receiver().receive(path)
+    world.receive_the_symptom_check()
+    assert world.symptom_processor().process(VISIT_ID) is None
+    assert process_waiting_symptoms(world.store, world.symptom_processor(), NOW + timedelta(days=1)) == []
+    assert world.store.symptom_checks[VISIT_ID]["stage"] == "received_symptom" and not world.s3.uploads

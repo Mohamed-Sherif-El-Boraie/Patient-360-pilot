@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from patient360.domain.builders.ai_input import build_ai_input
+from patient360.domain.builders.blocked import is_blocked_ai
 from patient360.domain.builders.model_input import build_model_input
 from patient360.domain.builders.symptom_ai_input import build_symptom_ai_input
 from patient360.domain.common.blob_paths import blob_day, processed_path
@@ -25,10 +26,11 @@ class SymptomProcessor:
         self._store, self._catalogue, self._blobs, self._prompts = store, catalogue, blobs, prompts
 
     def process(self, visit_id: int) -> Processed | None:
-        """``None`` while the visit has no result yet: the symptom check needs it ("previous_ai_analysis"), so it
-        waits and the timer tries again. The lane is the lane of the visit."""
+        """``None`` while the visit has no usable result: the symptom check needs it ("previous_ai_analysis"). A visit
+        with no result yet is tried again by the timer. A visit whose result was blocked (or failed) is never sent to
+        the model: a symptom check on it means nothing. The lane is the lane of the visit."""
         visit_ai = self._store.visit_ai_answer(visit_id)
-        if visit_ai is None:
+        if visit_ai is None or is_blocked_ai(visit_ai):
             return None
         symptom = self._store.stored_symptom_check(visit_id)
         visit = self._store.stored_visit(visit_id)
@@ -37,7 +39,8 @@ class SymptomProcessor:
         lane = lane_for_tier(tier)
         patient_data = build_symptom_ai_input(json.loads(symptom.raw), built.ai_json, visit_ai)
         retrieved = select_retrieved_tests(built.rows, self._catalogue.parameter_categories(),
-                                           self._catalogue.tests_by_category(), built.performed_test_names)
+                                           self._catalogue.tests_by_category(), built.performed_test_names,
+                                           include_normal=tier == "NORMAL")   # the symptoms may call for a test
         if retrieved:
             patient_data["retrieved_tests"] = retrieved
         system_prompt, output_schema = self._prompts[SOURCE]
