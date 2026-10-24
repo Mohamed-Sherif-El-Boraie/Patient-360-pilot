@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from patient360.domain.builders.blocked import BLOCKED_SUMMARY
+from patient360.domain.builders.blocked import BLOCKED_MESSAGES
 from patient360.flow.batching import BatchTrigger
 from patient360.flow.intake import Intake
 from patient360.flow.process import Processor
@@ -166,9 +166,10 @@ def test_a_blocked_result_gets_the_fixed_message_and_nothing_the_model_wrote(wor
     assert [r.outcome for r in world.receiver().receive(path)] == ["blocked"]
     public = visit["public_output"]
     assert visit["stage"] == "post_processing" and "BLOCKED-CONTENT-CANARY" not in json.dumps(public)
-    assert public["ai"] == {"summary": BLOCKED_SUMMARY, "simple_summary": None, "critical_alerts": None, "note": None,
-                            "recommendations": None}
-    assert BLOCKED_SUMMARY["en"] in public["html"]["en"] and BLOCKED_SUMMARY["ar"] in public["html"]["ar"]
+    assert public["ai"] == {"summary": BLOCKED_MESSAGES["default"], "simple_summary": None,
+                            "critical_alerts": None, "note": None, "recommendations": None}
+    assert BLOCKED_MESSAGES["default"]["en"] in public["html"]["en"]
+    assert BLOCKED_MESSAGES["default"]["ar"] in public["html"]["ar"]
     assert public["tests"] and public["patient_id"] == 7_000_001      # our own classification is still sent
     backend = FakeBackend()
     ResultSender(world.store, backend, lambda: NOW).run()

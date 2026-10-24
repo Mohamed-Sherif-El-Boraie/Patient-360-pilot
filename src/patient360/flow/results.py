@@ -1,4 +1,4 @@
-"""Receiving what AWS wrote to Azure Blob 2: save it, build the Backend result, hand it to the sender."""
+﻿"""Receiving what AWS wrote to Azure Blob 2: save it, build the Backend result, hand it to the sender."""
 from __future__ import annotations
 
 import json
@@ -66,7 +66,7 @@ class OutputReceiver:
         if self._store.has_output(stored.visit_id):
             return Received(record_id, "duplicate")
         if is_blocked(record):      # never read the model's text: the Backend gets the fixed message
-            self._save(found, text, stored, record, blocked_ai())
+            self._save(found, text, stored, record, blocked_ai(record))
             return Received(record_id, "blocked")
         try:
             ai = AiAnswer.model_validate_json(record["content"][0]["text"]).for_backend()
