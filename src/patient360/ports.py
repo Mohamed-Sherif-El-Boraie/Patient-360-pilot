@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal, Protocol
 
-from patient360.domain.retrieval import CatalogueTest
+from patient360.domain.rules.retrieval import CatalogueTest
 
 
 class BlobUnavailable(Exception):

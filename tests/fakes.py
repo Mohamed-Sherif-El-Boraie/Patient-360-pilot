@@ -1,8 +1,8 @@
 """In-memory stand-ins for the stores, used by the core flow tests."""
 from __future__ import annotations
 
-from patient360.domain.classify import LANE_BY_TIER
-from patient360.domain.ids import format_batch_id
+from patient360.domain.common.ids import format_batch_id
+from patient360.domain.rules.classify import LANE_BY_TIER
 from patient360.ports import BatchVisit, BlobUnavailable, ClaimedBatch, StoredVisit
 
 

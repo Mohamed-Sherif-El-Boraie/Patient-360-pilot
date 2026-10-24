@@ -2,7 +2,7 @@
 import re
 from pathlib import Path
 
-from patient360.domain.timing import PHASES
+from patient360.domain.common.timing import PHASES
 
 SQL = re.sub(r"[ \t]+", " ", (Path(__file__).parent.parent / "migrations" / "001_init.sql").read_text(encoding="utf-8"))
 

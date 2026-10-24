@@ -1,0 +1,175 @@
+{
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "object",
+      "properties": {
+        "en": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "en"
+      ],
+      "additionalProperties": false
+    },
+    "simple_summary": {
+      "type": "object",
+      "properties": {
+        "en": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "en"
+      ],
+      "additionalProperties": false
+    },
+    "critical_alerts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "en": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "en"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "note": {
+      "type": "object",
+      "properties": {
+        "en": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "en"
+      ],
+      "additionalProperties": false
+    },
+    "recommendations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "test_name": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string",
+                "enum": [
+                  "important",
+                  "urgent"
+                ]
+              }
+            },
+            "required": [
+              "en"
+            ],
+            "additionalProperties": false
+          },
+          "reason": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en"
+            ],
+            "additionalProperties": false
+          },
+          "timing": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en"
+            ],
+            "additionalProperties": false
+          },
+          "guideline": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en"
+            ],
+            "additionalProperties": false
+          },
+          "advisory": {
+            "type": "object",
+            "properties": {
+              "level": {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "discuss_with_doctor",
+                      "seek_care_promptly"
+                    ]
+                  }
+                },
+                "required": [
+                  "en"
+                ],
+                "additionalProperties": false
+              },
+              "message": {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "level",
+              "message"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "test_name",
+          "priority",
+          "reason",
+          "timing",
+          "guideline",
+          "advisory"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "summary",
+    "simple_summary",
+    "critical_alerts",
+    "note",
+    "recommendations"
+  ],
+  "additionalProperties": false
+}
