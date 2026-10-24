@@ -1,8 +1,9 @@
-import json
+﻿import json
 from datetime import UTC, datetime
 
 import pytest
 
+from patient360.domain.builders.blocked import BLOCKED_SUMMARY
 from patient360.flow.batching import BatchTrigger
 from patient360.flow.intake import Intake
 from patient360.flow.process import Processor
@@ -127,18 +128,69 @@ def test_one_bad_answer_in_a_batch_fails_only_that_visit(world):
     assert [r.outcome for r in world.receiver().receive(path)] == ["saved", "invalid_output", "saved"]
     assert [v["stage"] for v in visits] == ["post_processing", "failed", "post_processing"]
     assert visits[1]["output_error"] == "invalid_ai_output"
+    rejected = f"aws-output-merged/_rejected/batch/2026/10/25/{keys[1]}.json"
+    assert world.out.files[rejected] == json.dumps(broken).encode()
     assert world.store.batches[batch.batch_id]["status"] == "partially_completed"
 
 
-def test_a_result_for_a_visit_we_do_not_know_is_ignored(world):
+def test_a_result_for_a_visit_we_do_not_know_is_kept_in_the_rejected_folder(world):
     path = world.write("aws-output-merged/urgent/normal/2026/10/24/" + "a" * 32 + ".json", record("a" * 32))
     assert [r.outcome for r in world.receiver().receive(path)] == ["unknown_visit"]
+    rejected = "aws-output-merged/_rejected/urgent/2026/10/24/" + "a" * 32 + ".json"
+    assert world.out.files[rejected] == world.out.files[path]
+
+
+def test_a_file_that_is_not_json_is_kept_in_the_rejected_folder_under_a_hash(world):
+    path = "aws-output-merged/urgent/normal/2026/10/24/" + "a" * 32 + ".json"
+    world.out.files[path] = b"not json at all"
+    assert [r.outcome for r in world.receiver().receive(path)] == ["invalid_output"]
+    [rejected] = [p for p in world.out.files if "/_rejected/urgent/2026/10/24/unknown_" in p]
+    assert world.out.files[rejected] == b"not json at all"
+
+
+def test_a_result_under_the_wrong_source_is_rejected_and_changes_nothing(world):
+    [visit] = world.add("urgent_mild", 1)
+    key = visit["idempotency_key"]
+    path = world.write(f"aws-output-merged/on-demand/normal/2026/10/24/{key}.json", record(key))
+    assert [r.outcome for r in world.receiver().receive(path)] == ["source_mismatch"]
+    assert visit["stage"] == "processed" and "public_output" not in visit
+    assert f"aws-output-merged/_rejected/on-demand/2026/10/24/{key}.json" in world.out.files
+
+
+def test_a_blocked_result_gets_the_fixed_message_and_nothing_the_model_wrote(world):
+    [visit] = world.add("urgent_mild", 1)
+    key = visit["idempotency_key"]
+    blocked = record(key, text=ai_text("BLOCKED-CONTENT-CANARY"))
+    blocked["amazon-bedrock-guardrailAction"] = "INTERVENED"
+    path = world.write(f"aws-output-merged/urgent/normal/2026/10/24/{key}.json", blocked)
+    assert [r.outcome for r in world.receiver().receive(path)] == ["blocked"]
+    public = visit["public_output"]
+    assert visit["stage"] == "post_processing" and "BLOCKED-CONTENT-CANARY" not in json.dumps(public)
+    assert public["ai"] == {"summary": BLOCKED_SUMMARY, "simple_summary": None, "critical_alerts": None, "note": None,
+                            "recommendations": None}
+    assert BLOCKED_SUMMARY["en"] in public["html"]["en"] and BLOCKED_SUMMARY["ar"] in public["html"]["ar"]
+    assert public["tests"] and public["patient_id"] == 7_000_001      # our own classification is still sent
+    backend = FakeBackend()
+    ResultSender(world.store, backend, lambda: NOW).run()
+    assert backend.posts == [public]
+
+
+def test_a_blocked_result_inside_a_batch_does_not_stop_the_others(world):
+    visits = world.add("batch_normal", 100, count=2)
+    [batch] = BatchTrigger(world.store, world.blobs, 2).run()
+    keys = [v["idempotency_key"] for v in visits]
+    blocked = {**record(keys[0]), "amazon-bedrock-guardrailAction": "INTERVENED"}
+    path = world.write(f"aws-output-merged/batch/{batch.lane}-jsonls/2026/10/25/{batch.batch_id}.jsonl",
+                       blocked, record(keys[1]))
+    assert [r.outcome for r in world.receiver().receive(path)] == ["blocked", "saved"]
+    assert world.store.batches[batch.batch_id]["status"] == "completed"
 
 
 @pytest.mark.parametrize("path", [
     "aws-output-merged/batch/normal/2026/10/25/normal_000001/" + "a" * 32 + ".json",    # our own split file
     "aws-output-merged/symptom-checker/normal/2026/10/24/" + "a" * 32 + ".json",        # the symptom flow (Task 7)
     "aws-output-merged/urgent/normal/2026/10/24/readme.txt",
+    "aws-output-merged/_rejected/urgent/2026/10/24/" + "a" * 32 + ".json",                  # the rejected folder
     "somewhere/else.json",
 ])
 def test_files_that_are_not_a_visit_result_are_ignored(world, path):
@@ -148,3 +200,4 @@ def test_files_that_are_not_a_visit_result_are_ignored(world, path):
 
 def test_a_file_that_is_not_there_is_ignored(world):
     assert world.receiver().receive("aws-output-merged/urgent/normal/2026/10/24/" + "a" * 32 + ".json") == []
+

@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime, timedelta, timezone
+﻿from datetime import UTC, date, datetime, timedelta, timezone
 
 import pytest
 
@@ -11,6 +11,7 @@ from patient360.domain.common.blob_paths import (
     parse_merged_output_path,
     processed_path,
     raw_path,
+    rejected_output_path,
     rejected_path,
     rejected_unknown_path,
     s3_processed_key,
@@ -156,3 +157,14 @@ def test_a_path_built_by_us_is_read_back_the_same_way():
     "aws-output-merged/urgent/normal/2026/10/24/x.txt", ""])
 def test_any_other_path_is_not_ours(path):
     assert parse_merged_output_path(path) is None
+
+
+def test_a_rejected_output_is_named_by_its_key_or_by_a_hash_of_its_text():
+    day = date(2026, 10, 24)
+    named_by_key = f"aws-output-merged/_rejected/urgent/2026/10/24/{KEY32}.json"
+    assert rejected_output_path("urgent", day, "{}", KEY32) == named_by_key
+    for bad_key in (None, 5, "../x", ""):
+        path = rejected_output_path("batch", day, "some text", bad_key)
+        assert path.startswith("aws-output-merged/_rejected/batch/2026/10/24/unknown_") and path.endswith(".json")
+    assert parse_merged_output_path(rejected_output_path("urgent", day, "{}", KEY32)) is None   # never handled again
+

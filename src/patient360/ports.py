@@ -139,8 +139,8 @@ class VisitStore(Protocol):
     def find_visit(self, idempotency_key: str) -> StoredVisit | None:
         """The visit that owns this key (AWS calls it ``recordId``), or ``None``."""
 
-    def has_output(self, visit_id: int) -> bool:
-        """Was this visit's AWS output already saved? (Blob events can arrive twice.)"""
+    def has_output(self, visit_id: int, analysis: Literal["visit", "symptom"] = "visit") -> bool:
+        """Was the AWS output of this visit (or of its symptom check) already saved? Blob events can arrive twice."""
 
     def save_output(self, visit_id: int, internal_output: dict[str, Any], public_output: dict[str, Any]) -> None:
         """One transaction: both versions of the output (internal keeps model and usage), the rows of the answer

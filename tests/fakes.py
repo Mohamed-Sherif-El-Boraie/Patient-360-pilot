@@ -207,8 +207,9 @@ class FakeStore:
                 return self.stored_visit(visit_id)
         return None
 
-    def has_output(self, visit_id):
-        return "internal_output" in self.visits[visit_id] or self.visits[visit_id].get("stage") == "failed"
+    def has_output(self, visit_id, analysis="visit"):
+        record = self.symptom_checks[visit_id] if analysis == "symptom" else self.visits[visit_id]
+        return "internal_output" in record or str(record.get("stage")).startswith("failed")
 
     def save_output(self, visit_id, internal_output, public_output):
         self.visits[visit_id].update(internal_output=internal_output, public_output=public_output,

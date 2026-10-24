@@ -9,6 +9,7 @@ The date folder is the day the visit was RECEIVED (UTC), so all files of a visit
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -139,6 +140,15 @@ def parse_merged_output_path(path: str) -> MergedOutput | None:
     except ValueError:      # a date that does not exist, such as 2026/13/45
         return None
     return None
+
+
+def rejected_output_path(source: str, day: date, raw: str, record_id: object = None) -> str:
+    """Azure Blob 2: an AWS output we could not use, kept for debugging. Named by the key, or by a hash of the text when
+    the key is missing or not a safe name."""
+    _check(source)
+    name = record_id if isinstance(record_id, str) and _SAFE_NAME.match(record_id) else \
+        f"unknown_{hashlib.sha256(raw.encode()).hexdigest()[:16]}"
+    return f"aws-output-merged/_rejected/{source}/{_day(day)}/{name}.json"
 
 
 def s3_processed_key(
