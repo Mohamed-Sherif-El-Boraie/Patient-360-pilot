@@ -134,8 +134,9 @@ def test_descriptive_results_and_visit_answers_belong_to_the_visit():
 def test_packages_tests_and_the_map_between_them():
     packages = table("packages")
     for column in ("package_name_en text", "package_name_ar text", "package_type text", "package_description_en text",
-                   "category text", "age_min int", "age_max int"):
+                   "age_min int", "age_max int"):
         assert column in packages
+    assert "category" not in packages
     assert "CHECK (package_type IN ('WELLNESS','GENERAL'))" in packages
     assert "sex_id int NOT NULL DEFAULT 3 REFERENCES sex (sex_id)" in packages and "gender text" not in packages
     mapping = table("test_package_map")

@@ -27,6 +27,18 @@ class StoredVisit:
     raw: bytes
 
 
+@dataclass(frozen=True)
+class BatchVisit:
+    idempotency_key: str
+    processed: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ClaimedBatch:
+    batch_id: str
+    visits: list[BatchVisit]
+
+
 class Catalogue(Protocol):
     """The reference data behind the retrieval rule."""
 
@@ -48,6 +60,14 @@ class VisitStore(Protocol):
     def save_visit(self, payload: dict[str, Any], raw: bytes, idempotency_key: str, received_at: datetime,
                    read_from: Literal["blob", "postgresql"]) -> None:
         """Save the visit, its tests, results and the raw bytes in one transaction."""
+
+    def claim_batch(self, lane: Literal["normal", "critical"], size: int) -> ClaimedBatch | None:
+        """One transaction: if ``size`` processed batch visits of the lane wait, take the oldest ``size`` (rows locked,
+        so two workers never take the same visit), create the ``batches`` row (next id of the lane's sequence), mark
+        the visits batched and ``queued``. ``None`` when fewer wait."""
+
+    def set_batch_read_from(self, batch_id: str, read_from: Literal["blob", "postgresql"]) -> None:
+        """Where the batch's visits are read from once the batch files were (or could not be) written."""
 
     def symptom_check_state(self, visit_id: int, patient_id: int) -> Literal["no_visit", "already_used", "ok"]: ...
 

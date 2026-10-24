@@ -35,7 +35,7 @@ def test_results_are_grouped_by_test_in_the_order_they_came():
 
 def test_packages_and_html_are_added_and_the_ai_input_is_not_changed():
     before = copy.deepcopy(AI)
-    packages = package_entries([Package(1, "Kidney check", "ROUTINE", 3, None, None, frozenset({1, 2}))],
+    packages = package_entries([Package(1, "Kidney check", 3, None, None, frozenset({1, 2}))],
                                {1: "Urea", 2: "Creatinine"})
     out = build_backend_output(patient_id=1, visit_id=2, source=1, rows=[], ai=AI, packages=packages)
     assert out["ai"]["packages"] == [{"package_name": "Kidney check",

@@ -1,7 +1,9 @@
 """In-memory stand-ins for the stores, used by the core flow tests."""
 from __future__ import annotations
 
-from patient360.ports import BlobUnavailable, StoredVisit
+from patient360.domain.classify import LANE_BY_TIER
+from patient360.domain.ids import format_batch_id
+from patient360.ports import BatchVisit, BlobUnavailable, ClaimedBatch, StoredVisit
 
 
 class FakeCatalogue:
@@ -36,6 +38,7 @@ class FakeStore:
         self.symptom_checks: dict[int, dict] = {}
         self.rejected: list[dict] = []
         self.fail_on_save = False
+        self.batch_numbers = {"normal": 0, "critical": 0}
 
     def visit_exists(self, visit_id):
         return visit_id in self.visits
@@ -53,6 +56,24 @@ class FakeStore:
 
     def save_processed(self, visit_id, tier, processed, read_from):
         self.visits[visit_id].update(tier=tier, processed=processed, stage="processed", processed_read_from=read_from)
+
+    def claim_batch(self, lane, size):
+        waiting = sorted((v for v in self.visits.values()
+                          if v["payload"]["source"] == 2 and v.get("stage") == "processed" and "batch_id" not in v
+                          and LANE_BY_TIER[v["tier"]] == lane),
+                         key=lambda v: (v["received_at"], v["payload"]["visit_id"]))
+        if len(waiting) < size:
+            return None
+        self.batch_numbers[lane] += 1
+        batch_id = format_batch_id(lane, self.batch_numbers[lane])
+        for visit in waiting[:size]:
+            visit.update(batch_id=batch_id, stage="queued")
+        return ClaimedBatch(batch_id, [BatchVisit(v["idempotency_key"], v["processed"]) for v in waiting[:size]])
+
+    def set_batch_read_from(self, batch_id, read_from):
+        for visit in self.visits.values():
+            if visit.get("batch_id") == batch_id:
+                visit["processed_read_from"] = read_from
 
     def symptom_check_state(self, visit_id, patient_id):
         visit = self.visits.get(visit_id)

@@ -9,7 +9,6 @@ from dataclasses import dataclass
 class Package:
     package_id: int
     name: str                    # package_name_en
-    category: str | None         # ROUTINE / NON-ROUTINE (more may come)
     sex_id: int                  # 1 Male, 2 Female, 3 Any
     age_min: int | None          # years, None = no lower limit
     age_max: int | None          # years, None = no upper limit
