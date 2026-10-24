@@ -66,6 +66,11 @@ def rejected_path(source: str, day: date, visit_id: int) -> str:
     return f"raw/_rejected/{source}/{_day(day)}/{visit_id}.json"
 
 
+def rejected_unknown_path(day: date, raw_sha256_hex: str) -> str:
+    """Azure Blob 1: a rejected payload with no usable source or visit id; named by a hash of its bytes."""
+    return f"raw/_rejected/unknown/{_day(day)}/unknown_{_name(raw_sha256_hex[:16], 'hash')}.json"
+
+
 def processed_path(source: str, lane: str, day: date, idempotency_key: str, batch_id: str | None = None) -> str:
     """Azure Blob 1: the JSON prepared for the AI model. A batch visit sits inside its batch folder."""
     _check(source, lane)

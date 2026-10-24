@@ -10,6 +10,7 @@ from patient360.domain.blob_paths import (
     processed_path,
     raw_path,
     rejected_path,
+    rejected_unknown_path,
     s3_processed_key,
 )
 
@@ -117,3 +118,10 @@ def test_a_name_that_could_leave_its_folder_is_refused(bad):
 def test_a_visit_id_must_be_a_positive_whole_number(bad):
     with pytest.raises(ValueError):
         rejected_path("urgent", DAY, bad)
+
+
+def test_a_rejected_payload_without_a_usable_visit_is_named_by_a_hash_of_its_bytes():
+    digest = "0123456789abcdef" * 4
+    assert rejected_unknown_path(DAY, digest) == "raw/_rejected/unknown/2026/10/24/unknown_0123456789abcdef.json"
+    with pytest.raises(ValueError):
+        rejected_unknown_path(DAY, "../../etc/passwd")
