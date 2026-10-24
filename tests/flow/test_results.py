@@ -231,3 +231,14 @@ def test_files_that_are_not_a_visit_result_are_ignored(world, path):
 
 def test_a_file_that_is_not_there_is_ignored(world):
     assert world.receiver().receive("aws-output-merged/urgent/normal/2026/10/24/" + "a" * 32 + ".json") == []
+
+
+def test_an_intervention_that_only_anonymized_data_keeps_the_model_answer(world):
+    [visit] = world.add("urgent_mild", 1)
+    key = visit["idempotency_key"]
+    anonymized = {**record(key), "amazon-bedrock-guardrailAction": "INTERVENED",
+                  "amazon-bedrock-trace": {"guardrail": {"outputs": [{"id": {"sensitiveInformationPolicy": {
+                      "piiEntities": [{"type": "NAME", "action": "ANONYMIZED"}]}}}]}}}
+    path = world.write(f"aws-output-merged/urgent/normal/2026/10/24/{key}.json", anonymized)
+    assert [r.outcome for r in world.receiver().receive(path)] == ["saved"]
+    assert visit["public_output"]["ai"]["summary"] == both("summary")

@@ -17,8 +17,8 @@ BLOCKED_MESSAGES = {
         "ar": "تعذّرت معالجة بعض المعلومات المُدخلة لأنها تحتوي على محتوى غير مسموح به.",
     },
     "output": {
-        "en": "We had a problem on our side while preparing your summary. You will receive your recommendations soon.",
-        "ar": "حدثت مشكلة من جانبنا أثناء إعداد الملخص الخاص بك. ستصلك توصياتك قريبًا.",
+        "en": "We had a problem on our side while preparing your summary.",
+        "ar": "حدثت مشكلة من جانبنا أثناء إعداد الملخص الخاص بك.",
     },
 }
 
@@ -33,27 +33,32 @@ def _guardrail_action(record: Mapping[str, Any]) -> Any:
     return None
 
 
-def is_blocked(record: Mapping[str, Any]) -> bool:
-    return _guardrail_action(record) == "INTERVENED"
-
-
-def _blocked_paths(node: Any, path: tuple[str, ...] = ()) -> Iterator[tuple[str, ...]]:
-    """Every place in the trace where something has the action BLOCKED, as the keys leading to it."""
+def _actions(node: Any, path: tuple[str, ...] = ()) -> Iterator[tuple[tuple[str, ...], str]]:
+    """Every ``action`` in the trace (BLOCKED, ANONYMIZED, ...) with the keys leading to it."""
     if isinstance(node, Mapping):
-        if node.get("action") == "BLOCKED":
-            yield path
+        if isinstance(node.get("action"), str):
+            yield path, node["action"]
         for key, child in node.items():
-            yield from _blocked_paths(child, (*path, str(key)))
+            yield from _actions(child, (*path, str(key)))
     elif isinstance(node, list):
         for child in node:
-            yield from _blocked_paths(child, path)
+            yield from _actions(child, path)
+
+
+def is_blocked(record: Mapping[str, Any]) -> bool:
+    """INTERVENED is also reported when the guardrail only replaced personal data (ANONYMIZED) and the answer is still
+    good. So with a trace that shows no BLOCKED action the answer is used; with no usable trace we play safe."""
+    if _guardrail_action(record) != "INTERVENED":
+        return False
+    actions = {action for _, action in _actions(record.get(TRACE_KEY) or {})}
+    return not actions or "BLOCKED" in actions
 
 
 def blocked_reason(record: Mapping[str, Any]) -> str:
     """``input`` when the guardrail refused what we sent (a key such as ``input`` or ``inputAssessment`` leads to the
     block), otherwise ``output``."""
-    for path in _blocked_paths(record.get(TRACE_KEY) or {}):
-        if any(key.lower().startswith("input") for key in path):
+    for path, action in _actions(record.get(TRACE_KEY) or {}):
+        if action == "BLOCKED" and any(key.lower().startswith("input") for key in path):
             return "input"
     return "output"
 

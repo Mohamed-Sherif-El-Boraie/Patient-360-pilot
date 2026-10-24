@@ -52,3 +52,11 @@ def test_nothing_from_the_trace_is_copied_into_the_message(record):
 def test_there_are_two_messages_each_in_english_and_arabic():
     assert set(BLOCKED_MESSAGES) == {"input", "output"}
     assert all(set(m) == {"en", "ar"} and all(m.values()) for m in BLOCKED_MESSAGES.values())
+
+
+def test_an_intervention_that_only_replaced_personal_data_is_not_a_block():
+    """AWS reports INTERVENED also when it anonymized data; the model answer is still good then."""
+    anonymized = {"sensitiveInformationPolicy": {"piiEntities": [{"type": "NAME", "action": "ANONYMIZED"}]}}
+    assert not is_blocked(intervened(output=[{"id": anonymized}]))
+    assert is_blocked(intervened(output=[{"id": {**anonymized, **TOPIC}}]))      # anything BLOCKED still blocks
+    assert is_blocked({"amazon-bedrock-guardrailAction": "INTERVENED"})           # no trace: play safe
