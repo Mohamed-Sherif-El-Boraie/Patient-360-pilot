@@ -17,7 +17,7 @@ one patient's lab results contains:
     - reference: {low, high, range}. These are the official lab ranges; 
     - range: is the printed form (may include extra wording; for qualitative tests it is the expected result, e.g. "Negative")
     - lab_flag: High | Low (analyser cross-check only)
-    - alert: MEDICAL_ATTENTION | CRITICAL. Absent = no alert (normal, or not judged). Deterministic and authoritative
+    - alert: MEDICAL_ATTENTION | CRITICAL. MEDICAL_ATTENTION = outside the reference range (high, low or abnormal) without reaching a critical limit; CRITICAL = reached a critical limit. Absent = within range or not judged. Deterministic and authoritative
     - critical: {low, high, range_text, direction (critical_high | critical_low, present only if the limit is crossed)}
     - history[]: {history_date, history_value}, earlier results within 1 year, oldest first, excluding the current one
     - parameter_remark: lab note on the parameter

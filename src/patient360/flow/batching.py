@@ -43,8 +43,8 @@ class BatchTrigger:
         """The batch folder holds one file per visit and the 100-line file for AWS, named by the day the batch was made.
         The JSONL is written last: when it exists, the visit files exist too."""
         day = blob_day(self._now())
-        jsonl = "\n".join(_dump({"recordId": v.idempotency_key, "document": v.processed}) for v in claimed.visits)
-        files = {processed_path("batch", lane, day, v.idempotency_key, claimed.batch_id): _dump(v.processed)
+        jsonl = "\n".join(_dump({"recordId": v.idempotency_key, "modelInput": v.model_input}) for v in claimed.visits)
+        files = {processed_path("batch", lane, day, v.idempotency_key, claimed.batch_id): _dump(v.model_input)
                  for v in claimed.visits}
         files[batch_jsonl_path(lane, day, claimed.batch_id)] = jsonl
         try:

@@ -1,4 +1,4 @@
-import json
+﻿import json
 from datetime import UTC, datetime
 
 import pytest
@@ -6,6 +6,7 @@ import pytest
 from patient360.domain.rules.retrieval import CatalogueTest
 from patient360.flow.intake import Accepted, Intake
 from patient360.flow.process import Processor
+from patient360.prompts import PROMPT_AND_SCHEMA_BY_SOURCE
 from tests.fakes import FakeBlobs, FakeCatalogue, FakeStore
 
 SECRET = b"a-long-test-secret-value"
@@ -20,6 +21,11 @@ def receive(sample, name, blobs=None):
     outcome = Intake(store, blobs, SECRET, lambda: NOW).receive(json.dumps(visit).encode())
     assert isinstance(outcome, Accepted)
     return visit, outcome.idempotency_key, store, blobs
+
+
+def patient_data(model_input):
+    """The patient JSON inside the Bedrock request (the user message)."""
+    return json.loads(model_input["messages"][0]["content"][0]["text"])
 
 
 def catalogue_for(visit):
@@ -37,13 +43,13 @@ def test_an_urgent_or_on_demand_visit_is_written_to_its_lane_folder(sample, name
     assert (outcome.tier, outcome.lane, outcome.read_from) == (tier, lane, "blob")
     written = json.loads(blobs.files[f"processed/{folder}/{lane}/2026/10/24/{key}.json"])
     saved = store.visits[visit["visit_id"]]
-    assert written == saved["processed"] and saved["tier"] == tier and saved["stage"] == "processed"
+    assert written == saved["model_input"] and saved["tier"] == tier and saved["stage"] == "processed"
 
 
 def test_the_ai_json_has_no_ids_and_carries_the_retrieved_tests(sample):
     visit, _, store, blobs = receive(sample, "on_demand_critical")
     Processor(store, catalogue_for(visit), blobs).process(visit["visit_id"])
-    processed = store.visits[visit["visit_id"]]["processed"]
+    processed = patient_data(store.visits[visit["visit_id"]]["model_input"])
     assert processed["retrieved_tests"] == [{"test_name": "Extra test", "test_description": "why"}]
     assert not any(str(visit[field]) in json.dumps(processed) for field in ("patient_id", "visit_id"))
 
@@ -51,7 +57,7 @@ def test_the_ai_json_has_no_ids_and_carries_the_retrieved_tests(sample):
 def test_no_retrieved_tests_key_when_the_catalogue_gives_nothing(sample):
     visit, _, store, blobs = receive(sample, "urgent_mild")
     Processor(store, FakeCatalogue(), blobs).process(visit["visit_id"])
-    assert "retrieved_tests" not in store.visits[visit["visit_id"]]["processed"]
+    assert "retrieved_tests" not in patient_data(store.visits[visit["visit_id"]]["model_input"])
 
 
 def test_a_batch_visit_is_saved_in_the_database_only_until_its_batch_exists(sample):
@@ -71,4 +77,17 @@ def test_when_blob_is_down_the_database_copy_is_used(sample):
     visit, _, store, _ = receive(sample, "urgent_mild")
     outcome = Processor(store, catalogue_for(visit), FakeBlobs(down=True)).process(visit["visit_id"])
     saved = store.visits[visit["visit_id"]]
-    assert outcome.read_from == "postgresql" and saved["processed_read_from"] == "postgresql" and saved["processed"]
+    assert outcome.read_from == "postgresql" and saved["processed_read_from"] == "postgresql" and saved["model_input"]
+
+
+@pytest.mark.parametrize(("name", "source"), [("urgent_mild", "urgent"), ("on_demand_critical", "on-demand"),
+                                              ("batch_normal", "batch")])
+def test_each_source_gets_its_own_prompt_and_schema(sample, name, source):
+    visit, _, store, blobs = receive(sample, name)
+    Processor(store, catalogue_for(visit), blobs).process(visit["visit_id"])
+    model_input = store.visits[visit["visit_id"]]["model_input"]
+    prompt, schema = PROMPT_AND_SCHEMA_BY_SOURCE[source]
+    assert model_input["system"][0]["text"] == prompt
+    assert model_input["output_config"]["format"]["schema"] == schema
+    assert patient_data(model_input)["source"] == source
+

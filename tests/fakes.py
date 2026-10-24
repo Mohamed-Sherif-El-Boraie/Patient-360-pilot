@@ -1,4 +1,4 @@
-"""In-memory stand-ins for the stores, used by the core flow tests."""
+﻿"""In-memory stand-ins for the stores, used by the core flow tests."""
 from __future__ import annotations
 
 from patient360.domain.common.ids import format_batch_id
@@ -54,8 +54,9 @@ class FakeStore:
         return StoredVisit(visit_id, visit["idempotency_key"], visit["payload"]["source"], visit["received_at"],
                            visit["raw"])
 
-    def save_processed(self, visit_id, tier, processed, read_from):
-        self.visits[visit_id].update(tier=tier, processed=processed, stage="processed", processed_read_from=read_from)
+    def save_processed(self, visit_id, tier, model_input, read_from):
+        self.visits[visit_id].update(tier=tier, model_input=model_input, stage="processed",
+                                     processed_read_from=read_from)
 
     def claim_batch(self, lane, size):
         waiting = sorted((v for v in self.visits.values()
@@ -68,7 +69,7 @@ class FakeStore:
         batch_id = format_batch_id(lane, self.batch_numbers[lane])
         for visit in waiting[:size]:
             visit.update(batch_id=batch_id, stage="queued")
-        return ClaimedBatch(batch_id, [BatchVisit(v["idempotency_key"], v["processed"]) for v in waiting[:size]])
+        return ClaimedBatch(batch_id, [BatchVisit(v["idempotency_key"], v["model_input"]) for v in waiting[:size]])
 
     def set_batch_read_from(self, batch_id, read_from):
         for visit in self.visits.values():

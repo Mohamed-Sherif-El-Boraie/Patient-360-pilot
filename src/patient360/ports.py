@@ -1,4 +1,4 @@
-"""The few things the core flow asks of the outside world. Real versions come later; tests use ``tests/fakes.py``."""
+﻿"""The few things the core flow asks of the outside world. Real versions come later; tests use ``tests/fakes.py``."""
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
@@ -30,7 +30,7 @@ class StoredVisit:
 @dataclass(frozen=True)
 class BatchVisit:
     idempotency_key: str
-    processed: dict[str, Any]
+    model_input: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -53,9 +53,10 @@ class VisitStore(Protocol):
     def stored_visit(self, visit_id: int) -> StoredVisit:
         """The visit as received, with its raw bytes."""
 
-    def save_processed(self, visit_id: int, tier: str, processed: dict[str, Any],
+    def save_processed(self, visit_id: int, tier: str, model_input: dict[str, Any],
                        read_from: Literal["blob", "postgresql"]) -> None:
-        """One transaction: the tier, the processed JSON (new version), stage ``processed``, a pending work row."""
+        """One transaction: the tier, the Bedrock request ``model_input`` (new version), stage ``processed``, and a
+        pending work row."""
 
     def save_visit(self, payload: dict[str, Any], raw: bytes, idempotency_key: str, received_at: datetime,
                    read_from: Literal["blob", "postgresql"]) -> None:

@@ -1,4 +1,4 @@
-import json
+﻿import json
 from datetime import UTC, datetime
 
 import pytest
@@ -6,6 +6,7 @@ import pytest
 from patient360.flow.batching import BatchTrigger
 from patient360.flow.intake import Intake
 from patient360.flow.process import Processor
+from patient360.prompts import PROMPT_AND_SCHEMA_BY_SOURCE
 from tests.fakes import FakeBlobs, FakeCatalogue, FakeStore
 
 SECRET = b"a-long-test-secret-value"
@@ -52,7 +53,9 @@ def test_a_full_batch_writes_one_file_per_visit_and_the_jsonl(sample, parts):
     jsonl_path = f"processed/batch/{lane}-jsonls/2026/10/25/{batch.batch_id}.jsonl"
     lines = [json.loads(line) for line in blobs.files[jsonl_path].decode().splitlines()]
     assert sorted(line["recordId"] for line in lines) == sorted(keys) and blobs.files[jsonl_path] == batch.jsonl
-    assert all(set(line) == {"recordId", "document"} for line in lines)
+    assert all(set(line) == {"recordId", "modelInput"} for line in lines)
+    batch_prompt, _ = PROMPT_AND_SCHEMA_BY_SOURCE["batch"]
+    assert all(line["modelInput"]["system"][0]["text"] == batch_prompt for line in lines)
     assert all(v["stage"] == "queued" and v["batch_id"] == batch.batch_id for v in store.visits.values())
 
 
