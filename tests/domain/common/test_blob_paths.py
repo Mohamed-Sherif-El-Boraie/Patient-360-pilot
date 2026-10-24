@@ -3,10 +3,12 @@ from datetime import UTC, date, datetime, timedelta, timezone
 import pytest
 
 from patient360.domain.common.blob_paths import (
+    MergedOutput,
     batch_jsonl_path,
     blob_day,
     merged_output_jsonl_path,
     merged_output_path,
+    parse_merged_output_path,
     processed_path,
     raw_path,
     rejected_path,
@@ -125,3 +127,32 @@ def test_a_rejected_payload_without_a_usable_visit_is_named_by_a_hash_of_its_byt
     assert rejected_unknown_path(DAY, digest) == "raw/_rejected/unknown/2026/10/24/unknown_0123456789abcdef.json"
     with pytest.raises(ValueError):
         rejected_unknown_path(DAY, "../../etc/passwd")
+
+
+KEY32 = "a" * 32
+
+
+def test_a_blob_2_path_is_read_back_into_its_parts():
+    visit = parse_merged_output_path(f"aws-output-merged/on-demand/critical/2026/10/24/{KEY32}.json")
+    assert visit == MergedOutput("visit", "on-demand", "critical", date(2026, 10, 24), key=KEY32)
+    jsonl = parse_merged_output_path("aws-output-merged/batch/normal-jsonls/2026/10/25/normal_000001.jsonl")
+    assert jsonl == MergedOutput("batch_jsonl", "batch", "normal", date(2026, 10, 25), batch_id="normal_000001")
+    split = parse_merged_output_path(f"aws-output-merged/batch/critical/2026/10/25/critical_000002/{KEY32}.json")
+    assert split == MergedOutput("batch_visit", "batch", "critical", date(2026, 10, 25), key=KEY32,
+                                 batch_id="critical_000002")
+
+
+def test_a_path_built_by_us_is_read_back_the_same_way():
+    day = date(2026, 10, 24)
+    assert parse_merged_output_path(merged_output_path("urgent", "normal", day, KEY32)).key == KEY32
+    path = merged_output_path("batch", "critical", day, KEY32, "critical_000003")
+    assert parse_merged_output_path(path).batch_id == "critical_000003"
+    assert parse_merged_output_path(merged_output_jsonl_path("normal", day, "normal_000001")).kind == "batch_jsonl"
+
+
+@pytest.mark.parametrize("path", [
+    "processed/urgent/normal/2026/10/24/" + KEY32 + ".json", "aws-output-merged/urgent/normal/2026/13/45/x.json",
+    "aws-output-merged/urgent/normal/2026/10/24/../x.json", "aws-output-merged/other/normal/2026/10/24/x.json",
+    "aws-output-merged/urgent/normal/2026/10/24/x.txt", ""])
+def test_any_other_path_is_not_ours(path):
+    assert parse_merged_output_path(path) is None

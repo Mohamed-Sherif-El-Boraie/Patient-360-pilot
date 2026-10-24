@@ -19,15 +19,19 @@ from patient360.ports import (
 
 
 class FakeCatalogue:
-    def __init__(self, parameter_categories=None, tests_by_category=None) -> None:
+    def __init__(self, parameter_categories=None, tests_by_category=None, names_ar=None) -> None:
         self._parameter_categories = parameter_categories or {}
         self._tests_by_category = tests_by_category or {}
+        self._names_ar = names_ar or {}
 
     def parameter_categories(self):
         return self._parameter_categories
 
     def tests_by_category(self):
         return self._tests_by_category
+
+    def test_names_ar(self):
+        return self._names_ar
 
 
 class FakeBlobs:
@@ -195,6 +199,26 @@ class FakeStore:
             if unit.batch_id:
                 record["status"] = "failed"
             self._set_stage(unit, "failed")
+
+    # ---- receiving the AWS output ---------------------------------------------------------------
+    def find_visit(self, idempotency_key):
+        for visit_id, v in self.visits.items():
+            if v["idempotency_key"] == idempotency_key:
+                return self.stored_visit(visit_id)
+        return None
+
+    def has_output(self, visit_id):
+        return "internal_output" in self.visits[visit_id] or self.visits[visit_id].get("stage") == "failed"
+
+    def save_output(self, visit_id, internal_output, public_output):
+        self.visits[visit_id].update(internal_output=internal_output, public_output=public_output,
+                                     stage="post_processing")
+
+    def mark_output_failed(self, visit_id, error_type):
+        self.visits[visit_id].update(stage="failed", output_error=error_type)
+
+    def set_batch_status(self, batch_id, status):
+        self.batches[batch_id]["status"] = status
 
     # ---- sending the result to the Backend ------------------------------------------------------
     def add_result_ready(self, visit_id, body, analysis="visit"):

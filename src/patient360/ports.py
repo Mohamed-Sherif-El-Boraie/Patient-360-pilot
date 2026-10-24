@@ -95,6 +95,9 @@ class Catalogue(Protocol):
 
     def tests_by_category(self) -> Mapping[str, Sequence[CatalogueTest]]: ...
 
+    def test_names_ar(self) -> Mapping[str, str]:
+        """English test name -> Arabic test name (``tests.test_name_ar``), for the Arabic html."""
+
 
 class VisitStore(Protocol):
     def visit_exists(self, visit_id: int) -> bool: ...
@@ -132,6 +135,23 @@ class VisitStore(Protocol):
 
     def mark_failed_attempt(self, unit: WorkUnit, error_type: str, retry_at: datetime | None) -> None:
         """Count the failure and release the unit for ``retry_at``; ``None`` = give up: stage ``failed``."""
+
+    def find_visit(self, idempotency_key: str) -> StoredVisit | None:
+        """The visit that owns this key (AWS calls it ``recordId``), or ``None``."""
+
+    def has_output(self, visit_id: int) -> bool:
+        """Was this visit's AWS output already saved? (Blob events can arrive twice.)"""
+
+    def save_output(self, visit_id: int, internal_output: dict[str, Any], public_output: dict[str, Any]) -> None:
+        """One transaction: both versions of the output (internal keeps model and usage), the rows of the answer
+        (summary, recommendations, critical alerts, model call), stage ``post_processing``."""
+
+    def mark_output_failed(self, visit_id: int, error_type: str) -> None:
+        """The AWS output could not be used: stage ``failed``. The raw file stays in Blob 2."""
+
+    def set_batch_status(
+        self, batch_id: str, status: Literal["completed", "partially_completed", "failed"],
+    ) -> None: ...
 
     def claim_next_delivery(self, now: datetime) -> DeliveryUnit | None:
         """The next result to send, best source first (same order as the dispatcher), oldest first; results waiting for

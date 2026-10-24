@@ -10,7 +10,9 @@ The date folder is the day the visit was RECEIVED (UTC), so all files of a visit
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from typing import Literal
 
 SOURCES = frozenset({"on-demand", "urgent", "batch", "symptom-checker"})
 LANES = frozenset({"normal", "critical"})
@@ -101,6 +103,42 @@ def merged_output_jsonl_path(lane: str, day: date, batch_id: str) -> str:
     """Azure Blob 2: the merged results of a whole batch."""
     _check("batch", lane)
     return f"aws-output-merged/batch/{lane}-jsonls/{_day(day)}/{_name(batch_id, 'batch_id')}.jsonl"
+
+
+@dataclass(frozen=True)
+class MergedOutput:
+    """A file in Azure Blob 2, read back from its path."""
+    kind: Literal["visit", "batch_jsonl", "batch_visit"]
+    source: str
+    lane: str
+    day: date
+    key: str | None = None            # the idempotency key, for a visit file
+    batch_id: str | None = None
+
+
+_NAME = r"([A-Za-z0-9_-]{1,100})"
+_DATE = r"(\d{4})/(\d{2})/(\d{2})"
+_MERGED_VISIT = re.compile(
+    rf"^aws-output-merged/(on-demand|urgent|symptom-checker)/(normal|critical)/{_DATE}/{_NAME}\.json$")
+_MERGED_BATCH_JSONL = re.compile(rf"^aws-output-merged/batch/(normal|critical)-jsonls/{_DATE}/{_NAME}\.jsonl$")
+_MERGED_BATCH_VISIT = re.compile(rf"^aws-output-merged/batch/(normal|critical)/{_DATE}/{_NAME}/{_NAME}\.json$")
+
+
+def parse_merged_output_path(path: str) -> MergedOutput | None:
+    """What a Blob 2 path is, or ``None`` for any other file (not ours to handle)."""
+    try:
+        if m := _MERGED_VISIT.match(path):
+            source, lane, *day, key = m.groups()
+            return MergedOutput("visit", source, lane, date(*map(int, day)), key=key)
+        if m := _MERGED_BATCH_JSONL.match(path):
+            lane, *day, batch_id = m.groups()
+            return MergedOutput("batch_jsonl", "batch", lane, date(*map(int, day)), batch_id=batch_id)
+        if m := _MERGED_BATCH_VISIT.match(path):
+            lane, *day, batch_id, key = m.groups()
+            return MergedOutput("batch_visit", "batch", lane, date(*map(int, day)), key=key, batch_id=batch_id)
+    except ValueError:      # a date that does not exist, such as 2026/13/45
+        return None
+    return None
 
 
 def s3_processed_key(
