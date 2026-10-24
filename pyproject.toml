@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Patient-360 pilot: AI service (contracts, domain logic, adapters)"
 requires-python = ">=3.13"
 dependencies = [
+    "json-repair>=0.64.2",
     "pydantic>=2.7",
     "structlog>=26.1.0",
 ]

@@ -9,7 +9,6 @@ from patient360.flow.intake import Intake
 from patient360.flow.process import Processor
 from patient360.flow.results import OutputReceiver
 from patient360.flow.send_result import ResultSender
-from patient360.ports import BlobUnavailable
 from tests.fakes import FakeBackend, FakeBlobs, FakeCatalogue, FakeStore
 
 SECRET = b"a-long-test-secret-value"
@@ -119,6 +118,8 @@ def test_a_batch_file_is_split_and_every_visit_moves_on(world):
     assert all(v["public_output"]["source"] == 2 for v in visits)
 
 
+
+
 def test_one_bad_answer_in_a_batch_fails_only_that_visit(world):
     visits = world.add("batch_normal", 100, count=3)
     [batch] = BatchTrigger(world.store, world.blobs, 3).run()
@@ -129,36 +130,54 @@ def test_one_bad_answer_in_a_batch_fails_only_that_visit(world):
     assert [r.outcome for r in world.receiver().receive(path)] == ["saved", "invalid_output", "saved"]
     assert [v["stage"] for v in visits] == ["post_processing", "failed", "post_processing"]
     assert visits[1]["output_error"] == "invalid_ai_output"
-    rejected = f"aws-output-merged/_rejected/batch/2026/10/25/{keys[1]}.json"
-    assert world.out.files[rejected] == json.dumps(broken).encode()
     assert world.store.batches[batch.batch_id]["status"] == "partially_completed"
 
 
-def test_a_result_for_a_visit_we_do_not_know_is_kept_in_the_rejected_folder(world):
+def test_a_result_for_a_visit_we_do_not_know_is_ignored_and_saves_nothing(world):
     path = world.write("aws-output-merged/urgent/normal/2026/10/24/" + "a" * 32 + ".json", record("a" * 32))
     assert [r.outcome for r in world.receiver().receive(path)] == ["unknown_visit"]
-    rejected = "aws-output-merged/_rejected/urgent/2026/10/24/" + "a" * 32 + ".json"
-    assert world.out.files[rejected] == world.out.files[path]
+    assert list(world.out.files) == [path]                      # no other file was written
 
 
-def test_a_file_that_is_not_json_is_kept_in_the_rejected_folder_under_a_hash(world):
-    path = "aws-output-merged/urgent/normal/2026/10/24/" + "a" * 32 + ".json"
-    world.out.files[path] = b"not json at all"
-    assert [r.outcome for r in world.receiver().receive(path)] == ["invalid_output"]
-    [rejected] = [p for p in world.out.files if "/_rejected/urgent/2026/10/24/unknown_" in p]
-    assert world.out.files[rejected] == b"not json at all"
-
-
-def test_a_result_under_the_wrong_source_is_rejected_and_changes_nothing(world):
+def test_a_result_under_the_wrong_source_is_ignored_and_changes_nothing(world):
     [visit] = world.add("urgent_mild", 1)
     key = visit["idempotency_key"]
     path = world.write(f"aws-output-merged/on-demand/normal/2026/10/24/{key}.json", record(key))
     assert [r.outcome for r in world.receiver().receive(path)] == ["source_mismatch"]
     assert visit["stage"] == "processed" and "public_output" not in visit
-    assert f"aws-output-merged/_rejected/on-demand/2026/10/24/{key}.json" in world.out.files
 
 
-def test_a_blocked_result_gets_the_fixed_message_and_nothing_the_model_wrote(world):
+def test_a_file_that_is_not_json_at_all_is_ignored(world):
+    path = "aws-output-merged/urgent/normal/2026/10/24/" + "a" * 32 + ".json"
+    world.out.files[path] = b"not json at all"
+    assert [r.outcome for r in world.receiver().receive(path)] == ["invalid_output"]
+
+
+def test_a_file_with_broken_bytes_does_not_crash_the_receiver(world):
+    path = "aws-output-merged/urgent/normal/2026/10/24/" + "a" * 32 + ".json"
+    world.out.files[path] = b'{"recordId": "\xff\xfe broken"}'
+    assert [r.outcome for r in world.receiver().receive(path)] == ["unknown_visit"]
+
+
+def test_a_small_json_mistake_is_repaired_and_the_answer_is_still_checked(world):
+    [visit] = world.add("urgent_mild", 1)
+    key = visit["idempotency_key"]
+    path = f"aws-output-merged/urgent/normal/2026/10/24/{key}.json"
+    world.out.files[path] = (json.dumps(record(key))[:-1] + ",}").encode()          # a trailing comma
+    assert [r.outcome for r in world.receiver().receive(path)] == ["saved"]
+    assert visit["public_output"]["ai"]["summary"] == both("summary")
+
+
+def test_a_file_cut_short_that_repairs_into_a_wrong_answer_still_fails(world):
+    [visit] = world.add("urgent_mild", 1)
+    key = visit["idempotency_key"]
+    path = f"aws-output-merged/urgent/normal/2026/10/24/{key}.json"
+    world.out.files[path] = json.dumps(record(key))[:80].encode()                    # cut off inside the answer
+    assert [r.outcome for r in world.receiver().receive(path)] == ["invalid_output"]
+    assert visit["stage"] == "failed" and "public_output" not in visit
+
+
+def test_a_blocked_output_gets_our_own_problem_message_and_nothing_the_model_wrote(world):
     [visit] = world.add("urgent_mild", 1)
     key = visit["idempotency_key"]
     blocked = record(key, text=ai_text("BLOCKED-CONTENT-CANARY"))
@@ -167,14 +186,25 @@ def test_a_blocked_result_gets_the_fixed_message_and_nothing_the_model_wrote(wor
     assert [r.outcome for r in world.receiver().receive(path)] == ["blocked"]
     public = visit["public_output"]
     assert visit["stage"] == "post_processing" and "BLOCKED-CONTENT-CANARY" not in json.dumps(public)
-    assert public["ai"] == {"summary": BLOCKED_MESSAGES["default"], "simple_summary": None,
+    assert public["ai"] == {"summary": BLOCKED_MESSAGES["output"], "simple_summary": None,
                             "critical_alerts": None, "note": None, "recommendations": None}
-    assert BLOCKED_MESSAGES["default"]["en"] in public["html"]["en"]
-    assert BLOCKED_MESSAGES["default"]["ar"] in public["html"]["ar"]
+    assert BLOCKED_MESSAGES["output"]["en"] in public["html"]["en"]
+    assert BLOCKED_MESSAGES["output"]["ar"] in public["html"]["ar"]
     assert public["tests"] and public["patient_id"] == 7_000_001      # our own classification is still sent
     backend = FakeBackend()
     ResultSender(world.store, backend, lambda: NOW).run()
     assert backend.posts == [public]
+
+
+def test_a_blocked_input_gets_the_input_message(world):
+    [visit] = world.add("urgent_mild", 1)
+    key = visit["idempotency_key"]
+    blocked = {**record(key), "amazon-bedrock-guardrailAction": "INTERVENED",
+               "amazon-bedrock-trace": {"guardrail": {"input": {"id": {"wordPolicy": {
+                   "customWords": [{"match": "x", "action": "BLOCKED"}]}}}}}}
+    path = world.write(f"aws-output-merged/urgent/normal/2026/10/24/{key}.json", blocked)
+    world.receiver().receive(path)
+    assert visit["public_output"]["ai"]["summary"] == BLOCKED_MESSAGES["input"]
 
 
 def test_a_blocked_result_inside_a_batch_does_not_stop_the_others(world):
@@ -192,7 +222,6 @@ def test_a_blocked_result_inside_a_batch_does_not_stop_the_others(world):
     "aws-output-merged/batch/normal/2026/10/25/normal_000001/" + "a" * 32 + ".json",    # our own split file
     "aws-output-merged/symptom-checker/normal/2026/10/24/" + "a" * 32 + ".json",        # the symptom flow (Task 7)
     "aws-output-merged/urgent/normal/2026/10/24/readme.txt",
-    "aws-output-merged/_rejected/urgent/2026/10/24/" + "a" * 32 + ".json",                  # the rejected folder
     "somewhere/else.json",
 ])
 def test_files_that_are_not_a_visit_result_are_ignored(world, path):
@@ -202,23 +231,3 @@ def test_files_that_are_not_a_visit_result_are_ignored(world, path):
 
 def test_a_file_that_is_not_there_is_ignored(world):
     assert world.receiver().receive("aws-output-merged/urgent/normal/2026/10/24/" + "a" * 32 + ".json") == []
-
-
-
-def test_if_blob_fails_while_keeping_a_bad_file_the_visit_is_not_marked_failed_so_a_retry_can_finish(world):
-    [visit] = world.add("urgent_mild", 1)
-    key = visit["idempotency_key"]
-    path = world.write(f"aws-output-merged/urgent/normal/2026/10/24/{key}.json", record(key, '{"summary": "bad"}'))
-
-    class CannotWrite(FakeBlobs):
-        def put(self, path, data):
-            raise BlobUnavailable
-
-    world.out.__class__ = CannotWrite
-    with pytest.raises(BlobUnavailable):
-        world.receiver().receive(path)
-    assert visit["stage"] == "processed"                       # not "failed": the retry will see it again
-    world.out.__class__ = FakeBlobs
-    assert [r.outcome for r in world.receiver().receive(path)] == ["invalid_output"]
-    assert visit["stage"] == "failed"
-

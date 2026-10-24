@@ -1,7 +1,7 @@
 ﻿"""A result the guardrail blocked: the Backend gets one fixed message and nothing the model wrote.
 
-The message depends on WHY it was blocked, read from the guardrail trace of the AWS record. Only the kind of reason is
-used. Nothing from the trace text (matched words, topic names, personal data) is ever copied into the message.
+Two messages only: the guardrail refused what we sent (input), or it refused what the model wrote (output). Nothing from
+the trace (matched words, topic names, personal data) is ever copied into a message.
 """
 from __future__ import annotations
 
@@ -12,26 +12,15 @@ GUARDRAIL_ACTION_KEY = "amazon-bedrock-guardrailAction"
 TRACE_KEY = "amazon-bedrock-trace"
 
 BLOCKED_MESSAGES = {
-    "default": {
-        "en": "The AI summary for this result could not be shown because it did not pass our safety checks. "
-              "Please speak with your doctor about your results.",
-        "ar": "تعذّر عرض الملخص الذكي لهذه النتيجة لأنه لم يجتز فحوصات السلامة لدينا. "
-              "يرجى مراجعة طبيبك بخصوص نتائجك.",
-    },
     "input": {
-        "en": "We could not process some of the information provided because it contains content that is not "
-              "allowed. Please speak with your doctor about your results.",
-        "ar": "تعذّرت معالجة بعض المعلومات المُدخلة لأنها تحتوي على محتوى غير مسموح به. "
-              "يرجى مراجعة طبيبك بخصوص نتائجك.",
+        "en": "We could not process some of the information provided because it contains content that is not allowed.",
+        "ar": "تعذّرت معالجة بعض المعلومات المُدخلة لأنها تحتوي على محتوى غير مسموح به.",
     },
-    "ungrounded": {
-        "en": "The AI summary for this result could not be shown because it could not be confirmed against your "
-              "lab results. Please speak with your doctor about your results.",
-        "ar": "تعذّر عرض الملخص الذكي لهذه النتيجة لأنه لم يمكن التحقق منه مقابل نتائج التحاليل. "
-              "يرجى مراجعة طبيبك بخصوص نتائجك.",
+    "output": {
+        "en": "We had a problem on our side while preparing your summary. You will receive your recommendations soon.",
+        "ar": "حدثت مشكلة من جانبنا أثناء إعداد الملخص الخاص بك. ستصلك توصياتك قريبًا.",
     },
 }
-_REASON_BY_POLICY = {"contextualGroundingPolicy": "ungrounded"}
 
 
 def _guardrail_action(record: Mapping[str, Any]) -> Any:
@@ -61,16 +50,12 @@ def _blocked_paths(node: Any, path: tuple[str, ...] = ()) -> Iterator[tuple[str,
 
 
 def blocked_reason(record: Mapping[str, Any]) -> str:
-    """``input`` (the text we sent was refused), ``ungrounded`` or ``default``."""
-    trace = record.get(TRACE_KEY) or {}
-    paths = list(_blocked_paths(trace))
-    if any("input" in path for path in paths):
-        return "input"
-    for path in paths:
-        for key in path:
-            if key in _REASON_BY_POLICY:
-                return _REASON_BY_POLICY[key]
-    return "default"
+    """``input`` when the guardrail refused what we sent (a key such as ``input`` or ``inputAssessment`` leads to the
+    block), otherwise ``output``."""
+    for path in _blocked_paths(record.get(TRACE_KEY) or {}):
+        if any(key.lower().startswith("input") for key in path):
+            return "input"
+    return "output"
 
 
 def blocked_ai(record: Mapping[str, Any]) -> dict[str, Any]:
