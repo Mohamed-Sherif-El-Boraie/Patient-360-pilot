@@ -1,7 +1,19 @@
 """In-memory stand-ins for the stores, used by the core flow tests."""
 from __future__ import annotations
 
-from patient360.ports import BlobUnavailable
+from patient360.ports import BlobUnavailable, StoredVisit
+
+
+class FakeCatalogue:
+    def __init__(self, parameter_categories=None, tests_by_category=None) -> None:
+        self._parameter_categories = parameter_categories or {}
+        self._tests_by_category = tests_by_category or {}
+
+    def parameter_categories(self):
+        return self._parameter_categories
+
+    def tests_by_category(self):
+        return self._tests_by_category
 
 
 class FakeBlobs:
@@ -33,6 +45,14 @@ class FakeStore:
             raise RuntimeError("database down")
         self.visits[payload["visit_id"]] = {"payload": payload, "raw": raw, "idempotency_key": idempotency_key,
                                             "received_at": received_at, "read_from": read_from}
+
+    def stored_visit(self, visit_id):
+        visit = self.visits[visit_id]
+        return StoredVisit(visit_id, visit["idempotency_key"], visit["payload"]["source"], visit["received_at"],
+                           visit["raw"])
+
+    def save_processed(self, visit_id, tier, processed, read_from):
+        self.visits[visit_id].update(tier=tier, processed=processed, stage="processed", processed_read_from=read_from)
 
     def symptom_check_state(self, visit_id, patient_id):
         visit = self.visits.get(visit_id)
