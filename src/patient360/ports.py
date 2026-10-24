@@ -30,6 +30,28 @@ class S3Store(Protocol):
         """Upload to the bucket of ``source``. Writing here starts the AWS automation. Raises ``S3Unavailable``."""
 
 
+class BackendUnavailable(Exception):
+    """A timeout, no connection, 429 or a 5xx from the Backend: the same call may work later."""
+
+
+class BackendRejected(Exception):
+    """The Backend answered 4xx (not 429): the same body would be refused again, so we do not retry."""
+
+
+class BackendClient(Protocol):
+    def post_result(self, body: dict[str, Any]) -> None:
+        """One result, one call. Raises ``BackendUnavailable`` or ``BackendRejected``."""
+
+
+@dataclass(frozen=True)
+class DeliveryUnit:
+    """One result ready to be sent to the Backend."""
+    visit_id: int
+    source: str                                   # urgent, on-demand, symptom-checker or batch
+    attempts: int                                 # failed tries so far
+    analysis: Literal["visit", "symptom"] = "visit"
+
+
 @dataclass(frozen=True)
 class StoredVisit:
     visit_id: int
@@ -110,6 +132,19 @@ class VisitStore(Protocol):
 
     def mark_failed_attempt(self, unit: WorkUnit, error_type: str, retry_at: datetime | None) -> None:
         """Count the failure and release the unit for ``retry_at``; ``None`` = give up: stage ``failed``."""
+
+    def claim_next_delivery(self, now: datetime) -> DeliveryUnit | None:
+        """The next result to send, best source first (same order as the dispatcher), oldest first; results waiting for
+        a retry are skipped until their time. One worker per result (``FOR UPDATE SKIP LOCKED``)."""
+
+    def public_output_of(self, unit: DeliveryUnit) -> dict[str, Any]:
+        """The result exactly as the Backend gets it (the saved ``output_public``)."""
+
+    def mark_delivered(self, unit: DeliveryUnit) -> None:
+        """Stage ``delivered`` (``delivered_symptom``), work row ``delivered``, the attempt recorded."""
+
+    def mark_delivery_failed_attempt(self, unit: DeliveryUnit, error_type: str, retry_at: datetime | None) -> None:
+        """Count the failure and release the result for ``retry_at``; ``None`` = give up: stage ``failed``."""
 
     def set_batch_read_from(self, batch_id: str, read_from: Literal["blob", "postgresql"]) -> None:
         """Where the batch's visits are read from once the batch files were (or could not be) written."""

@@ -7,7 +7,15 @@ from patient360.domain.builders.ai_input import SOURCE_NAMES
 from patient360.domain.common.ids import format_batch_id
 from patient360.domain.rules.classify import LANE_BY_TIER
 from patient360.domain.rules.dispatch import SOURCE_PRIORITY
-from patient360.ports import BatchVisit, BlobUnavailable, ClaimedBatch, S3Unavailable, StoredVisit, WorkUnit
+from patient360.ports import (
+    BatchVisit,
+    BlobUnavailable,
+    ClaimedBatch,
+    DeliveryUnit,
+    S3Unavailable,
+    StoredVisit,
+    WorkUnit,
+)
 
 
 class FakeCatalogue:
@@ -52,6 +60,19 @@ class FakeS3:
             raise S3Unavailable
         self.files[(source, key)] = data
         self.uploads.append((source, key))
+
+
+class FakeBackend:
+    """Stands in for the Backend results endpoint. Set ``raises`` to an exception class to make every call fail."""
+
+    def __init__(self) -> None:
+        self.posts: list[dict] = []
+        self.raises: type[Exception] | None = None
+
+    def post_result(self, body: dict) -> None:
+        if self.raises:
+            raise self.raises
+        self.posts.append(body)
 
 
 class FakeStore:
@@ -174,6 +195,50 @@ class FakeStore:
             if unit.batch_id:
                 record["status"] = "failed"
             self._set_stage(unit, "failed")
+
+    # ---- sending the result to the Backend ------------------------------------------------------
+    def add_result_ready(self, visit_id, body, analysis="visit"):
+        """Stand-in for the AWS output flow (a later task): a result whose public JSON is ready to send."""
+        record = self.symptom_checks[visit_id] if analysis == "symptom" else self.visits[visit_id]
+        record.update(public_output=body, stage="post_processing_symptom" if analysis == "symptom"
+                      else "post_processing")
+
+    def _deliveries(self):
+        for visit_id, v in self.visits.items():
+            if v.get("stage") == "post_processing":
+                name = SOURCE_NAMES[v["payload"]["source"]]
+                yield SOURCE_PRIORITY[name], v["received_at"], v, DeliveryUnit(
+                    visit_id, name, v.get("delivery_attempts", 0))
+        for visit_id, s in self.symptom_checks.items():
+            if s.get("stage") == "post_processing_symptom":
+                yield SOURCE_PRIORITY["symptom-checker"], s["received_at"], s, DeliveryUnit(
+                    visit_id, "symptom-checker", s.get("delivery_attempts", 0), "symptom")
+
+    def claim_next_delivery(self, now):
+        ready = [item for item in self._deliveries()
+                 if not item[2].get("delivery_claimed") and (item[2].get("delivery_retry_at") or now) <= now]
+        if not ready:
+            return None
+        _, _, record, unit = min(ready, key=lambda item: item[:2])
+        record["delivery_claimed"] = True
+        return unit
+
+    def _delivery_record(self, unit):
+        return (self.symptom_checks if unit.analysis == "symptom" else self.visits)[unit.visit_id]
+
+    def public_output_of(self, unit):
+        return self._delivery_record(unit)["public_output"]
+
+    def mark_delivered(self, unit):
+        record = self._delivery_record(unit)
+        record.update(delivery_claimed=False, stage="delivered_symptom" if unit.analysis == "symptom" else "delivered")
+
+    def mark_delivery_failed_attempt(self, unit, error_type, retry_at):
+        record = self._delivery_record(unit)
+        record.update(delivery_claimed=False, delivery_attempts=record.get("delivery_attempts", 0) + 1,
+                      delivery_error=error_type, delivery_retry_at=retry_at)
+        if retry_at is None:
+            record["stage"] = "failed_symptom" if unit.analysis == "symptom" else "failed"
 
     # ---- the symptom check and the rejected payloads ------------------------------------------
     def symptom_check_state(self, visit_id, patient_id):
