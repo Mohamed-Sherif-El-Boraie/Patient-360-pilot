@@ -4,6 +4,9 @@ version = "0.1.0"
 description = "Patient-360 pilot: AI service (contracts, domain logic, adapters)"
 requires-python = ">=3.13"
 dependencies = [
+    "azure-identity>=1.26.0",
+    "azure-storage-blob>=12.31.0",
+    "boto3>=1.43.118",
     "json-repair>=0.64.2",
     "psycopg-pool>=3.2",
     "psycopg[binary]>=3.2",

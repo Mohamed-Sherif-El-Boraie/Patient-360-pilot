@@ -86,14 +86,14 @@ def test_descriptive_results_use_plain_text_and_history(db, store, sample):
     payload = sample("descriptive_only")
     payload["descriptive_results"][0]["text"] = "<p>No <b>deletions</b> found</p>"
     payload["descriptive_results"][0]["history"] = [
-        {"history_visit_id": 7, "history_date": "2026-01-02", "history_value": "old text"}]
+        {"history_visit_id": 7, "history_date": "2026-01-02", "history_value": "<p>Old <i>text</i><br>here</p>"}]
     _save(store, payload)
 
     [result] = seed.fetch(db, "SELECT * FROM descriptive_results")
     assert (result["test_id"], result["status"]) == (107, "text")
     assert "<" not in result["text_value"] and "deletions" in result["text_value"]
-    [history] = seed.fetch(db, "SELECT * FROM descriptive_result_history")
-    assert (history["history_visit_id"], history["history_value"]) == (7, "old text")
+    [history] = seed.fetch(db, "SELECT * FROM descriptive_result_history")      # the history is plain text too
+    assert (history["history_visit_id"], history["history_value"]) == (7, "Old text\nhere")
 
 
 def test_unknown_company_test_and_parameter_get_placeholders(db, store, sample):

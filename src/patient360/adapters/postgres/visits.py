@@ -10,6 +10,7 @@ from psycopg.types.json import Jsonb
 
 from patient360.adapters.postgres.db import Database, insert_payload, set_stage
 from patient360.domain.builders.ai_input import build_ai_input
+from patient360.domain.payload.values import html_to_plain_text
 from patient360.domain.rules.logic import lab_flag_status
 from patient360.ports import StoredSymptomCheck, StoredVisit
 
@@ -70,7 +71,7 @@ class VisitsMixin:
                         "INSERT INTO descriptive_result_history (visit_id, test_id, history_visit_id, history_date, "
                         "history_value) VALUES (%s, %s, %s, %s, %s)",
                         (visit_id, test_id, point["history_visit_id"], point["history_date"],
-                         _text(point["history_value"])))
+                         _text(html_to_plain_text(point["history_value"]))))      # HTML in, plain text stored
             for answer in sent["visit_answer_list"]:
                 conn.execute("INSERT INTO visit_answers (visit_id, preparation_id, preparation_name, answer) "
                              "VALUES (%s, %s, %s, %s)",
