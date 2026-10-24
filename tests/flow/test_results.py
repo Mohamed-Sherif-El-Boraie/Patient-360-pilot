@@ -220,7 +220,6 @@ def test_a_blocked_result_inside_a_batch_does_not_stop_the_others(world):
 
 @pytest.mark.parametrize("path", [
     "aws-output-merged/batch/normal/2026/10/25/normal_000001/" + "a" * 32 + ".json",    # our own split file
-    "aws-output-merged/symptom-checker/normal/2026/10/24/" + "a" * 32 + ".json",        # the symptom flow (Task 7)
     "aws-output-merged/urgent/normal/2026/10/24/readme.txt",
     "somewhere/else.json",
 ])

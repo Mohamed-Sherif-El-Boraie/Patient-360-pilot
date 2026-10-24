@@ -13,6 +13,7 @@ from patient360.ports import (
     ClaimedBatch,
     DeliveryUnit,
     S3Unavailable,
+    StoredSymptomCheck,
     StoredVisit,
     WorkUnit,
 )
@@ -216,12 +217,34 @@ class FakeStore:
         record = self.symptom_checks[visit_id] if analysis == "symptom" else self.visits[visit_id]
         return "internal_output" in record or str(record.get("stage")).startswith("failed")
 
-    def save_output(self, visit_id, internal_output, public_output):
-        self.visits[visit_id].update(internal_output=internal_output, public_output=public_output,
-                                     stage="post_processing")
+    def _analysis_record(self, visit_id, analysis):
+        return self.symptom_checks[visit_id] if analysis == "symptom" else self.visits[visit_id]
 
-    def mark_output_failed(self, visit_id, error_type):
-        self.visits[visit_id].update(stage="failed", output_error=error_type)
+    def save_output(self, visit_id, internal_output, public_output, analysis="visit"):
+        self._analysis_record(visit_id, analysis).update(
+            internal_output=internal_output, public_output=public_output,
+            stage="post_processing_symptom" if analysis == "symptom" else "post_processing")
+
+    def mark_output_failed(self, visit_id, error_type, analysis="visit"):
+        self._analysis_record(visit_id, analysis).update(
+            stage="failed_symptom" if analysis == "symptom" else "failed", output_error=error_type)
+
+    def stored_symptom_check(self, visit_id):
+        symptom = self.symptom_checks[visit_id]
+        return StoredSymptomCheck(visit_id, symptom["received_at"], symptom["raw"])
+
+    def visit_ai_answer(self, visit_id):
+        output = self.visits[visit_id].get("public_output")
+        return output["ai"] if output else None
+
+    def save_symptom_processed(self, visit_id, model_input, read_from):
+        self.symptom_checks[visit_id].update(model_input=model_input, stage="processed_symptom",
+                                             processed_read_from=read_from)
+
+    def symptoms_waiting_for_processing(self, received_before):
+        waiting = [(s["received_at"], visit_id) for visit_id, s in self.symptom_checks.items()
+                   if s.get("stage") == "received_symptom" and s["received_at"] < received_before]
+        return [visit_id for _, visit_id in sorted(waiting)]
 
     def set_batch_status(self, batch_id, status):
         self.batches[batch_id]["status"] = status
@@ -281,7 +304,7 @@ class FakeStore:
         if self.fail_on_save:
             raise RuntimeError("database down")
         self.symptom_checks[payload["visit_id"]] = {"payload": payload, "raw": raw, "received_at": received_at,
-                                                    "read_from": read_from}
+                                                    "read_from": read_from, "stage": "received_symptom"}
 
     def save_rejected(self, source_id, raw, errors, blob_path):
         self.rejected.append({"source_id": source_id, "raw": raw, "errors": errors, "blob_path": blob_path})

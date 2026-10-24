@@ -62,6 +62,13 @@ class StoredVisit:
 
 
 @dataclass(frozen=True)
+class StoredSymptomCheck:
+    visit_id: int
+    received_at: datetime
+    raw: bytes
+
+
+@dataclass(frozen=True)
 class BatchVisit:
     idempotency_key: str
     model_input: dict[str, Any]
@@ -146,12 +153,29 @@ class VisitStore(Protocol):
     def has_output(self, visit_id: int, analysis: Literal["visit", "symptom"] = "visit") -> bool:
         """Was the AWS output of this visit (or of its symptom check) already saved? Blob events can arrive twice."""
 
-    def save_output(self, visit_id: int, internal_output: dict[str, Any], public_output: dict[str, Any]) -> None:
+    def save_output(self, visit_id: int, internal_output: dict[str, Any], public_output: dict[str, Any],
+                    analysis: Literal["visit", "symptom"] = "visit") -> None:
         """One transaction: both versions of the output (internal keeps model and usage), the rows of the answer
-        (summary, recommendations, critical alerts, model call), stage ``post_processing``."""
+        (summary, recommendations, critical alerts, model call), stage ``post_processing`` (``_symptom``)."""
 
-    def mark_output_failed(self, visit_id: int, error_type: str) -> None:
-        """The AWS output could not be used: stage ``failed``. The raw file stays in Blob 2."""
+    def mark_output_failed(self, visit_id: int, error_type: str,
+                           analysis: Literal["visit", "symptom"] = "visit") -> None:
+        """The AWS output could not be used: stage ``failed`` (``failed_symptom``). The file stays in Blob 2."""
+
+    def stored_symptom_check(self, visit_id: int) -> StoredSymptomCheck:
+        """The symptom check of a visit as received, with its raw bytes."""
+
+    def visit_ai_answer(self, visit_id: int) -> dict[str, Any] | None:
+        """The ``ai`` object of the visit's saved result (English and Arabic), or ``None`` while it has none."""
+
+    def save_symptom_processed(self, visit_id: int, model_input: dict[str, Any],
+                               read_from: Literal["blob", "postgresql"]) -> None:
+        """One transaction: the symptom request ``model_input`` (analysis ``symptom``), stage ``processed_symptom``, and
+        a pending work row."""
+
+    def symptoms_waiting_for_processing(self, received_before: datetime) -> list[int]:
+        """Visit ids whose symptom check is still at stage ``received_symptom`` and arrived before ``received_before``,
+        oldest first: cut short by a restart, or waiting for the visit's own result."""
 
     def set_batch_status(
         self, batch_id: str, status: Literal["completed", "partially_completed", "failed"],

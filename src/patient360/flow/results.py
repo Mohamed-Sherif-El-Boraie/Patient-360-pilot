@@ -18,6 +18,9 @@ from patient360.ports import BlobStore, Catalogue, StoredVisit, VisitStore
 
 log = structlog.get_logger()
 
+SYMPTOM_CHECKER = "symptom-checker"
+SYMPTOM_CHECKER_ID = 3
+Analysis = Literal["visit", "symptom"]
 Outcome = Literal["saved", "blocked", "duplicate", "unknown_visit", "source_mismatch", "invalid_output"]
 
 
@@ -48,8 +51,8 @@ class OutputReceiver:
         """Handle one new file of Blob 2. A visit file holds one result, a batch JSONL holds one per line.
         Files that are not a result (our own split files, anything else) are ignored."""
         found = parse_merged_output_path(path)
-        if found is None or found.kind == "batch_visit" or found.source == "symptom-checker":
-            return []      # a symptom-check answer has its own flow (Task 7)
+        if found is None or found.kind == "batch_visit":
+            return []
         data = self._blobs.get(path)      # BlobUnavailable is not caught: the event is tried again later
         if data is None:
             return []
@@ -71,28 +74,29 @@ class OutputReceiver:
         stored = self._store.find_visit(record_id) if isinstance(record_id, str) else None
         if stored is None:
             return self._ignore(found, record_id, "unknown_visit")
-        if SOURCE_NAMES[stored.source_id] != found.source:
-            return self._ignore(found, record_id, "source_mismatch")
-        if self._store.has_output(stored.visit_id):
+        analysis: Analysis = "symptom" if found.source == SYMPTOM_CHECKER else "visit"
+        if analysis == "visit" and SOURCE_NAMES[stored.source_id] != found.source:
+            return self._ignore(found, record_id, "source_mismatch")     # a symptom answer has the visit's key
+        if self._store.has_output(stored.visit_id, analysis):
             return Received(record_id, "duplicate")
         if is_blocked(record):      # never read the model's text: the Backend gets the fixed message
-            self._save(found, text, stored, record, blocked_ai(record))
+            self._save(found, text, stored, record, blocked_ai(record), analysis)
             return Received(record_id, "blocked")
         try:
             ai = AiAnswer.model_validate(_loads(record["content"][0]["text"])).for_backend()
         except (ValidationError, ValueError, KeyError, IndexError, TypeError):
-            self._store.mark_output_failed(stored.visit_id, "invalid_ai_output")
+            self._store.mark_output_failed(stored.visit_id, "invalid_ai_output", analysis)
             log.warning("invalid_ai_output", source=found.source, status="failed")
             return Received(record_id, "invalid_output")
-        self._save(found, text, stored, record, ai)
+        self._save(found, text, stored, record, ai, analysis)
         return Received(record_id, "saved")
 
     def _save(self, found: MergedOutput, text: str, stored: StoredVisit, record: dict[str, Any],
-              ai: dict[str, Any]) -> None:
+              ai: dict[str, Any], analysis: Analysis) -> None:
         if found.batch_id:      # a batch result also gets its own file, so the folder tree is complete
             split_path = merged_output_path("batch", found.lane, found.day, record["recordId"], found.batch_id)
             self._blobs.put(split_path, text.encode())
-        self._store.save_output(stored.visit_id, record, self._public_output(stored, ai))
+        self._store.save_output(stored.visit_id, record, self._public_output(stored, ai, analysis), analysis)
         log.info("output_saved", source=found.source, stage="post_processing")
 
     def _ignore(self, found: MergedOutput, record_id: object, outcome: Outcome) -> Received:
@@ -100,9 +104,13 @@ class OutputReceiver:
         log.warning("output_ignored", source=found.source, status=outcome)
         return Received(record_id if isinstance(record_id, str) else None, outcome)
 
-    def _public_output(self, stored: StoredVisit, ai: dict[str, Any]) -> dict[str, Any]:
+    def _public_output(self, stored: StoredVisit, ai: dict[str, Any], analysis: Analysis) -> dict[str, Any]:
+        """The symptom result is the visit result with the new answer: source 3, and each test's reason in the html."""
         raw = json.loads(stored.raw)
         built = build_ai_input(raw)
+        symptom = analysis == "symptom"
         return build_backend_output(
-            patient_id=raw["patient_id"], visit_id=stored.visit_id, source=stored.source_id, rows=built.rows,
-            descriptive_rows=built.descriptive_rows, ai=ai, arabic_test_names=self._catalogue.test_names_ar())
+            patient_id=raw["patient_id"], visit_id=stored.visit_id,
+            source=SYMPTOM_CHECKER_ID if symptom else stored.source_id, rows=built.rows,
+            descriptive_rows=built.descriptive_rows, ai=ai, arabic_test_names=self._catalogue.test_names_ar(),
+            html_reasons=symptom)

@@ -1,4 +1,4 @@
-"""The result sent to the Backend: ids, each parameter's status and alert, the AI answer, packages and html."""
+﻿"""The result sent to the Backend: ids, each parameter's status and alert, the AI answer, packages and html."""
 from __future__ import annotations
 
 import copy
@@ -12,7 +12,7 @@ def build_backend_output(
     *, patient_id: int, visit_id: int, source: int, rows: Sequence[Mapping[str, Any]],
     ai: Mapping[str, Any], descriptive_rows: Sequence[Mapping[str, Any]] = (),
     packages: Sequence[Mapping[str, Any]] | None = None, html: Mapping[str, Any] | None = None,
-    arabic_test_names: Mapping[str, str] | None = None,
+    arabic_test_names: Mapping[str, str] | None = None, html_reasons: bool = False,
 ) -> dict[str, Any]:
     """``rows`` and ``descriptive_rows`` come from ``build_ai_input``.
     A result with no alert has no ``alert`` key.
@@ -35,5 +35,5 @@ def build_backend_output(
     if descriptive_rows:
         output["descriptive_results"] = [{"test_id": r["test_id"], "status": r["status"]} for r in descriptive_rows]
     output["ai"] = ai_out
-    output["html"] = dict(html) if html is not None else build_html(ai_out, arabic_test_names)
+    output["html"] = dict(html) if html is not None else build_html(ai_out, arabic_test_names, html_reasons)
     return output
