@@ -12,6 +12,7 @@ from patient360.domain.builders.ai_input import SOURCE_NAMES
 from patient360.domain.common.blob_paths import blob_day, raw_path, rejected_path, rejected_unknown_path
 from patient360.domain.common.ids import make_idempotency_key
 from patient360.domain.payload.validate import Invalid, validate_payload
+from patient360.domain.payload.values import whole_number_from_text
 from patient360.ports import BlobStore, BlobUnavailable, VisitStore
 
 SYMPTOM_CHECKER = 3
@@ -58,7 +59,7 @@ def _peek(raw: bytes) -> tuple[int | None, int | None]:
         return None, None
     if not isinstance(obj, dict):
         return None, None
-    source, visit = obj.get("source"), obj.get("visit_id")
+    source, visit = whole_number_from_text(obj.get("source")), obj.get("visit_id")
     source = source if type(source) is int and source in SOURCE_NAMES else None
     visit = visit if type(visit) is int and visit >= 1 else None
     return source, visit
@@ -69,7 +70,10 @@ class Intake:
                  max_bytes: int | None = None) -> None:
         self._store, self._blobs, self._secret, self._now, self._max_bytes = store, blobs, secret, now, max_bytes
 
-    def receive(self, raw: bytes) -> Accepted | Duplicate | Rejected | VisitNotFound | SymptomCheckerClosed | TooLarge:
+    def receive(self, raw: bytes, *, symptom_check: bool | None = None,
+                ) -> Accepted | Duplicate | Rejected | VisitNotFound | SymptomCheckerClosed | TooLarge:
+        """``symptom_check``: True when the call came to the symptom-check endpoint, False for the visit endpoint (the
+        other kind of payload is refused); None accepts both."""
         if self._max_bytes is not None and len(raw) > self._max_bytes:
             return TooLarge(len(raw), self._max_bytes)
         received_at = self._now()
@@ -78,6 +82,10 @@ class Intake:
             return self._reject(raw, result.errors, received_at)
         payload = result.payload.model_dump()
         source_id, visit_id, patient_id = payload["source"], payload["visit_id"], payload["patient_id"]
+        if symptom_check is not None and (source_id == SYMPTOM_CHECKER) != symptom_check:
+            wanted = [SYMPTOM_CHECKER] if symptom_check else sorted(set(SOURCE_NAMES) - {SYMPTOM_CHECKER})
+            return self._reject(raw, [{"loc": ["source"], "msg": f"source must be one of {wanted} on this endpoint",
+                                       "type": "wrong_endpoint"}], received_at)
         if source_id == SYMPTOM_CHECKER:
             state = self._store.symptom_check_state(visit_id, patient_id)
             if state == "no_visit":

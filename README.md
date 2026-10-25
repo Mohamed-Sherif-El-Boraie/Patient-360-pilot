@@ -15,7 +15,7 @@ AI Service - that turns a patient's LIMS lab results into a plain-language repor
 
 ```mermaid
 flowchart TD
-    A["Backend sends a visit JSON<br/>(app service: batch, urgent, on-demand<br/>wrapper: symptom-checker)"] --> B["POST /api/v1/visits<br/>(Intake)"]
+    A["Backend sends a visit JSON<br/>(app service: batch, urgent, on-demand<br/>wrapper: symptom-checker)"] --> B["POST /api/v1/visits or<br/>/api/v1/symptom-checks<br/>(Intake)"]
     B --> C{"Valid JSON?"}
     C -- "no" --> R["Answer 422<br/>keep it in rejected_payloads"]
     C -- "yes" --> D{"Already received?"}
@@ -174,7 +174,7 @@ Small helpers for reading numbers and cleaning text.
 
 | Function | What it does | Output |
 |---|---|---|
-| `age_days_as_number(value)` | Turns whole-number text ("19200", " 28 ") into a number; anything else is returned as it is. | A number, or the value unchanged. |
+| `whole_number_from_text(value)` | Turns whole-number text ("19200", " 28 ") into a number; anything else is returned as it is. | A number, or the value unchanged. |
 | `parse_numeric(value)` | Removes spaces and reads the number at the start. Refuses "0,5" style commas, titres like "1:64", dates and ranges like "5-10". | A whole number or decimal, or None if it is not a plain number. |
 | `remove_empty_values(value)` | Goes through lists and dictionaries and removes None, empty text and empty containers. Keeps 0 and False. | The cleaned data, or None if nothing is left. |
 | `_TextOnly` | (helper) A reader for HTML that keeps only the visible text and adds line breaks for tags like `<br>` and `<p>`. | an object with the collected text `parts` |
@@ -571,7 +571,8 @@ The web application: receives visits, receives new-file events from Azure, and a
 | `require_api_key(x_api_key)` | (helper) Checks the X-API-Key header against the secret key, if one is configured. | Nothing, or a 401 answer. |
 | `visit_body(request)` | (helper) Refuses a body whose declared size is over the limit before reading it, else reads it. | The body bytes, or a 413 answer. |
 | `event_body(request)` | (helper) Reads the request body as it is. | The body bytes. |
-| `POST /api/v1/visits` | Receives a visit or symptom check from the Backend, needs the API key; processing continues in the background. | 202 Accepted, 200 Duplicate, 422 invalid, 404 VISIT_NOT_FOUND, 409 SYMPTOM_CHECKER_CLOSED, 413 too large, 401 bad key, 500 error. |
+| `POST /api/v1/visits` | Receives a visit (source 1, 2 or 4) from the Backend app service; a symptom check sent here is refused (422 `wrong_endpoint`). `source` may arrive as text ("1"). The API key is checked only if `INBOUND_API_KEY` is set. Processing continues in the background. | 202 Accepted, 200 Duplicate, 422 invalid, 413 too large, 401 bad key, 500 error. |
+| `POST /api/v1/symptom-checks` | Receives a symptom check (source 3) from the wrapper; a visit sent here is refused (422 `wrong_endpoint`). | 202 Accepted, 200 Duplicate, 422 invalid, 404 VISIT_NOT_FOUND, 409 SYMPTOM_CHECKER_CLOSED, 413 too large, 401 bad key, 500 error. |
 | `POST /api/v1/blob-events` | Event Grid webhook for new files in Blob 2; answers the setup handshake or saves each new result file. | 200 with count or validation code, 400 bad payload, 401 bad key, 500 error (so Event Grid retries). |
 | `GET /health` | Checks that the database answers a simple query. | 200 status "ok", or 503 "database_unavailable". |
 
@@ -698,7 +699,7 @@ The receiving side: saves visits, symptom checks and rejected requests, and find
 | `VisitsMixin.stored_visit(visit_id)` | Loads a visit by its id, with its raw bytes. | A `StoredVisit`; raises `LookupError` if not found. |
 | `VisitsMixin.find_visit(idempotency_key)` | Looks for a visit by its idempotency key (the key that stops double saving). | A `StoredVisit`, or None. |
 | `VisitsMixin.visits_waiting_for_processing(received_before)` | Finds visits received before the cutoff that have no work row yet. | A list of visit ids, oldest first. |
-| `VisitsMixin.symptom_check_state(visit_id, patient_id)` | Checks if a symptom check may be accepted for this visit and patient; reads `symptom_flag` from the visit's newest saved result. | "no_visit", "already_used", "closed" (flag false) or "ok" (flag true, missing, or no result yet). |
+| `VisitsMixin.symptom_check_state(visit_id, patient_id)` | Checks if a symptom check may be accepted for this visit and patient; reads the `visits.symptom_flag` column (set when the visit's result is saved). | "no_visit", "already_used", "closed" (flag false) or "ok" (flag true, or no result yet). |
 | `VisitsMixin.save_symptom_check(payload, raw, received_at, read_from)` | Saves the symptom text and arrival time on the visit, sets stage "received_symptom", and stores the raw bytes. | Nothing returned. |
 | `VisitsMixin.stored_symptom_check(visit_id)` | Loads the saved symptom check with its raw bytes. | A `StoredSymptomCheck`; raises `LookupError` if none. |
 | `VisitsMixin.symptoms_waiting_for_processing(received_before)` | Finds symptom checks received before the cutoff that have no work row yet. | A list of visit ids, oldest first. |

@@ -161,6 +161,20 @@ def test_save_output_of_a_symptom_check(db, store, ready):
     assert stage_of(db) == "post_processing_symptom"
 
 
+def test_the_visit_result_sets_the_symptom_flag_column_but_a_symptom_result_does_not(db, store, ready):
+    def flag():
+        return fetch(db, "SELECT symptom_flag FROM visits")[0]["symptom_flag"]
+
+    assert flag() is None                                                   # no result yet
+    store.save_output(1, internal_output(), public_output(1) | {"symptom_flag": False})
+    assert flag() is False
+    store.save_output(1, internal_output(), public_output(1) | {"symptom_flag": True})
+    assert flag() is True                                                   # a new visit result replaces it
+    symptom = public_output(1, source=3) | {"symptom_flag": False}
+    store.save_output(1, internal_output(), symptom, "symptom")
+    assert flag() is True                                                   # a symptom result is ignored
+
+
 def test_saving_twice_replaces_the_rows_and_keeps_the_payload_history(db, store, ready):
     store.save_output(1, internal_output(), public_output(1))
     store.save_output(1, internal_output(), public_output(1, [recommendation("Old Test")]))

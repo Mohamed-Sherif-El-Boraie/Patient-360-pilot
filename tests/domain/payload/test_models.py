@@ -33,7 +33,15 @@ def test_the_source_number_picks_the_model(sample):
     assert isinstance(validate_payload(raw(symptom)), Invalid)
 
 
-@pytest.mark.parametrize("source", [0, 5, "urgent", "1", None, True, 1.0, [1]])
+@pytest.mark.parametrize("name, source", [("urgent_mild", "1"), ("batch_normal", " 2 "), ("symptom_check", "3")])
+def test_a_source_sent_as_text_is_read_as_a_number(sample, name, source):
+    body = sample(name)
+    body["source"] = source
+    result = validate_payload(raw(body))
+    assert isinstance(result, Valid) and result.payload.source == int(source)
+
+
+@pytest.mark.parametrize("source", [0, 5, "urgent", "0", "1.0", "-1", None, True, 1.0, [1]])
 def test_a_missing_or_unknown_source_is_invalid(sample, source):
     body = sample("urgent_mild")
     body["source"] = source

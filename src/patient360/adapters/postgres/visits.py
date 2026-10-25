@@ -138,15 +138,13 @@ class VisitsMixin:
     ) -> Literal["no_visit", "already_used", "closed", "ok"]:
         with self._db.transaction() as conn:
             row = conn.execute(
-                "SELECT v.patient_id, v.symptom_received_at, p.body ->> 'symptom_flag' AS symptom_flag "
-                "FROM visits v LEFT JOIN record_payloads_current p ON p.visit_id = v.visit_id "
-                "AND p.analysis = 'visit' AND p.kind = 'output_public' WHERE v.visit_id = %s",
+                "SELECT patient_id, symptom_received_at, symptom_flag FROM visits WHERE visit_id = %s",
                 (visit_id,)).fetchone()
         if row is None or row["patient_id"] != patient_id:
             return "no_visit"
         if row["symptom_received_at"] is not None:
             return "already_used"
-        return "closed" if row["symptom_flag"] == "false" else "ok"       # no result yet or no flag: still open
+        return "closed" if row["symptom_flag"] is False else "ok"       # no result yet (NULL): still open
 
     def save_symptom_check(self, payload: dict[str, Any], raw: bytes, received_at: datetime,
                            read_from: Literal["blob", "postgresql"]) -> None:

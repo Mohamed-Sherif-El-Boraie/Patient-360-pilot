@@ -81,6 +81,9 @@ class OutputsMixin:
                 "ON CONFLICT (visit_id, analysis) DO UPDATE SET step = 'deliver', status = 'pending', attempts = 0, "
                 "next_retry_at = NULL, last_error = NULL, claimed_by = NULL, updated_at = now()",
                 (visit_id, analysis))
+            if analysis == "visit":     # a symptom result always carries false and must not close the visit again
+                conn.execute("UPDATE visits SET symptom_flag = %s WHERE visit_id = %s",
+                             (public_output.get("symptom_flag"), visit_id))
             set_stage(conn, visit_id, _stage("post_processing", analysis))
 
     @staticmethod

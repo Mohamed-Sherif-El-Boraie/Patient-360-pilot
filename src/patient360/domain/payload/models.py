@@ -5,14 +5,14 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, StringConstraints, model_validator
 
-from patient360.domain.payload.values import age_days_as_number
+from patient360.domain.payload.values import whole_number_from_text
 
 Date = Annotated[str, StringConstraints(pattern=r"^\d{4}-\d{2}-\d{2}$")]
 Scalar = str | int | float   # a lab value or limit may arrive as text, decimal or integer
 BigId = Annotated[int, Field(ge=1, le=9_223_372_036_854_775_807)]   # fits a PostgreSQL bigint
 SmallId = Annotated[int, Field(ge=1, le=2_147_483_647)]            # fits a PostgreSQL int
 # whole days, counted by the Backend (0 = newborn); sent as a number or as whole-number text
-AgeDays = Annotated[int, BeforeValidator(age_days_as_number), Field(ge=0, le=60_000)]
+AgeDays = Annotated[int, BeforeValidator(whole_number_from_text), Field(ge=0, le=60_000)]
 
 
 class Strict(BaseModel):

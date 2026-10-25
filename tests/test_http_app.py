@@ -22,6 +22,7 @@ GOOD_ENV = {
     "IDEMPOTENCY_KEY_SECRET": "a-long-test-secret-value",
 }
 VISITS = "/api/v1/visits"
+SYMPTOM_CHECKS = "/api/v1/symptom-checks"
 EVENTS = "/api/v1/blob-events"
 
 
@@ -76,7 +77,9 @@ class Rig:
             receiver=self.spy_receiver, sender=None)
         self.client = TestClient(create_app(self.services))
 
-    def post(self, document, path=VISITS, **kwargs):
+    def post(self, document, path=None, **kwargs):
+        if path is None:       # the symptom check has its own endpoint (it comes from the wrapper)
+            path = SYMPTOM_CHECKS if isinstance(document, dict) and document.get("source") == 3 else VISITS
         body = document if isinstance(document, bytes) else json.dumps(document).encode()
         return self.client.post(path, content=body, **kwargs)
 
@@ -121,6 +124,19 @@ def test_a_symptom_check_calls_the_symptom_processor(rig, sample):
     rig.post(visit)
     rig.post(symptom)
     assert calls == [symptom["visit_id"]]
+
+
+def test_each_kind_of_payload_is_only_accepted_at_its_own_endpoint(rig, sample):
+    wrong_for_visits = rig.post(sample("symptom_check"), VISITS)
+    wrong_for_symptoms = rig.post(sample("urgent_mild"), SYMPTOM_CHECKS)
+    for reply in (wrong_for_visits, wrong_for_symptoms):
+        assert reply.status_code == 422 and reply.json()["errors"][0]["type"] == "wrong_endpoint"
+    assert rig.post(sample("urgent_mild"), VISITS).status_code == 202
+
+
+def test_a_source_sent_as_text_is_accepted(rig, sample):
+    visit = sample("urgent_mild") | {"source": "1"}
+    assert rig.post(visit).status_code == 202
 
 
 def test_a_duplicate_is_answered_200(rig, sample):

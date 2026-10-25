@@ -112,8 +112,9 @@ CREATE TABLE visits (                                    -- ONE row per visit; t
   lane                text GENERATED ALWAYS AS (            -- computed from the tier, so the two never disagree
                         CASE WHEN tier IN ('NORMAL','MILD') THEN 'normal'
                              WHEN tier IN ('MODERATE','CRITICAL') THEN 'critical' END) STORED,
+  symptom_flag        boolean,                             -- may the patient use the symptom checker? NULL until the AI result exists
   batch_id            text REFERENCES batches (batch_id),
-  stage               progress_stage NOT NULL DEFAULT 'received',
+  stage              progress_stage NOT NULL DEFAULT 'received',
   patient_symptoms    text CHECK (char_length(patient_symptoms) <= 500),   -- set when the symptom check arrives
   created_at          timestamptz NOT NULL DEFAULT now(),  -- when we received the visit
   symptom_received_at timestamptz,                         -- when we received the symptom check

@@ -76,10 +76,9 @@ def create_app(services: Services, lifespan=None) -> FastAPI:
     async def event_body(request: Request) -> bytes:
         return await request.body()
 
-    @app.post("/api/v1/visits", dependencies=[Depends(require_api_key)])
-    def receive_visit(background: BackgroundTasks, raw: bytes = Depends(visit_body)) -> JSONResponse:
+    def accept(background: BackgroundTasks, raw: bytes, symptom_check: bool) -> JSONResponse:
         try:
-            outcome = services.intake.receive(raw)
+            outcome = services.intake.receive(raw, symptom_check=symptom_check)
         except Exception as error:
             log.error("request_failed", error_type=type(error).__name__)
             return reply(500, "Internal error")             # no 202 without a safe save: the caller resends
@@ -96,6 +95,14 @@ def create_app(services: Services, lifespan=None) -> FastAPI:
             return reply(409, "SYMPTOM_CHECKER_CLOSED")
         assert isinstance(outcome, TooLarge)
         return reply(413, "Payload too large")
+
+    @app.post("/api/v1/visits", dependencies=[Depends(require_api_key)])      # from the Backend app service
+    def receive_visit(background: BackgroundTasks, raw: bytes = Depends(visit_body)) -> JSONResponse:
+        return accept(background, raw, symptom_check=False)
+
+    @app.post("/api/v1/symptom-checks", dependencies=[Depends(require_api_key)])      # from the wrapper
+    def receive_symptom_check(background: BackgroundTasks, raw: bytes = Depends(visit_body)) -> JSONResponse:
+        return accept(background, raw, symptom_check=True)
 
     @app.post("/api/v1/blob-events", dependencies=[Depends(require_api_key)])
     def blob_events(raw: bytes = Depends(event_body), aeg_event_type: str | None = Header(default=None)):

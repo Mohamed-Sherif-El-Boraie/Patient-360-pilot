@@ -74,7 +74,8 @@ class Rig:
         self.client = TestClient(create_app(self.services))
 
     def post(self, document):
-        return self.client.post("/api/v1/visits", content=json.dumps(document).encode(), headers=KEY)
+        path = "/api/v1/symptom-checks" if document["source"] == 3 else "/api/v1/visits"
+        return self.client.post(path, content=json.dumps(document).encode(), headers=KEY)
 
     def work(self):
         run_work_cycle(self.services, datetime.now(UTC))

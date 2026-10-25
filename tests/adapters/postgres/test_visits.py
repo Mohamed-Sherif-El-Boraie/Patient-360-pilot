@@ -182,18 +182,14 @@ def test_symptom_check_states(db, store):
     assert store.symptom_check_state(10, 500) == "already_used"
 
 
-def test_a_closed_symptom_checker_is_read_from_the_saved_visit_result(db, store):
+def test_a_closed_symptom_checker_is_read_from_the_visit_symptom_flag_column(db, store):
     seed.add_visit(db, 10, patient_id=500)
-    assert store.symptom_check_state(10, 500) == "ok"                      # no result yet: still open
-    seed.add_payload(db, 10, "output_public", {"ai": {}})
-    assert store.symptom_check_state(10, 500) == "ok"                      # a result without the flag: still open
-    seed.add_payload(db, 10, "output_public", {"symptom_flag": True})
+    assert store.symptom_check_state(10, 500) == "ok"                      # no result yet (NULL): still open
+    seed.fetch(db, "UPDATE visits SET symptom_flag = true WHERE visit_id = 10 RETURNING 1")
     assert store.symptom_check_state(10, 500) == "ok"
-    seed.add_payload(db, 10, "output_public", {"symptom_flag": False})     # the newest version counts
+    seed.fetch(db, "UPDATE visits SET symptom_flag = false WHERE visit_id = 10 RETURNING 1")
     assert store.symptom_check_state(10, 500) == "closed"
     assert store.symptom_check_state(10, 501) == "no_visit"                # another patient: not closed, unknown
-    seed.add_payload(db, 10, "output_public", {"symptom_flag": False}, analysis="symptom")
-    assert store.symptom_check_state(10, 500) == "closed"                  # a symptom result does not change the answer
 
 
 def test_save_and_read_symptom_check(db, store, sample):
