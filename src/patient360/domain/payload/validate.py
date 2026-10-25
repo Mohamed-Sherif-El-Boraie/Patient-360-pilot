@@ -9,7 +9,7 @@ from pydantic import BaseModel, ValidationError
 
 from patient360.domain.common.compat import frozendict
 from patient360.domain.payload.models import SymptomPayload, VisitPayload
-from patient360.domain.payload.values import as_whole_number
+from patient360.domain.payload.values import as_whole_number, blank_to_none
 
 MAX_LOC_PART = 60   # an unknown key name is sender-chosen text; keep what we store and return short
 
@@ -37,7 +37,7 @@ def _reject_constant(name: str) -> None:
 
 def validate_payload(raw: bytes) -> Valid | Invalid:
     try:
-        obj = json.loads(raw, parse_constant=_reject_constant)
+        obj = blank_to_none(json.loads(raw, parse_constant=_reject_constant))     # blank means null, before any check
     except (ValueError, RecursionError):   # bad JSON, bad bytes, NaN / Infinity, absurdly deep nesting
         return Invalid([_error([], "body is not valid JSON", "json_invalid")])
     source = as_whole_number(obj.get("source")) if isinstance(obj, dict) else None

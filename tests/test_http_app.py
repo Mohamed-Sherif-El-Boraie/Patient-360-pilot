@@ -98,6 +98,17 @@ def test_a_valid_urgent_visit_is_accepted_and_then_processed(rig, sample):
     assert rig.batch_spy.calls == []
 
 
+def test_a_visit_full_of_blank_values_is_accepted_and_processed(rig, sample):
+    visit = sample("urgent_mild")
+    for result in (r for test in visit["tests"] for r in test["results"]):
+        result.update(lab_flag="", unit=" ", parameter_remark="", critical={"low": "", "high": "", "range_text": ""})
+        result["reference"].update(low="", high="", range="")
+    visit["tests"][0]["results"][0]["value"] = ""
+    visit["tests"][0]["test_remark"] = "  "
+    assert rig.post(visit).status_code == 202
+    assert rig.store.visits[visit["visit_id"]]["stage"] == "processed"
+
+
 def test_a_batch_visit_also_runs_the_batch_trigger(rig, sample):
     visit = sample("batch_normal")
     assert rig.post(visit).status_code == 202

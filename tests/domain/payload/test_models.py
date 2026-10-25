@@ -3,6 +3,7 @@ import json
 
 import pytest
 
+from patient360.domain.builders.ai_input import build_ai_input
 from patient360.domain.payload.validate import Invalid, Valid, validate_payload
 
 VISITS = ["batch_normal", "batch_critical", "urgent_mild", "on_demand_critical", "descriptive_only"]
@@ -122,6 +123,34 @@ def test_ids_and_other_numbers_may_arrive_as_text(sample):
     assert (result.payload.visit_id, result.payload.patient_id, result.payload.company_id) == (
         2070000003, 2141000003, 10)
     assert (result.payload.patient.sex, result.payload.tests[0].test_id) == (1, 18)
+
+
+def test_blank_values_are_null_everywhere_and_are_then_removed_from_the_ai_input(sample):
+    body = sample("batch_critical")
+    test = body["tests"][2]
+    result = test["results"][0]
+    test["test_remark"], result["parameter_remark"], result["lab_flag"], result["unit"] = "", "  ", "", " "
+    result["reference"] = {"low": "", "high": "", "range": ""}
+    result["critical"] = {"low": "", "high": "", "range_text": ""}
+    result["value"], result["history"][:] = "", []
+    valid = validate_payload(raw(body))
+    assert isinstance(valid, Valid)
+    ai_test = build_ai_input(valid.payload.model_dump()).ai_json["tests"][2]
+    assert "test_remark" not in ai_test
+    kept = set(ai_test["results"][0])
+    assert not kept & {"parameter_remark", "lab_flag", "unit", "reference", "value", "history"}
+    flat = json.dumps(ai_test)
+    assert '""' not in flat and "null" not in flat and '" "' not in flat
+
+
+def test_a_blank_required_key_is_still_refused(sample):
+    for key in ("patient_id", "visit_id", "company_id"):
+        body = sample("urgent_mild")
+        body[key] = " "
+        assert isinstance(validate_payload(raw(body)), Invalid)
+    body = sample("urgent_mild")
+    body["tests"][0]["results"][0]["parameter_name"] = ""
+    assert isinstance(validate_payload(raw(body)), Invalid)
 
 
 @pytest.mark.parametrize("bad", ["abc", "20.5", "-5", "0", "", True])

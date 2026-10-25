@@ -27,6 +27,18 @@ def as_whole_number(value: Any) -> Any:
     return value
 
 
+def blank_to_none(value: Any) -> Any:
+    """Every ``""`` and ``" "`` anywhere in the JSON becomes ``None``: the Backend's blank means "no value". The keys
+    stay, so a required key that is blank is still refused; ``remove_empty_values`` drops the optional ones later."""
+    if isinstance(value, dict):
+        return {key: blank_to_none(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [blank_to_none(item) for item in value]
+    if isinstance(value, str) and not value.strip():
+        return None
+    return value
+
+
 def parse_numeric(value: Any) -> int | float | None:
     """Port of v3 ``labValues.parseNumeric``: drop spaces, read the leading number.
 
