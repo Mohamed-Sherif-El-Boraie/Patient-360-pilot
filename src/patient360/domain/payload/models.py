@@ -5,14 +5,15 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, StringConstraints, model_validator
 
-from patient360.domain.payload.values import whole_number_from_text
+from patient360.domain.payload.values import as_whole_number
 
 Date = Annotated[str, StringConstraints(pattern=r"^\d{4}-\d{2}-\d{2}$")]
 Scalar = str | int | float   # a lab value or limit may arrive as text, decimal or integer
-BigId = Annotated[int, Field(ge=1, le=9_223_372_036_854_775_807)]   # fits a PostgreSQL bigint
-SmallId = Annotated[int, Field(ge=1, le=2_147_483_647)]            # fits a PostgreSQL int
-# whole days, counted by the Backend (0 = newborn); sent as a number or as whole-number text
-AgeDays = Annotated[int, BeforeValidator(whole_number_from_text), Field(ge=0, le=60_000)]
+# Every number the Backend sends may arrive as a number or as whole-number text ("123", "123.0"): as_whole_number first
+BigId = Annotated[int, BeforeValidator(as_whole_number), Field(ge=1, le=9_223_372_036_854_775_807)]  # bigint
+SmallId = Annotated[int, BeforeValidator(as_whole_number), Field(ge=1, le=2_147_483_647)]  # int
+AgeDays = Annotated[int, BeforeValidator(as_whole_number), Field(ge=0, le=60_000)]   # whole days (0 = newborn)
+Sex = Annotated[int, BeforeValidator(as_whole_number), Field(ge=1, le=2)] # 1 Male, 2 Female (no Literal: true == 1)
 
 
 class Strict(BaseModel):
@@ -80,7 +81,7 @@ class PreparationAnswer(Strict):
 
 class Patient(Strict):
     age_days: AgeDays
-    sex: Literal[1, 2]   # 1 Male, 2 Female
+    sex: Sex
 
 
 class VisitPayload(Strict):

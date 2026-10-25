@@ -13,7 +13,7 @@ OK = {"code": -1, "message": "Success"}
 async def login(request: Request):
     missing = [h for h in CALLER_HEADERS if h not in request.headers]
     body = await request.json()
-    if missing or not all(body.get(k) for k in ("username", "password", "companyID")):
+    if missing or not all(body.get(k) for k in ("username", "password")):
         raise HTTPException(400, "missing caller headers or login fields")
     return {"response": OK, "data": {"CallerCredential": {"Caller": {"TokenExpiredMin": 480}, "token": "mock-token"}}}
 

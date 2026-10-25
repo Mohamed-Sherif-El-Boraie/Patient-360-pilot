@@ -3,20 +3,27 @@ from __future__ import annotations
 
 import math
 import re
+from decimal import Decimal
 from html.parser import HTMLParser
 from typing import Any
 
+_DECIMAL_TEXT = re.compile(r"\d+(?:\.\d+)?")
 _NOT_A_NUMBER_TAIL = re.compile(r"[:/]|-\d")  # "1:64" (titre), "5/10", "2026-01-10", "5-10"
 _NUMBER_PREFIX = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?")
 
 
-def whole_number_from_text(value: Any) -> Any:
-    """The Backend may send ``age_days`` or ``source`` as text (``"19200"``): whole-number text becomes a number.
-    Anything else is returned unchanged, so the validation (or the caller) still refuses it."""
+def as_whole_number(value: Any) -> Any:
+    """The Backend may send ``age_days`` or ``source`` as text or with a decimal point (``"19200"``, ``"3.0"``,
+    ``3.0``): a value that is a whole number becomes an int. Anything else (``"19200.5"``, ``"-1"``, ``"abc"``) is
+    returned unchanged, so the validation still refuses it: a day count or a source id has no fraction."""
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
     if isinstance(value, str):
         text = value.strip()
-        if text.isascii() and text.isdigit():       # ASCII only: no Arabic-Indic digits, no signs, no decimals
-            return int(text)
+        if text.isascii() and _DECIMAL_TEXT.fullmatch(text):        # ASCII digits only, no sign, no exponent
+            number = Decimal(text)
+            if number == number.to_integral_value():
+                return int(number)
     return value
 
 
@@ -48,7 +55,7 @@ def remove_empty_values(value: Any) -> Any:
     if isinstance(value, dict):
         out = {key: kept for key, item in value.items() if (kept := remove_empty_values(item)) is not None}
         return out or None
-    if value is None or value == "":
+    if value is None or (isinstance(value, str) and not value.strip()):    # null, "" and " " are empty; "2.5" is not
         return None
     return value
 

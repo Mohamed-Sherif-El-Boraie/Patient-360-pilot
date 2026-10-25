@@ -33,15 +33,31 @@ def test_the_source_number_picks_the_model(sample):
     assert isinstance(validate_payload(raw(symptom)), Invalid)
 
 
-@pytest.mark.parametrize("name, source", [("urgent_mild", "1"), ("batch_normal", " 2 "), ("symptom_check", "3")])
-def test_a_source_sent_as_text_is_read_as_a_number(sample, name, source):
+@pytest.mark.parametrize("name, source", [("urgent_mild", "1"), ("batch_normal", " 2 "), ("symptom_check", "3"),
+                                          ("urgent_mild", "1.0"), ("batch_normal", 2.0), ("symptom_check", "3.00")])
+def test_a_source_sent_as_text_or_with_a_decimal_point_is_read_as_a_number(sample, name, source):
     body = sample(name)
     body["source"] = source
     result = validate_payload(raw(body))
-    assert isinstance(result, Valid) and result.payload.source == int(source)
+    assert isinstance(result, Valid) and result.payload.source == int(float(source))
 
 
-@pytest.mark.parametrize("source", [0, 5, "urgent", "0", "1.0", "-1", None, True, 1.0, [1]])
+@pytest.mark.parametrize("age", ["19200", "19200.0", 19200.0, " 19200.00 "])
+def test_age_days_accepts_whole_numbers_in_any_spelling(sample, age):
+    body = sample("urgent_mild")
+    body["patient"]["age_days"] = age
+    result = validate_payload(raw(body))
+    assert isinstance(result, Valid) and result.payload.patient.age_days == 19200
+
+
+@pytest.mark.parametrize("age", ["19200.5", 19200.5, "-1", "1e3", "٣٤", "abc", "", True])
+def test_age_days_with_a_fraction_or_a_sign_is_refused(sample, age):
+    body = sample("urgent_mild")
+    body["patient"]["age_days"] = age
+    assert isinstance(validate_payload(raw(body)), Invalid)
+
+
+@pytest.mark.parametrize("source", [0, 5, "urgent", "0", "3.5", "-1", None, True, 1.5, [1]])
 def test_a_missing_or_unknown_source_is_invalid(sample, source):
     body = sample("urgent_mild")
     body["source"] = source
@@ -95,9 +111,36 @@ def test_the_same_parameter_in_two_different_tests_is_allowed(sample):
     assert isinstance(validate_payload(raw(body)), Valid)
 
 
-def test_strict_types_reject_a_string_visit_id(sample):
+def test_ids_and_other_numbers_may_arrive_as_text(sample):
     body = sample("urgent_mild")
-    body["visit_id"] = "2070000003"
+    body["visit_id"], body["patient_id"], body["company_name"] = "2070000003", "2141000003", "10.0"
+    body["patient"]["sex"] = "1"
+    body["tests"][0]["test_id"] = "18"
+    body["tests"][0]["results"][0]["parameter_id"] = " 2 "
+    result = validate_payload(raw(body))
+    assert isinstance(result, Valid)
+    assert (result.payload.visit_id, result.payload.patient_id, result.payload.company_name) == (
+        2070000003, 2141000003, 10)
+    assert (result.payload.patient.sex, result.payload.tests[0].test_id) == (1, 18)
+
+
+@pytest.mark.parametrize("bad", ["abc", "20.5", "-5", "0", "", True])
+@pytest.mark.parametrize("where", [("visit_id",), ("patient_id",), ("company_name",), ("tests", 0, "test_id"),
+                                   ("tests", 0, "results", 0, "parameter_id"),
+                                   ("visit_answer_list", 0, "preparation_id")])
+def test_an_id_that_is_not_a_whole_positive_number_is_refused(sample, where, bad):
+    body = sample("urgent_mild")
+    target = body
+    for step in where[:-1]:
+        target = target[step]
+    target[where[-1]] = bad
+    assert isinstance(validate_payload(raw(body)), Invalid)
+
+
+@pytest.mark.parametrize("bad", ["abc", "20.5", "-5", "0", "3", "", True])
+def test_sex_must_be_1_or_2_and_true_is_not_1(sample, bad):
+    body = sample("urgent_mild")
+    body["patient"]["sex"] = bad
     assert isinstance(validate_payload(raw(body)), Invalid)
 
 

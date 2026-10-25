@@ -12,7 +12,7 @@ from patient360.domain.builders.ai_input import SOURCE_NAMES
 from patient360.domain.common.blob_paths import blob_day, raw_path, rejected_path, rejected_unknown_path
 from patient360.domain.common.ids import make_idempotency_key
 from patient360.domain.payload.validate import Invalid, validate_payload
-from patient360.domain.payload.values import whole_number_from_text
+from patient360.domain.payload.values import as_whole_number
 from patient360.ports import BlobStore, BlobUnavailable, VisitStore
 
 SYMPTOM_CHECKER = 3
@@ -59,7 +59,7 @@ def _peek(raw: bytes) -> tuple[int | None, int | None]:
         return None, None
     if not isinstance(obj, dict):
         return None, None
-    source, visit = whole_number_from_text(obj.get("source")), obj.get("visit_id")
+    source, visit = as_whole_number(obj.get("source")), as_whole_number(obj.get("visit_id"))
     source = source if type(source) is int and source in SOURCE_NAMES else None
     visit = visit if type(visit) is int and visit >= 1 else None
     return source, visit

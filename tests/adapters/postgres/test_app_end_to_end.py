@@ -26,7 +26,7 @@ ENV = {
     "INBOUND_API_KEY": "dev-inbound-key",
     "BACKEND_BASE_URL": "https://wrapper.example", "BACKEND_CALLER_SOURCE": "Patient360",
     "BACKEND_CALLER_SOURCE_KEY": "fake-caller-key", "BACKEND_CALLER_USER_NAME": "Patient360",
-    "BACKEND_USERNAME": "fake-user", "BACKEND_PASSWORD": "fake-password", "BACKEND_COMPANY_ID": "10",
+    "BACKEND_USERNAME": "fake-user", "BACKEND_PASSWORD": "fake-password",
 }
 
 
@@ -74,7 +74,7 @@ class Rig:
         self.client = TestClient(create_app(self.services))
 
     def post(self, document):
-        path = "/api/v1/symptom-checks" if document["source"] == 3 else "/api/v1/visits"
+        path = "/api/v1/patient360/visits-symptoms" if document["source"] == 3 else "/api/v1/patient360/visits"
         return self.client.post(path, content=json.dumps(document).encode(), headers=KEY)
 
     def work(self):
@@ -92,7 +92,7 @@ class Rig:
         self.blob_2.files[path] = json.dumps(record).encode()
         event = [{"eventType": "Microsoft.Storage.BlobCreated",
                   "subject": f"/blobServices/default/containers/ai-output/blobs/{path}", "data": {}}]
-        return self.client.post("/api/v1/blob-events", json=event, headers=KEY)
+        return self.client.post("/api/v1/patient360/blob-events", json=event, headers=KEY)
 
 
 @pytest.fixture
@@ -150,8 +150,8 @@ def test_a_symptom_check_is_refused_with_409_when_the_visit_result_closed_the_ch
 def test_a_wrong_or_missing_api_key_is_refused_and_nothing_is_saved(rig):
     visit = rig.sample("urgent_mild")
     body = json.dumps(visit).encode()
-    assert rig.client.post("/api/v1/visits", content=body).status_code == 401
-    assert rig.client.post("/api/v1/visits", content=body, headers={"X-Api-Key": "wrong"}).status_code == 401
+    assert rig.client.post("/api/v1/patient360/visits", content=body).status_code == 401
+    assert rig.client.post("/api/v1/patient360/visits", content=body, headers={"X-Api-Key": "wrong"}).status_code == 401
     assert seed.fetch(rig.db, "SELECT count(*) AS n FROM visits")[0]["n"] == 0
 
 

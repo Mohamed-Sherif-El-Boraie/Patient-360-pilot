@@ -91,7 +91,7 @@ def test_the_pgbouncer_port_and_the_timeouts_can_be_set():
 
 BACKEND = {"BACKEND_BASE_URL": "https://wrapper.example/", "BACKEND_CALLER_SOURCE": "Patient360",
            "BACKEND_CALLER_SOURCE_KEY": "caller-key-value", "BACKEND_CALLER_USER_NAME": "Patient360",
-           "BACKEND_USERNAME": "api-user", "BACKEND_PASSWORD": "api-password-xyz", "BACKEND_COMPANY_ID": "10"}
+           "BACKEND_USERNAME": "api-user", "BACKEND_PASSWORD": "api-password-xyz"}
 
 
 def test_aws_and_backend_settings_are_optional_until_they_are_used():
@@ -106,7 +106,7 @@ def test_aws_and_backend_settings_are_optional_until_they_are_used():
 
 def test_the_backend_settings_come_all_together_and_the_secrets_stay_out_of_the_text():
     backend = load_settings(env(**BACKEND)).backend
-    assert (backend.base_url, backend.company_id, backend.username) == ("https://wrapper.example", "10", "api-user")
+    assert (backend.base_url, backend.username) == ("https://wrapper.example", "api-user")
     assert "api-password-xyz" not in repr(backend) and "caller-key-value" not in repr(backend)
     partial = {name: value for name, value in BACKEND.items() if name != "BACKEND_PASSWORD"}
     with pytest.raises(SettingsError, match="BACKEND_PASSWORD") as error:

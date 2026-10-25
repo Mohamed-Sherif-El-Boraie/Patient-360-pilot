@@ -46,7 +46,7 @@ def main():
     wrapper_before = len(httpx.get(f"{WRAPPER}/received").json())
 
     print("1. Backend posts an urgent visit")
-    reply = httpx.post(f"{APP}/api/v1/visits", json=visit, headers=API_KEY, timeout=30)
+    reply = httpx.post(f"{APP}/api/v1/patient360/visits", json=visit, headers=API_KEY, timeout=30)
     if reply.status_code != 202:
         fail(f"expected 202, got {reply.status_code}")
     print("   accepted (202)")
@@ -75,7 +75,7 @@ def main():
     print("4. Playing Event Grid: telling the app the file is there")
     event = [{"eventType": "Microsoft.Storage.BlobCreated", "data": {},
               "subject": f"/blobServices/default/containers/ai-output/blobs/{path}"}]
-    reply = httpx.post(f"{APP}/api/v1/blob-events", json=event, headers=API_KEY, timeout=30)
+    reply = httpx.post(f"{APP}/api/v1/patient360/blob-events", json=event, headers=API_KEY, timeout=30)
     print(f"   app answered {reply.status_code}")
     if reply.status_code >= 300:
         fail("blob-events was refused")

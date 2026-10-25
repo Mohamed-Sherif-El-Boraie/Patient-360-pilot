@@ -19,9 +19,9 @@ OPTIONAL = (
     "AWS_ENDPOINT_URL_S3", "BACKEND_CONNECT_TIMEOUT_S", "BACKEND_READ_TIMEOUT_S", "MAX_REQUEST_BYTES", "BATCH_SIZE",
     "INBOUND_API_KEY", "JOB_INTERVAL_S", "WORK_INTERVAL_S",
 )
-BACKEND_SETTINGS = (          # the wrapper: all seven or none
+BACKEND_SETTINGS = (          # the wrapper: all six or none
     "BACKEND_BASE_URL", "BACKEND_CALLER_SOURCE", "BACKEND_CALLER_SOURCE_KEY", "BACKEND_CALLER_USER_NAME",
-    "BACKEND_USERNAME", "BACKEND_PASSWORD", "BACKEND_COMPANY_ID",
+    "BACKEND_USERNAME", "BACKEND_PASSWORD",
 )
 APP_ENVS = ("development", "pilot", "production")   # pilot logs like production: INFO, json
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
@@ -44,7 +44,6 @@ class BackendSettings:
     caller_source: str
     caller_user_name: str
     username: str
-    company_id: str
     caller_source_key: str = field(repr=False)
     password: str = field(repr=False)
 
@@ -140,8 +139,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         backend = BackendSettings(
             base_url=values["BACKEND_BASE_URL"].rstrip("/"), caller_source=values["BACKEND_CALLER_SOURCE"],
             caller_user_name=values["BACKEND_CALLER_USER_NAME"], username=values["BACKEND_USERNAME"],
-            company_id=values["BACKEND_COMPANY_ID"], caller_source_key=values["BACKEND_CALLER_SOURCE_KEY"],
-            password=values["BACKEND_PASSWORD"])
+            caller_source_key=values["BACKEND_CALLER_SOURCE_KEY"], password=values["BACKEND_PASSWORD"])
     if problems:
         raise SettingsError("; ".join(problems))
     return Settings(

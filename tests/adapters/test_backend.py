@@ -15,7 +15,7 @@ from patient360.ports import BackendRejected, BackendUnavailable
 
 SETTINGS = BackendSettings(
     base_url="https://wrapper.test", caller_source="SRC", caller_user_name="CALLER", username="user1",
-    company_id="0042", caller_source_key="KEY-SECRET-123", password="PASSWORD-SECRET-456")
+    caller_source_key="KEY-SECRET-123", password="PASSWORD-SECRET-456")
 BODY = {"visit": 7, "ai": {"en": "text"}}
 OK = {"response": {"code": -1, "message": "Success"}, "data": {"Patient360Loader": {"ID": 21, "Action": "Insert"}}}
 
@@ -72,7 +72,7 @@ def test_exact_requests():
     make(fake).post_result(BODY)
     login, post = fake.requests
     assert str(login.url) == "https://wrapper.test/API/v2/Auth/Callerlogin" and login.method == "POST"
-    assert json.loads(login.content) == {"username": "user1", "password": "PASSWORD-SECRET-456", "companyID": "0042"}
+    assert json.loads(login.content) == {"username": "user1", "password": "PASSWORD-SECRET-456"}
     callers = {"CallerSource": "SRC", "CallerSourceKey": "KEY-SECRET-123", "CallerUserName": "CALLER"}
     for request in (login, post):
         assert {k: request.headers[k] for k in callers} == callers
@@ -194,11 +194,35 @@ def test_no_secret_in_logs():
         FakeWrapper(post_replies=[httpx.Response(200, json={"response": {"code": 1}})]),
         FakeWrapper(login=lambda n: httpx.Response(500, text="PASSWORD-SECRET-456")),
     ]
+    errors = []
     with capture_logs() as logs:
         for fake in cases:
-            with pytest.raises((BackendUnavailable, BackendRejected)):
+            with pytest.raises((BackendUnavailable, BackendRejected)) as caught:
                 make(fake).post_result(BODY)
+            errors.append(str(caught.value))
     assert len(logs) == len(cases)
     assert {entry["event"] for entry in logs} == {"backend_unavailable", "backend_rejected", "backend_login_failed"}
-    assert all(set(entry) <= {"event", "log_level", "status", "error_type"} for entry in logs)
-    assert not any(secret in str(logs) for secret in secrets)
+    assert all(set(entry) <= {"event", "log_level", "reason"} for entry in logs)
+    assert not any(secret in str(logs) + str(errors) for secret in secrets)
+
+
+def test_the_errors_say_what_went_wrong_in_plain_words():
+    def reason(fake):
+        with pytest.raises((BackendUnavailable, BackendRejected)) as caught:
+            make(fake).post_result(BODY)
+        return str(caught.value)
+
+    refused = httpx.Response(200, json={"response": {"code": 1, "message": "Invalid user or password"}})
+    assert reason(FakeWrapper(login=lambda n: refused)) == (
+        "Login to the wrapper failed: HTTP 200, code 1: Invalid user or password")
+    assert reason(FakeWrapper(login=lambda n: httpx.Response(200, json={"response": {"code": -1}, "data": {}}))) == (
+        "Login to the wrapper failed: the reply has no token (data.CallerCredential.token)")
+    assert reason(FakeWrapper(login=lambda n: httpx.Response(502, text="<html>"))) == (
+        "Login to the wrapper failed: HTTP 502, the reply is not the expected JSON")
+    assert reason(FakeWrapper(post_replies=[httpx.ReadTimeout("slow")])) == (
+        "The wrapper did not accept the result: could not reach the wrapper (ReadTimeout)")
+    not_saved = httpx.Response(200, json={"response": {"code": 7, "message": "Visit not found"}})
+    assert reason(FakeWrapper(post_replies=[not_saved])) == (
+        "The wrapper did not accept the result: HTTP 200, code 7: Visit not found")
+    assert reason(FakeWrapper(post_replies=[httpx.Response(400, json={"response": {"message": "Bad body"}})])) == (
+        "The wrapper refused the result: HTTP 400: Bad body")

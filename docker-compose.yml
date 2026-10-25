@@ -33,7 +33,6 @@ x-app-env: &app-env
   BACKEND_CALLER_USER_NAME: Patient360
   BACKEND_USERNAME: fake-user
   BACKEND_PASSWORD: fake-password
-  BACKEND_COMPANY_ID: "10"
   WORK_INTERVAL_S: "2"
   JOB_INTERVAL_S: "30"
   BATCH_SIZE: "100"

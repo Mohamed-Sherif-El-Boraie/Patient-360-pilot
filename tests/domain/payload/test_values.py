@@ -19,6 +19,11 @@ def test_remove_empty_values_drops_none_empty_and_empty_containers_but_keeps_zer
     assert remove_empty_values([None, ""]) is None
 
 
+def test_a_blank_text_is_removed_but_text_that_looks_like_a_number_is_kept_exactly():
+    source = {"remark": "   ", "tab": "\t\n", "note": "2.5", "high": "--0.24", "low": 0.7, "text": " ok "}
+    assert remove_empty_values(source) == {"note": "2.5", "high": "--0.24", "low": 0.7, "text": " ok "}
+
+
 def test_html_becomes_plain_text_with_line_breaks():
     assert html_to_plain_text("<p>Normal <b>findings</b></p><p>No mass seen</p>") == "Normal findings\nNo mass seen"
     assert html_to_plain_text("line one<br/>line two<BR>line three") == "line one\nline two\nline three"

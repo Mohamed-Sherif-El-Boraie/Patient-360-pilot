@@ -21,9 +21,9 @@ GOOD_ENV = {
     "BLOB_INPUT_CONTAINER": "ai-input", "BLOB_OUTPUT_CONTAINER": "ai-output",
     "IDEMPOTENCY_KEY_SECRET": "a-long-test-secret-value",
 }
-VISITS = "/api/v1/visits"
-SYMPTOM_CHECKS = "/api/v1/symptom-checks"
-EVENTS = "/api/v1/blob-events"
+VISITS = "/api/v1/patient360/visits"
+SYMPTOM_CHECKS = "/api/v1/patient360/visits-symptoms"
+EVENTS = "/api/v1/patient360/blob-events"
 
 
 class Spy:

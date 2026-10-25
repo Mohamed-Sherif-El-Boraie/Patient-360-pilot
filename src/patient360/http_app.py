@@ -96,15 +96,15 @@ def create_app(services: Services, lifespan=None) -> FastAPI:
         assert isinstance(outcome, TooLarge)
         return reply(413, "Payload too large")
 
-    @app.post("/api/v1/visits", dependencies=[Depends(require_api_key)])      # from the Backend app service
+    @app.post("/api/v1/patient360/visits", dependencies=[Depends(require_api_key)])      # from the Backend app service
     def receive_visit(background: BackgroundTasks, raw: bytes = Depends(visit_body)) -> JSONResponse:
         return accept(background, raw, symptom_check=False)
 
-    @app.post("/api/v1/symptom-checks", dependencies=[Depends(require_api_key)])      # from the wrapper
+    @app.post("/api/v1/patient360/visits-symptoms", dependencies=[Depends(require_api_key)])      # from the wrapper
     def receive_symptom_check(background: BackgroundTasks, raw: bytes = Depends(visit_body)) -> JSONResponse:
         return accept(background, raw, symptom_check=True)
 
-    @app.post("/api/v1/blob-events", dependencies=[Depends(require_api_key)])
+    @app.post("/api/v1/patient360/blob-events", dependencies=[Depends(require_api_key)])
     def blob_events(raw: bytes = Depends(event_body), aeg_event_type: str | None = Header(default=None)):
         try:
             events = json.loads(raw)

@@ -47,8 +47,8 @@ class ResultSender:
         return None if delay is None else self._now() + delay
 
     def _fail(self, unit: DeliveryUnit, error: Exception, retry_at: datetime | None) -> Delivered:
-        self._store.mark_delivery_failed_attempt(unit, type(error).__name__, retry_at)
+        reason = str(error) or type(error).__name__      # the adapter's readable message, saved as last_error
+        self._store.mark_delivery_failed_attempt(unit, reason, retry_at)
         outcome = "retry" if retry_at is not None else "failed"
-        log.warning("delivery_failed", source=unit.source, attempt=unit.attempts + 1, error_type=type(error).__name__,
-                    status=outcome)
+        log.warning("delivery_failed", source=unit.source, attempt=unit.attempts + 1, reason=reason, status=outcome)
         return Delivered(unit, outcome)

@@ -15,7 +15,7 @@ AI Service - that turns a patient's LIMS lab results into a plain-language repor
 
 ```mermaid
 flowchart TD
-    A["Backend sends a visit JSON<br/>(app service: batch, urgent, on-demand<br/>wrapper: symptom-checker)"] --> B["POST /api/v1/visits or<br/>/api/v1/symptom-checks<br/>(Intake)"]
+    A["Backend sends a visit JSON<br/>(app service: batch, urgent, on-demand<br/>wrapper: symptom-checker)"] --> B["POST /api/v1/patient360/visits or<br/>/api/v1/patient360/visits-symptoms<br/>(Intake)"]
     B --> C{"Valid JSON?"}
     C -- "no" --> R["Answer 422<br/>keep it in rejected_payloads"]
     C -- "yes" --> D{"Already received?"}
@@ -31,7 +31,7 @@ flowchart TD
     L --> M[("S3 bucket of the source")]
     M --> N["AWS: Bedrock<br/>English, Arabic, guardrails"]
     N --> O[("Blob 2<br/>aws-output-merged")]
-    O -- "Event Grid" --> P["POST /api/v1/blob-events<br/>(Receiver)"]
+    O -- "Event Grid" --> P["POST /api/v1/patient360/blob-events<br/>(Receiver)"]
     P --> Q{"Guardrail blocked it?"}
     Q -- "yes" --> S["Fixed message in the summary,<br/>everything else null"]
     Q -- "no" --> T["Check the answer shape,<br/>build the HTML (EN and AR)"]
@@ -83,7 +83,7 @@ symptom check is accepted and waits for it.
 | Right after a visit is accepted | Process it (and, for a batch visit, check if a batch is full) | `http_app.py` |
 | Every 5 seconds | Upload ready files to S3, deliver ready results to the Backend | `timers.run_work_cycle` |
 | Every 5 minutes | Start full batches, process visits and symptom checks a restart cut short | `timers.run_job_cycle` |
-| When a file appears in Blob 2 | Read the AWS answer and prepare the result | `POST /api/v1/blob-events` |
+| When a file appears in Blob 2 | Read the AWS answer and prepare the result | `POST /api/v1/patient360/blob-events` |
 
 ## Where the data lives
 
@@ -174,7 +174,7 @@ Small helpers for reading numbers and cleaning text.
 
 | Function | What it does | Output |
 |---|---|---|
-| `whole_number_from_text(value)` | Turns whole-number text ("19200", " 28 ") into a number; anything else is returned as it is. | A number, or the value unchanged. |
+| `as_whole_number(value)` | Turns whole-number text ("19200", " 28 ") into a number; anything else is returned as it is. | A number, or the value unchanged. |
 | `parse_numeric(value)` | Removes spaces and reads the number at the start. Refuses "0,5" style commas, titres like "1:64", dates and ranges like "5-10". | A whole number or decimal, or None if it is not a plain number. |
 | `remove_empty_values(value)` | Goes through lists and dictionaries and removes None, empty text and empty containers. Keeps 0 and False. | The cleaned data, or None if nothing is left. |
 | `_TextOnly` | (helper) A reader for HTML that keeps only the visible text and adds line breaks for tags like `<br>` and `<p>`. | an object with the collected text `parts` |
@@ -371,7 +371,7 @@ Reads all settings from environment variables and checks them in one go.
 | `MIN_SECRET_LENGTH (constant)` | The idempotency secret must have at least 16 characters. | The number 16. |
 | `S3_SETTINGS (constant)` | Maps each source to the setting that names its S3 bucket. | A dictionary of source to setting name. |
 | `SettingsError` | The error raised when settings are missing or wrong; its message lists names only, never values. | An error holding a text of problems. |
-| `BackendSettings` | Holds how to reach the Backend: address, caller headers and login (secrets are hidden when printed). | An object with the address, caller details, login and company id. |
+| `BackendSettings` | Holds how to reach the Backend: address, caller headers and login (secrets are hidden when printed). | An object with the address, caller details and login (username and password). |
 | `Settings` | The one frozen object holding every checked setting. | An object with all the settings. |
 | `Settings fields` | Groups: app mode and logging, database, blob storage, AWS, Backend, timers, batch size, request limit and API key. | Not a function; it lists the setting groups. |
 | `load_settings(env)` | Reads the settings (from the environment by default), checks all of them and stops with every problem listed. | A `Settings` object. Raises `SettingsError` on any problem. |
@@ -571,9 +571,9 @@ The web application: receives visits, receives new-file events from Azure, and a
 | `require_api_key(x_api_key)` | (helper) Checks the X-API-Key header against the secret key, if one is configured. | Nothing, or a 401 answer. |
 | `visit_body(request)` | (helper) Refuses a body whose declared size is over the limit before reading it, else reads it. | The body bytes, or a 413 answer. |
 | `event_body(request)` | (helper) Reads the request body as it is. | The body bytes. |
-| `POST /api/v1/visits` | Receives a visit (source 1, 2 or 4) from the Backend app service; a symptom check sent here is refused (422 `wrong_endpoint`). `source` may arrive as text ("1"). The API key is checked only if `INBOUND_API_KEY` is set. Processing continues in the background. | 202 Accepted, 200 Duplicate, 422 invalid, 413 too large, 401 bad key, 500 error. |
-| `POST /api/v1/symptom-checks` | Receives a symptom check (source 3) from the wrapper; a visit sent here is refused (422 `wrong_endpoint`). | 202 Accepted, 200 Duplicate, 422 invalid, 404 VISIT_NOT_FOUND, 409 SYMPTOM_CHECKER_CLOSED, 413 too large, 401 bad key, 500 error. |
-| `POST /api/v1/blob-events` | Event Grid webhook for new files in Blob 2; answers the setup handshake or saves each new result file. | 200 with count or validation code, 400 bad payload, 401 bad key, 500 error (so Event Grid retries). |
+| `POST /api/v1/patient360/visits` | Receives a visit (source 1, 2 or 4) from the Backend app service; a symptom check sent here is refused (422 `wrong_endpoint`). Numbers (`source`, ids, `sex`, `age_days`) may arrive as text ("1", "10.0"). The API key is checked only if `INBOUND_API_KEY` is set. Processing continues in the background. | 202 Accepted, 200 Duplicate, 422 invalid, 413 too large, 401 bad key, 500 error. |
+| `POST /api/v1/patient360/visits-symptoms` | Receives a symptom check (source 3) from the wrapper; a visit sent here is refused (422 `wrong_endpoint`). | 202 Accepted, 200 Duplicate, 422 invalid, 404 VISIT_NOT_FOUND, 409 SYMPTOM_CHECKER_CLOSED, 413 too large, 401 bad key, 500 error. |
+| `POST /api/v1/patient360/blob-events` | Event Grid webhook for new files in Blob 2; answers the setup handshake or saves each new result file. | 200 with count or validation code, 400 bad payload, 401 bad key, 500 error (so Event Grid retries). |
 | `GET /health` | Checks that the database answers a simple query. | 200 status "ok", or 503 "database_unavailable". |
 
 ### `runtime.py`
