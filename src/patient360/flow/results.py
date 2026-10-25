@@ -14,6 +14,7 @@ from patient360.domain.builders.backend_output import build_backend_output
 from patient360.domain.builders.blocked import blocked_ai, is_blocked
 from patient360.domain.common.blob_paths import MergedOutput, merged_output_path, parse_merged_output_path
 from patient360.domain.payload.ai_answer import AiAnswer
+from patient360.domain.rules.classify import decide_tier, symptom_checker_open
 from patient360.ports import BlobStore, Catalogue, StoredVisit, VisitStore
 
 log = structlog.get_logger()
@@ -80,7 +81,7 @@ class OutputReceiver:
         if self._store.has_output(stored.visit_id, analysis):
             return Received(record_id, "duplicate")
         if is_blocked(record):      # never read the model's text: the Backend gets the fixed message
-            self._save(found, text, stored, record, blocked_ai(record), analysis)
+            self._save(found, text, stored, record, blocked_ai(record), analysis, blocked=True)
             return Received(record_id, "blocked")
         try:
             ai = AiAnswer.model_validate(_loads(record["content"][0]["text"])).for_backend()
@@ -92,11 +93,12 @@ class OutputReceiver:
         return Received(record_id, "saved")
 
     def _save(self, found: MergedOutput, text: str, stored: StoredVisit, record: dict[str, Any],
-              ai: dict[str, Any], analysis: Analysis) -> None:
+              ai: dict[str, Any], analysis: Analysis, blocked: bool = False) -> None:
         if found.batch_id:      # a batch result also gets its own file, so the folder tree is complete
             split_path = merged_output_path("batch", found.lane, found.day, record["recordId"], found.batch_id)
             self._blobs.put(split_path, text.encode())
-        self._store.save_output(stored.visit_id, record, self._public_output(stored, ai, analysis), analysis)
+        public = self._public_output(stored, ai, analysis, blocked)
+        self._store.save_output(stored.visit_id, record, public, analysis)
         log.info("output_saved", source=found.source, stage="post_processing")
 
     def _ignore(self, found: MergedOutput, record_id: object, outcome: Outcome) -> Received:
@@ -104,13 +106,17 @@ class OutputReceiver:
         log.warning("output_ignored", source=found.source, status=outcome)
         return Received(record_id if isinstance(record_id, str) else None, outcome)
 
-    def _public_output(self, stored: StoredVisit, ai: dict[str, Any], analysis: Analysis) -> dict[str, Any]:
-        """The symptom result is the visit result with the new answer: source 3, and each test's reason in the html."""
+    def _public_output(self, stored: StoredVisit, ai: dict[str, Any], analysis: Analysis,
+                       blocked: bool) -> dict[str, Any]:
+        """The symptom result is the visit result with the new answer: source 3, and each test's reason in the html.
+        ``symptom_flag``: open for a visit that is not fully normal and not blocked; a symptom result is already the
+        symptom check, so it is closed."""
         raw = json.loads(stored.raw)
         built = build_ai_input(raw)
         symptom = analysis == "symptom"
+        tier = decide_tier(built.rows, len(built.descriptive_rows))
         return build_backend_output(
             patient_id=raw["patient_id"], visit_id=stored.visit_id,
             source=SYMPTOM_CHECKER_ID if symptom else stored.source_id, rows=built.rows,
             descriptive_rows=built.descriptive_rows, ai=ai, arabic_test_names=self._catalogue.test_names_ar(),
-            html_reasons=symptom)
+            html_reasons=symptom, symptom_flag=not symptom and symptom_checker_open(tier, blocked))

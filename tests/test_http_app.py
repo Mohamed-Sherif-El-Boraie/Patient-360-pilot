@@ -143,6 +143,17 @@ def test_invalid_json_and_a_wrong_field_are_422_with_errors_and_no_echo(rig, sam
     assert body["errors"] and "SECRET-PATIENT-ID" not in response.text
 
 
+def test_a_symptom_check_for_a_visit_with_a_closed_checker_is_409_and_nothing_is_processed(rig, sample):
+    visit, symptom = sample("urgent_mild"), sample("symptom_check")
+    visit.update(visit_id=symptom["visit_id"], patient_id=symptom["patient_id"])
+    assert rig.post(visit).status_code == 202
+    rig.store.visits[visit["visit_id"]]["public_output"] = {"symptom_flag": False}
+    response = rig.post(symptom)
+    assert response.status_code == 409
+    assert response.json() == {"response": {"code": 1, "message": "SYMPTOM_CHECKER_CLOSED"}}
+    assert not rig.store.symptom_checks
+
+
 def test_a_symptom_check_for_an_unknown_visit_is_404(rig, sample):
     response = rig.post(sample("symptom_check"))
     assert response.status_code == 404

@@ -1,0 +1,34 @@
+{
+  "recordId": "b74c0ea3485cf98f0ed81d5159fef0e4",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-sonnet-5-5",
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"summary\":{\"en\":\"The beta-thalassemia genetic (PCR) test did not detect any of the common gene deletions or mutations in the regions tested. No numeric laboratory values were reported with this visit. A negative result in the tested regions makes the common beta-thalassemia variants less likely but does not exclude rarer ones.\",\"ar\":\"لم يكشف الفحص الجيني (PCR) لثلاسيميا بيتا عن أي من حالات الحذف أو الطفرات الجينية الشائعة في المناطق التي تم فحصها. لم يتم الإبلاغ عن قيم رقمية مع هذه الزيارة. النتيجة السلبية في المناطق المفحوصة تقلل احتمال وجود الأنواع الشائعة من ثلاسيميا بيتا لكنها لا تستبعد الأنواع الأقل شيوعاً.\"},\"simple_summary\":{\"en\":\"The genetic test for thalassemia did not find the common changes.\",\"ar\":\"لم يجد الفحص الجيني للثلاسيميا التغيرات الشائعة.\"},\"critical_alerts\":[],\"note\":{\"en\":\"No additional tests are recommended from this result alone; discuss it with your doctor if there is a family history.\",\"ar\":\"لا يوصى بفحوصات إضافية من هذه النتيجة وحدها؛ ناقشها مع طبيبك إذا كان هناك تاريخ عائلي.\"},\"recommendations\":[]}"
+    }
+  ],
+  "metadata": {
+    "en": {
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 1544,
+        "output_tokens": 498,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0
+      }
+    },
+    "ar": {
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 1544,
+        "output_tokens": 330,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0
+      }
+    }
+  }
+}

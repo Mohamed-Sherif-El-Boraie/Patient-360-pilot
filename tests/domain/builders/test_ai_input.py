@@ -1,5 +1,4 @@
 import copy
-from datetime import date, timedelta
 
 import pytest
 
@@ -30,11 +29,19 @@ def test_the_ai_input_has_no_ids_no_status_and_no_company(sample, name):
     assert not (keys_of(ai_json) & FORBIDDEN_IN_THE_AI_INPUT)
 
 
-def test_the_ai_input_has_the_age_in_days_and_not_the_birthdate(sample):
+def test_the_ai_input_passes_the_age_in_days_on_as_the_backend_sent_it(sample):
     raw = sample("urgent_mild")
-    raw["patient"]["birthdate"] = (date.today() - timedelta(days=28)).isoformat()
-    patient = build_ai_input(raw).ai_json["patient"]
-    assert patient["age_days"] == 28 and "birthdate" not in patient
+    for days in (28, 0):                       # a newborn (0 days) must not disappear as an "empty" value
+        raw["patient"]["age_days"] = days
+        assert build_ai_input(raw).ai_json["patient"]["age_days"] == days
+
+
+def test_an_age_sent_as_text_reaches_the_ai_as_a_number(sample):
+    raw = sample("urgent_mild")
+    for text, days in (("28", 28), ("0", 0), (" 19200 ", 19200)):
+        raw["patient"]["age_days"] = text
+        age = build_ai_input(raw).ai_json["patient"]["age_days"]
+        assert age == days and isinstance(age, int)
 
 
 def test_the_ai_input_names_the_source_and_the_sex(sample):

@@ -10,6 +10,16 @@ _NOT_A_NUMBER_TAIL = re.compile(r"[:/]|-\d")  # "1:64" (titre), "5/10", "2026-01
 _NUMBER_PREFIX = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?")
 
 
+def age_days_as_number(value: Any) -> Any:
+    """The Backend may send the age in days as text (``"19200"``): whole-number text becomes a number. Anything else is
+    returned unchanged, so the validation (or the caller) still refuses what is not a whole number of days."""
+    if isinstance(value, str):
+        text = value.strip()
+        if text.isascii() and text.isdigit():       # ASCII only: no Arabic-Indic digits, no signs, no decimals
+            return int(text)
+    return value
+
+
 def parse_numeric(value: Any) -> int | float | None:
     """Port of v3 ``labValues.parseNumeric``: drop spaces, read the leading number.
 

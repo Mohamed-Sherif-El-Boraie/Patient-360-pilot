@@ -109,12 +109,27 @@ def test_a_boolean_is_not_a_value(sample):
     assert isinstance(validate_payload(raw(body)), Invalid)
 
 
-def test_the_patient_has_a_birthdate_and_a_sex_number(sample):
+def test_the_patient_has_age_in_days_and_a_sex_number(sample):
     body = sample("urgent_mild")
     body["patient"]["sex"] = 3
     assert isinstance(validate_payload(raw(body)), Invalid)
     body["patient"] = {"age_years": 40, "sex": 1}
     assert isinstance(validate_payload(raw(body)), Invalid)
+    body["patient"] = {"birthdate": "1990-01-01", "sex": 1}              # the old key is refused now
+    assert isinstance(validate_payload(raw(body)), Invalid)
+
+
+def test_the_age_in_days_is_a_whole_number_from_zero_sent_as_a_number_or_as_text(sample):
+    body = sample("urgent_mild")
+    for good in (0, 28, 19200, 60000, "0", "28", " 19200 ", "60000", "007"):
+        body["patient"] = {"age_days": good, "sex": 2}
+        result = validate_payload(raw(body))
+        assert isinstance(result, Valid), good
+        assert result.payload.patient.age_days == int(str(good).strip()) and isinstance(
+            result.payload.patient.age_days, int)                  # text became a real number
+    for bad in (-1, 60001, 28.5, "-1", "28.5", "28 days", "", "  ", "60001", "٢٨", "1e3", None, True, [28]):
+        body["patient"] = {"age_days": bad, "sex": 2}
+        assert isinstance(validate_payload(raw(body)), Invalid), bad
 
 
 def test_symptom_text_is_limited_to_500_characters_and_cannot_be_blank(sample):
@@ -147,10 +162,3 @@ def test_errors_never_echo_the_input(sample):
     result = validate_payload(raw(body))
     assert isinstance(result, Invalid) and "SECRET-SYMPTOM-TEXT" not in json.dumps(result.errors)
 
-
-def test_a_birthdate_must_be_a_real_date(sample):
-    body = sample("urgent_mild")
-    body["patient"]["birthdate"] = "2026-13-45"
-    assert isinstance(validate_payload(raw(body)), Invalid)
-    body["patient"]["birthdate"] = "2026-02-29"
-    assert isinstance(validate_payload(raw(body)), Invalid)

@@ -34,3 +34,11 @@ def decide_tier(result_rows: Sequence[Mapping[str, Any]], descriptive_count: int
 
 def lane_for_tier(tier: str) -> str:
     return LANE_BY_TIER[tier]
+
+
+def symptom_checker_open(tier: str, blocked: bool = False) -> bool:
+    """The ``symptom_flag`` of a visit result: may the patient type symptoms on this visit?
+
+    No for a fully normal patient (nothing to recommend, so no tests were retrieved) and no when the guardrail blocked
+    the result (there is no answer to check against the symptoms)."""
+    return tier != "NORMAL" and not blocked

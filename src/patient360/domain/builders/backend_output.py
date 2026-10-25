@@ -12,10 +12,11 @@ def build_backend_output(
     *, patient_id: int, visit_id: int, source: int, rows: Sequence[Mapping[str, Any]],
     ai: Mapping[str, Any], descriptive_rows: Sequence[Mapping[str, Any]] = (),
     packages: Sequence[Mapping[str, Any]] | None = None, html: Mapping[str, Any] | None = None,
-    arabic_test_names: Mapping[str, str] | None = None, html_reasons: bool = False,
+    arabic_test_names: Mapping[str, str] | None = None, html_reasons: bool = False, symptom_flag: bool = False,
 ) -> dict[str, Any]:
     """``rows`` and ``descriptive_rows`` come from ``build_ai_input``.
-    A result with no alert has no ``alert`` key.
+    A result with no alert has no ``alert`` key. ``symptom_flag`` tells the Backend if the patient may use the
+    symptom checker on this visit (true) or it is blocked (false).
     ``html`` is built from the AI answer (Arabic test names from ``arabic_test_names``) unless one is given."""
     tests: dict[int, list[dict[str, Any]]] = {}
     for row in rows:
@@ -30,6 +31,7 @@ def build_backend_output(
         "patient_id": patient_id,
         "visit_id": visit_id,
         "source": source,
+        "symptom_flag": symptom_flag,
         "tests": [{"test_id": test_id, "results": results} for test_id, results in tests.items()],
     }
     if descriptive_rows:

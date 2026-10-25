@@ -8,7 +8,8 @@ AI Service - that turns a patient's LIMS lab results into a plain-language repor
 2. We check it, save it safely (Blob first, then PostgreSQL) and answer.
 3. We prepare the AI request: results without ids, a status and alert per result, the patient tier (which lane: normal or critical), and tests we may recommend.
 4. We upload it to S3. AWS (Bedrock) writes the English and Arabic answer to Blob 2.
-5. We read that answer, build the final result (plus HTML) and send it to the Backend wrapper.
+5. We read that answer, build the final result (plus HTML and the `symptom_flag`: true if the patient may use the symptom
+   checker on this visit, false for a fully normal patient or a blocked result) and send it to the Backend wrapper.
 
 ## The process
 
@@ -53,6 +54,27 @@ flowchart LR
     SC -- "yes" --> SE["Build the request:<br/>symptoms + results + previous answer<br/>+ retrieved tests"]
     SE --> SF["Same road as a visit:<br/>S3, AWS, Blob 2, receiver,<br/>wrapper (source 3)"]
 ```
+
+### The `symptom_flag` (can the patient use the symptom checker?)
+
+Added to every result sent to the Backend. It is decided from the visit's own results when the result is built (not
+from whether tests were found).
+
+| Situation | `symptom_flag` |
+|---|---|
+| Every parameter is normal and there is no descriptive (text) result: a fully normal patient (tier NORMAL) | `false` |
+| One or more parameters are high, low or abnormal (tier MILD, MODERATE) | `true` |
+| A parameter could not be judged (status text) | `true` (counts as not normal) |
+| Any critical parameter (tier CRITICAL) | `true` |
+| Normal parameters, plus a descriptive (text) result | `true` (a text result counts as not normal) |
+| Only descriptive results, or no result with a value at all | `true` (no data is not "no findings") |
+| The AI result was blocked by the guardrail (any tier) | `false` (nothing to check the symptoms against) |
+| The result of a symptom check itself (source 3) | `false` (a symptom check is used once) |
+| The AI answer was unusable | no result is sent, so there is no flag |
+
+If a symptom check arrives for a visit whose result has `symptom_flag` false, we answer **409 `SYMPTOM_CHECKER_CLOSED`**
+and save nothing (the Backend can tell the patient). While the visit has no result yet, the flag is not known, so the
+symptom check is accepted and waits for it.
 
 ## What runs by itself
 
@@ -102,13 +124,6 @@ Settings are environment variables: see `.env.example` (never commit a real `.en
 For every file: what each function does and what it returns. Methods are written `Class.method`. A row marked
 "(helper)" is a small private function used inside the same file.
 
-### `domain/payload/age.py`
-Works out a patient's age in days (a temporary file, to be deleted when the Backend sends the age).
-
-| Function | What it does | Output |
-|---|---|---|
-| `age_in_days(birthdate, today=None)` | Counts whole days from the birth date (YYYY-MM-DD) to today, or to a date you give. | A whole number of days, never below 0. |
-
 ### `domain/payload/ai_answer.py`
 Describes the shape of the answer that comes back from the AI model (English and Arabic); a wrong shape is refused.
 
@@ -135,8 +150,8 @@ Describes exactly what the Backend must send us; any unknown or wrongly typed fi
 | `Test._parameters_are_unique()` | (helper) Checks that no parameter appears twice inside one test. | nothing returned; raises an error if a parameter repeats |
 | `DescriptiveResult` | A test whose result is free text instead of numbers. | an object with id, name, date, `text`, history |
 | `PreparationAnswer` | The patient's answer to one preparation question (for example fasting). | an object with `preparation_id`, `preparation_name`, `answer` |
-| `Patient` | The patient's birth date and sex (1 male, 2 female). | an object with `birthdate`, `sex` |
-| `Patient._birthdate_is_a_real_date()` | (helper) Checks the birth date really exists (not 2026-13-45). | nothing returned; raises an error if the date is fake |
+| `Patient` | The patient's age in whole days (0 to 60000, counted by the Backend) and sex (1 male, 2 female). | an object with `age_days`, `sex` |
+| `AgeDays (type)` | A whole number of days from 0 (newborn) to 60000, sent as a number or as whole-number text ("19200"); decimals, negatives and other text are refused. | a checked number |
 | `VisitPayload` | A full lab visit (source 1 urgent, 2 batch, 4 on-demand): ids, company, patient, tests, text results, answers. | an object with those fields |
 | `VisitPayload._tests_are_unique()` | (helper) Checks no test id appears twice, in the numeric tests or in the text results. | nothing returned; raises an error if a test repeats |
 | `SymptomPayload` | A symptom check (source 3): ids, the patient's symptom text (1 to 500 characters) and when it was received. | an object with those fields |
@@ -159,6 +174,7 @@ Small helpers for reading numbers and cleaning text.
 
 | Function | What it does | Output |
 |---|---|---|
+| `age_days_as_number(value)` | Turns whole-number text ("19200", " 28 ") into a number; anything else is returned as it is. | A number, or the value unchanged. |
 | `parse_numeric(value)` | Removes spaces and reads the number at the start. Refuses "0,5" style commas, titres like "1:64", dates and ranges like "5-10". | A whole number or decimal, or None if it is not a plain number. |
 | `remove_empty_values(value)` | Goes through lists and dictionaries and removes None, empty text and empty containers. Keeps 0 and False. | The cleaned data, or None if nothing is left. |
 | `_TextOnly` | (helper) A reader for HTML that keeps only the visible text and adds line breaks for tags like `<br>` and `<p>`. | an object with the collected text `parts` |
@@ -178,6 +194,7 @@ Decides the patient's tier (how serious) and the model lane (which AI model is u
 | `has_value(row)` | Checks that a result row has a value that is not empty or blank. | True or False. |
 | `decide_tier(result_rows, descriptive_count=0)` | Looks at rows with a value: any critical gives CRITICAL; otherwise counts not-normal rows plus text results. No numeric rows at all gives MODERATE. | One of NORMAL, MILD, MODERATE, CRITICAL. |
 | `lane_for_tier(tier)` | Looks up the lane for a tier in the lane table. | "normal" or "critical". |
+| `symptom_checker_open(tier, blocked=False)` | Decides the `symptom_flag`: closed for a fully NORMAL patient and when the AI result was blocked. | True (the patient may type symptoms) or False. |
 
 ### `domain/rules/dispatch.py`
 Rules for which kind of visit goes to AWS first and how long to wait before trying again.
@@ -297,7 +314,7 @@ Builds the final result that is sent back to the Backend system.
 
 | Function | What it does | Output |
 |---|---|---|
-| `build_backend_output(patient_id, visit_id, source, rows, ai, ...)` | Groups result rows by test, adds the AI answer, optional packages and the HTML page. | The result as a dictionary: ids, tests with statuses and alerts, the AI part and the html. |
+| `build_backend_output(patient_id, visit_id, source, rows, ai, ..., symptom_flag)` | Groups result rows by test, adds the AI answer, optional packages, the HTML page and the `symptom_flag`. | The result as a dictionary: ids, symptom_flag, tests with statuses and alerts, the AI part and the html. |
 
 ### `domain/builders/blocked.py`
 Handles answers the safety filter (guardrail) blocked: the Backend gets one fixed message, never what the model wrote.
@@ -417,7 +434,7 @@ Lists what the core flow needs from the outside world (storage, S3, Backend, dat
 | `VisitStore.mark_delivered(unit)` | Records that the result reached the Backend. | Nothing returned. |
 | `VisitStore.mark_delivery_failed_attempt(unit, error_type, retry_at)` | Counts a failed delivery and sets a retry time; no time means give up and mark failed. | Nothing returned. |
 | `VisitStore.set_batch_read_from(batch_id, read_from)` | Records where the batch's visits are read from (blob or PostgreSQL). | Nothing returned. |
-| `VisitStore.symptom_check_state(visit_id, patient_id)` | Checks if a symptom check can be accepted for this visit and patient. | One of "no_visit", "already_used" or "ok". |
+| `VisitStore.symptom_check_state(visit_id, patient_id)` | Checks if a symptom check can be accepted for this visit and patient, including whether the visit's saved result closed the checker. | One of "no_visit", "already_used", "closed" or "ok". |
 | `VisitStore.save_symptom_check(payload, raw, received_at, read_from)` | Saves a received symptom check. | Nothing returned. |
 | `VisitStore.save_rejected(source_id, raw, errors, blob_path)` | Saves a request that failed checks, with its errors. | Nothing returned. |
 
@@ -457,11 +474,12 @@ Receives a visit sent by the Backend, checks it, saves it safely and decides the
 | `Duplicate` | Class: we already have this visit (answer 200). | An object with visit_id. |
 | `Rejected` | Class: the payload is not valid (answer 422). | An object with the list of errors, never the input itself. |
 | `VisitNotFound` | Class: a symptom check arrived for a visit we do not have (answer 404). | An object with visit_id. |
+| `SymptomCheckerClosed` | Class: a symptom check arrived for a visit whose result has `symptom_flag` false (answer 409). | An object with visit_id. |
 | `TooLarge` | Class: the request is bigger than the allowed size (answer 413). | An object with size and limit. |
 | `SYMPTOM_CHECKER (constant)` | Source number 3 means a symptom check instead of a normal visit. | The number 3. |
 | `_peek(raw)` | (helper) Tries to read the source number and visit id from a payload that failed the checks. | A pair (source, visit_id), each one a number or None. |
 | `Intake.__init__(store, blobs, secret, now, max_bytes)` | Keeps the database, file storage, secret key, clock and size limit. | Nothing returned. |
-| `Intake.receive(raw)` | Checks size, validates, spots duplicates, saves raw file to Blob and database, then answers. | One of Accepted, Duplicate, Rejected, VisitNotFound or TooLarge. |
+| `Intake.receive(raw)` | Checks size, validates, spots duplicates, saves raw file to Blob and database, then answers. | One of Accepted, Duplicate, Rejected, VisitNotFound, SymptomCheckerClosed or TooLarge. |
 | `Intake._save_raw_to_blob(source, key, raw, received_at)` | (helper) Puts the raw file in Blob storage; if Blob is down, the database copy is used. | The text "blob" or "postgresql" (where it can be read from). |
 | `Intake._reject(raw, errors, received_at)` | (helper) Saves a bad payload in a rejected folder and records the rejection in the database. | A Rejected object with the errors. |
 
@@ -514,9 +532,9 @@ Receives what AWS wrote to Blob 2, checks it, saves it and builds the result for
 | `OutputReceiver.__init__(store, output_blobs, catalogue)` | Keeps the database, Blob 2 storage and test catalogue. | Nothing returned. |
 | `OutputReceiver.receive(path)` | Reads a new file in Blob 2, handles each record, and sets the batch status (completed or partially completed). | A list of Received objects (empty when the file is ignored). |
 | `OutputReceiver._handle_record(found, text)` | (helper) Checks one record: known visit, right source, not a duplicate, blocked or valid AI answer; then saves it. | A Received object. |
-| `OutputReceiver._save(found, text, stored, record, ai, analysis)` | (helper) Saves a batch record as its own file, and stores the result for the Backend in the database. | Nothing returned. |
+| `OutputReceiver._save(found, text, stored, record, ai, analysis, blocked)` | (helper) Saves a batch record as its own file, and stores the result for the Backend in the database. | Nothing returned. |
 | `OutputReceiver._ignore(found, record_id, outcome)` | (helper) Writes a warning to the log for a record that is not ours or is broken. | A Received object with that outcome. |
-| `OutputReceiver._public_output(stored, ai, analysis)` | (helper) Builds the final result the Backend will get; for symptom checks it uses source 3 and reasons in html. | A dictionary (the Backend result). |
+| `OutputReceiver._public_output(stored, ai, analysis, blocked)` | (helper) Builds the final result the Backend will get, with the `symptom_flag` (open unless the patient is fully normal or the result was blocked); a symptom check uses source 3, reasons in the html and a closed flag. | A dictionary (the Backend result). |
 
 ### `flow/send_result.py`
 Sends each finished result to the Backend, one call per result, and retries when the Backend is busy.
@@ -553,7 +571,7 @@ The web application: receives visits, receives new-file events from Azure, and a
 | `require_api_key(x_api_key)` | (helper) Checks the X-API-Key header against the secret key, if one is configured. | Nothing, or a 401 answer. |
 | `visit_body(request)` | (helper) Refuses a body whose declared size is over the limit before reading it, else reads it. | The body bytes, or a 413 answer. |
 | `event_body(request)` | (helper) Reads the request body as it is. | The body bytes. |
-| `POST /api/v1/visits` | Receives a visit or symptom check from the Backend, needs the API key; processing continues in the background. | 202 Accepted, 200 Duplicate, 422 invalid, 404 VISIT_NOT_FOUND, 413 too large, 401 bad key, 500 error. |
+| `POST /api/v1/visits` | Receives a visit or symptom check from the Backend, needs the API key; processing continues in the background. | 202 Accepted, 200 Duplicate, 422 invalid, 404 VISIT_NOT_FOUND, 409 SYMPTOM_CHECKER_CLOSED, 413 too large, 401 bad key, 500 error. |
 | `POST /api/v1/blob-events` | Event Grid webhook for new files in Blob 2; answers the setup handshake or saves each new result file. | 200 with count or validation code, 400 bad payload, 401 bad key, 500 error (so Event Grid retries). |
 | `GET /health` | Checks that the database answers a simple query. | 200 status "ok", or 503 "database_unavailable". |
 
@@ -680,7 +698,7 @@ The receiving side: saves visits, symptom checks and rejected requests, and find
 | `VisitsMixin.stored_visit(visit_id)` | Loads a visit by its id, with its raw bytes. | A `StoredVisit`; raises `LookupError` if not found. |
 | `VisitsMixin.find_visit(idempotency_key)` | Looks for a visit by its idempotency key (the key that stops double saving). | A `StoredVisit`, or None. |
 | `VisitsMixin.visits_waiting_for_processing(received_before)` | Finds visits received before the cutoff that have no work row yet. | A list of visit ids, oldest first. |
-| `VisitsMixin.symptom_check_state(visit_id, patient_id)` | Checks if a symptom check may be accepted for this visit and patient. | "no_visit", "already_used" or "ok". |
+| `VisitsMixin.symptom_check_state(visit_id, patient_id)` | Checks if a symptom check may be accepted for this visit and patient; reads `symptom_flag` from the visit's newest saved result. | "no_visit", "already_used", "closed" (flag false) or "ok" (flag true, missing, or no result yet). |
 | `VisitsMixin.save_symptom_check(payload, raw, received_at, read_from)` | Saves the symptom text and arrival time on the visit, sets stage "received_symptom", and stores the raw bytes. | Nothing returned. |
 | `VisitsMixin.stored_symptom_check(visit_id)` | Loads the saved symptom check with its raw bytes. | A `StoredSymptomCheck`; raises `LookupError` if none. |
 | `VisitsMixin.symptoms_waiting_for_processing(received_before)` | Finds symptom checks received before the cutoff that have no work row yet. | A list of visit ids, oldest first. |

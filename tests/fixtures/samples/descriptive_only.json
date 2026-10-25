@@ -4,13 +4,13 @@
   "visit_id": 2070000005,
   "company_name": 10,
   "patient": {
-    "birthdate": "1992-03-15",
+    "age_days": 12900,
     "sex": 2
   },
   "tests": [],
   "descriptive_results": [
     {
-      "test_id": 107,
+      "test_id": 2380,
       "test_name": "B -Thalassemia genetic defects by PCR",
       "result_date": "2026-09-28",
       "text": "RESULT: No common thalassemia gene deletions or mutations were detected in the regions tested. INTERPRETATION: The tested variants were not found. This does not exclude other rare variants. Clinical correlation is advised.",

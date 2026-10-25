@@ -47,7 +47,14 @@ def test_packages_and_html_are_added_and_the_ai_input_is_not_changed():
 def test_the_symptom_result_has_the_same_shape(sample):
     rows = build_ai_input(sample("batch_critical")).rows
     out = build_backend_output(patient_id=1, visit_id=2, source=3, rows=rows, ai=AI)
-    assert out["source"] == 3 and set(out) == {"patient_id", "visit_id", "source", "tests", "ai", "html"}
+    keys = {"patient_id", "visit_id", "source", "symptom_flag", "tests", "ai", "html"}
+    assert out["source"] == 3 and set(out) == keys
+
+
+def test_the_symptom_flag_is_always_in_the_result_and_is_false_unless_it_is_given_as_true():
+    given = build_backend_output(patient_id=1, visit_id=2, source=1, rows=[], ai=AI, symptom_flag=True)
+    assert given["symptom_flag"] is True
+    assert build_backend_output(patient_id=1, visit_id=2, source=1, rows=[], ai=AI)["symptom_flag"] is False
 
 
 def test_descriptive_results_are_listed_with_their_status_only_when_there_are_some():

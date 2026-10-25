@@ -40,6 +40,11 @@ class VisitNotFound:   # answer 404 VISIT_NOT_FOUND: a symptom check for a visit
 
 
 @dataclass(frozen=True)
+class SymptomCheckerClosed:   # answer 409 SYMPTOM_CHECKER_CLOSED: the visit's result has symptom_flag false
+    visit_id: int
+
+
+@dataclass(frozen=True)
 class TooLarge:        # answer 413: over MAX_REQUEST_BYTES; nothing is read, saved or logged
     size: int
     limit: int
@@ -64,7 +69,7 @@ class Intake:
                  max_bytes: int | None = None) -> None:
         self._store, self._blobs, self._secret, self._now, self._max_bytes = store, blobs, secret, now, max_bytes
 
-    def receive(self, raw: bytes) -> Accepted | Duplicate | Rejected | VisitNotFound | TooLarge:
+    def receive(self, raw: bytes) -> Accepted | Duplicate | Rejected | VisitNotFound | SymptomCheckerClosed | TooLarge:
         if self._max_bytes is not None and len(raw) > self._max_bytes:
             return TooLarge(len(raw), self._max_bytes)
         received_at = self._now()
@@ -79,6 +84,8 @@ class Intake:
                 return VisitNotFound(visit_id)
             if state == "already_used":
                 return Duplicate(visit_id)
+            if state == "closed":       # nothing is saved: the patient is told at once instead of waiting for no answer
+                return SymptomCheckerClosed(visit_id)
         elif self._store.visit_exists(visit_id):
             return Duplicate(visit_id)
         key = make_idempotency_key(self._secret, patient_id=patient_id, visit_id=visit_id)

@@ -1,0 +1,34 @@
+{
+  "recordId": "f10f2ce1da3c2289848ec2490ff35348",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-sonnet-5-5",
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"summary\":{\"en\":\"The earlier findings still apply: creatinine and blood urea are markedly raised and calcium is critically low. Headache and tiredness for a week may be related to these kidney and calcium findings, but the symptoms alone do not confirm a cause. The need for urgent medical assessment is unchanged.\",\"ar\":\"ما زالت النتائج السابقة قائمة: الكرياتينين واليوريا مرتفعان بشكل واضح والكالسيوم منخفض بشكل حرج. قد يكون الصداع والتعب لمدة أسبوع مرتبطين بنتائج الكلى والكالسيوم، لكن الأعراض وحدها لا تؤكد السبب. الحاجة إلى تقييم طبي عاجل لم تتغير.\"},\"simple_summary\":{\"en\":\"Your headache and tiredness may be linked to your kidney and calcium results. Please see a doctor today.\",\"ar\":\"قد يكون الصداع والتعب مرتبطين بنتائج الكلى والكالسيوم. يرجى مراجعة الطبيب اليوم.\"},\"critical_alerts\":[{\"en\":\"Creatinine 13.67 mg/dL (critically high): needs immediate medical attention\",\"ar\":\"الكرياتينين 13.67 ملجم/ديسيلتر (مرتفع بشكل حرج): يحتاج إلى عناية طبية فورية\"},{\"en\":\"Calcium 5.3 mg/dL (critically low): needs immediate medical attention\",\"ar\":\"الكالسيوم 5.3 ملجم/ديسيلتر (منخفض بشكل حرج): يحتاج إلى عناية طبية فورية\"}],\"note\":{\"en\":\"The symptoms were considered related to the lab findings: four recommendations were kept, one was added and one was removed.\",\"ar\":\"اعتُبرت الأعراض مرتبطة بنتائج التحاليل: تم الاحتفاظ بأربع توصيات وإضافة توصية وحذف توصية.\"},\"recommendations\":[{\"test_name\":\"eGFR (MDRD)\",\"priority\":{\"en\":\"urgent\",\"ar\":\"عاجل\"},\"reason\":{\"en\":\"Measures how well the kidneys filter the blood; creatinine and urea are markedly raised.\",\"ar\":\"يقيس مدى كفاءة الكلى في تنقية الدم؛ الكرياتينين واليوريا مرتفعان بشكل واضح.\"},\"timing\":{\"en\":\"Today\",\"ar\":\"اليوم\"},\"guideline\":{\"en\":\"KDIGO\",\"ar\":\"KDIGO\"},\"advisory\":{\"level\":{\"en\":\"seek_care_promptly\",\"ar\":\"اطلب الرعاية الطبية فوراً\"},\"message\":{\"en\":\"Seek medical care promptly.\",\"ar\":\"اطلب الرعاية الطبية فوراً.\"}},\"change_type\":{\"en\":\"kept\",\"ar\":\"محتفظ به\"},\"explanation\":{\"en\":\"Still needed: the kidney results are the main concern.\",\"ar\":\"ما زال مطلوباً: نتائج الكلى هي الشاغل الرئيسي.\"}},{\"test_name\":\"Sodium & Potassium in serum\",\"priority\":{\"en\":\"urgent\",\"ar\":\"عاجل\"},\"reason\":{\"en\":\"Kidney problems can change potassium and sodium, which affect the heart.\",\"ar\":\"قد تغيّر مشاكل الكلى مستوى البوتاسيوم والصوديوم، وهما يؤثران على القلب.\"},\"timing\":{\"en\":\"Today\",\"ar\":\"اليوم\"},\"guideline\":{\"en\":\"KDIGO\",\"ar\":\"KDIGO\"},\"advisory\":{\"level\":{\"en\":\"seek_care_promptly\",\"ar\":\"اطلب الرعاية الطبية فوراً\"},\"message\":{\"en\":\"Seek medical care promptly.\",\"ar\":\"اطلب الرعاية الطبية فوراً.\"}},\"change_type\":{\"en\":\"kept\",\"ar\":\"محتفظ به\"},\"explanation\":{\"en\":\"Still needed: salts affect the heart and may add to the tiredness.\",\"ar\":\"ما زال مطلوباً: الأملاح تؤثر على القلب وقد تزيد التعب.\"}},{\"test_name\":\"Parathyroid Hormone (PTH)\",\"priority\":{\"en\":\"important\",\"ar\":\"مهم\"},\"reason\":{\"en\":\"Helps to find the cause of the low calcium.\",\"ar\":\"يساعد على معرفة سبب انخفاض الكالسيوم.\"},\"timing\":{\"en\":\"Within 1 week\",\"ar\":\"خلال أسبوع\"},\"guideline\":{\"en\":\"General clinical practice\",\"ar\":\"الممارسة السريرية العامة\"},\"advisory\":{\"level\":{\"en\":\"discuss_with_doctor\",\"ar\":\"ناقش مع الطبيب\"},\"message\":{\"en\":\"Review the result with your doctor.\",\"ar\":\"راجع النتيجة مع طبيبك.\"}},\"change_type\":{\"en\":\"kept\",\"ar\":\"محتفظ به\"},\"explanation\":{\"en\":\"Still needed to find the cause of the low calcium.\",\"ar\":\"ما زال مطلوباً لمعرفة سبب انخفاض الكالسيوم.\"}},{\"test_name\":\"ionized Ca++\",\"priority\":{\"en\":\"important\",\"ar\":\"مهم\"},\"reason\":{\"en\":\"Measures the active part of the calcium in the blood, which matters when total calcium is critically low.\",\"ar\":\"يقيس الجزء الفعّال من الكالسيوم في الدم، وهو مهم عندما يكون الكالسيوم الكلي منخفضاً بشكل حرج.\"},\"timing\":{\"en\":\"Within 1 week\",\"ar\":\"خلال أسبوع\"},\"guideline\":{\"en\":\"General clinical practice\",\"ar\":\"الممارسة السريرية العامة\"},\"advisory\":{\"level\":{\"en\":\"discuss_with_doctor\",\"ar\":\"ناقش مع الطبيب\"},\"message\":{\"en\":\"Review the result with your doctor.\",\"ar\":\"راجع النتيجة مع طبيبك.\"}},\"change_type\":{\"en\":\"kept\",\"ar\":\"محتفظ به\"},\"explanation\":{\"en\":\"Still needed together with calcium.\",\"ar\":\"ما زال مطلوباً مع الكالسيوم.\"}},{\"test_name\":\"Uric acid\",\"priority\":{\"en\":\"important\",\"ar\":\"مهم\"},\"reason\":{\"en\":\"Uric acid rises when the kidneys clear waste poorly, and a high level can add to tiredness.\",\"ar\":\"يرتفع حمض اليوريك عندما تتخلص الكلى من الفضلات بشكل ضعيف، وقد يزيد ارتفاعه من التعب.\"},\"timing\":{\"en\":\"Within 1 week\",\"ar\":\"خلال أسبوع\"},\"guideline\":{\"en\":\"General clinical practice\",\"ar\":\"الممارسة السريرية العامة\"},\"advisory\":{\"level\":{\"en\":\"discuss_with_doctor\",\"ar\":\"ناقش مع الطبيب\"},\"message\":{\"en\":\"Review the result with your doctor.\",\"ar\":\"راجع النتيجة مع طبيبك.\"}},\"change_type\":{\"en\":\"added\",\"ar\":\"مضاف\"},\"explanation\":{\"en\":\"New: it fits the tiredness together with the kidney findings.\",\"ar\":\"جديد: يتناسب مع التعب مع نتائج الكلى.\"}},{\"test_name\":\"Haemoglobin A1C\",\"priority\":{\"en\":\"important\",\"ar\":\"مهم\"},\"reason\":{\"en\":\"Shows the average blood sugar of the last 2 to 3 months; glucose after the meal is 280 mg/dL.\",\"ar\":\"يوضح متوسط سكر الدم خلال آخر شهرين إلى ثلاثة أشهر؛ السكر بعد الأكل 280 ملجم/ديسيلتر.\"},\"timing\":{\"en\":\"Within 1-2 weeks\",\"ar\":\"خلال أسبوع إلى أسبوعين\"},\"guideline\":{\"en\":\"ADA Standards of Care\",\"ar\":\"معايير الرعاية ADA\"},\"advisory\":{\"level\":{\"en\":\"discuss_with_doctor\",\"ar\":\"ناقش مع الطبيب\"},\"message\":{\"en\":\"Review the result with your doctor.\",\"ar\":\"راجع النتيجة مع طبيبك.\"}},\"change_type\":{\"en\":\"removed\",\"ar\":\"محذوف\"},\"explanation\":{\"en\":\"Lower priority than the urgent kidney and calcium tests; it can be discussed at the follow-up visit.\",\"ar\":\"أولوية أقل من فحوصات الكلى والكالسيوم العاجلة؛ يمكن مناقشته في الزيارة المتابعة.\"}}]}"
+    }
+  ],
+  "metadata": {
+    "en": {
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 1544,
+        "output_tokens": 498,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0
+      }
+    },
+    "ar": {
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 1544,
+        "output_tokens": 330,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0
+      }
+    }
+  }
+}

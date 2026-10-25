@@ -6,8 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from patient360.domain.common.compat import frozendict
-from patient360.domain.payload.age import age_in_days
-from patient360.domain.payload.values import html_to_plain_text, remove_empty_values
+from patient360.domain.payload.values import age_days_as_number, html_to_plain_text, remove_empty_values
 from patient360.domain.rules.logic import (
     alert_level_for,
     classify_qualitative,
@@ -114,7 +113,7 @@ def build_ai_input(raw: Mapping[str, Any]) -> AiInput:
     patient = raw.get("patient") or {}
     ai_json = remove_empty_values({
         "source": SOURCE_NAMES.get(raw.get("source")),
-        "patient": {"age_days": age_in_days(patient["birthdate"]), "sex": SEX_NAMES.get(patient.get("sex"))},
+        "patient": {"age_days": age_days_as_number(patient.get("age_days")), "sex": SEX_NAMES.get(patient.get("sex"))},
         "tests": tests,
         "descriptive_results": descriptive,
         "visit_answer_list": answers,

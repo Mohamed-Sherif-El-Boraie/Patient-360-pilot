@@ -228,6 +228,32 @@ def test_files_that_are_not_a_visit_result_are_ignored(world, path):
     assert world.receiver().receive(path) == []
 
 
+@pytest.mark.parametrize(("sample_name", "folder", "flag"), [
+    ("batch_normal", None, False),            # fully normal: no retrieved tests, the symptom checker stays closed
+    ("urgent_mild", "urgent", True),
+    ("on_demand_critical", "on-demand", True),
+])
+def test_the_symptom_flag_follows_the_patient(world, sample_name, folder, flag):
+    [visit] = world.add(sample_name, 1)
+    if folder is None:           # a batch visit comes back inside a batch file
+        [batch] = BatchTrigger(world.store, world.blobs, 1).run()
+        path = f"aws-output-merged/batch/{batch.lane}-jsonls/2026/10/25/{batch.batch_id}.jsonl"
+    else:
+        path = f"aws-output-merged/{folder}/{'critical' if folder == 'on-demand' else 'normal'}/2026/10/24/" \
+               f"{visit['idempotency_key']}.json"
+    world.write(path, record(visit["idempotency_key"]))
+    world.receiver().receive(path)
+    assert visit["public_output"]["symptom_flag"] is flag
+
+
+def test_a_blocked_result_closes_the_symptom_checker_and_a_symptom_result_is_closed_too(world):
+    [visit] = world.add("urgent_mild", 1)
+    key = visit["idempotency_key"]
+    blocked = {**record(key), "amazon-bedrock-guardrailAction": "INTERVENED"}
+    world.receiver().receive(world.write(f"aws-output-merged/urgent/normal/2026/10/24/{key}.json", blocked))
+    assert visit["public_output"]["symptom_flag"] is False
+
+
 def test_a_file_that_is_not_there_is_ignored(world):
     assert world.receiver().receive("aws-output-merged/urgent/normal/2026/10/24/" + "a" * 32 + ".json") == []
 

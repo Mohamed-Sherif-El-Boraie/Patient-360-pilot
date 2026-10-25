@@ -1,0 +1,34 @@
+{
+  "recordId": "455ed235d3e6cc40436fe4bb50e746fd",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-haiku-5-5",
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"summary\":{\"en\":\"Fasting blood glucose is normal at 95 mg/dL, but glucose two hours after a meal is mildly raised at 168 mg/dL (reference 70-139). This pattern may suggest that the body clears sugar after eating more slowly than expected. The finding is mild and does not by itself establish a diagnosis, so it should be reviewed with a doctor.\",\"ar\":\"سكر الدم الصائم طبيعي (95 ملجم/ديسيلتر)، بينما سكر الدم بعد ساعتين من الأكل مرتفع قليلاً (168 ملجم/ديسيلتر، المعدل المرجعي 70-139). قد يشير هذا النمط إلى أن الجسم يتخلص من السكر بعد الأكل ببطء أكثر من المتوقع. النتيجة بسيطة ولا تكفي وحدها لتحديد تشخيص، لذلك يفضل مراجعتها مع الطبيب.\"},\"simple_summary\":{\"en\":\"Your sugar after eating is a little high, while your fasting sugar is fine. Please talk to your doctor about it.\",\"ar\":\"السكر بعد الأكل مرتفع قليلاً بينما السكر الصائم جيد. من الأفضل أن تستشير طبيبك.\"},\"critical_alerts\":[],\"note\":{\"en\":\"The suggested tests help to check how the body handles sugar over a longer period.\",\"ar\":\"الفحوصات المقترحة تساعد على معرفة كيف يتعامل الجسم مع السكر على مدى فترة أطول.\"},\"recommendations\":[{\"test_name\":\"Haemoglobin A1C\",\"priority\":{\"en\":\"important\",\"ar\":\"مهم\"},\"reason\":{\"en\":\"Shows the average blood sugar of the last 2 to 3 months and helps to interpret the raised glucose after the meal.\",\"ar\":\"يوضح متوسط سكر الدم خلال آخر شهرين إلى ثلاثة أشهر ويساعد على تفسير ارتفاع السكر بعد الأكل.\"},\"timing\":{\"en\":\"Within 1-2 weeks\",\"ar\":\"خلال أسبوع إلى أسبوعين\"},\"guideline\":{\"en\":\"ADA Standards of Care\",\"ar\":\"معايير الرعاية ADA\"},\"advisory\":{\"level\":{\"en\":\"discuss_with_doctor\",\"ar\":\"ناقش مع الطبيب\"},\"message\":{\"en\":\"Review the result with your doctor.\",\"ar\":\"راجع النتيجة مع طبيبك.\"}}},{\"test_name\":\"C-Peptide (Fasting)\",\"priority\":{\"en\":\"important\",\"ar\":\"مهم\"},\"reason\":{\"en\":\"Shows how much insulin the body makes itself, which helps to understand why sugar stays high after a meal.\",\"ar\":\"يوضح كمية الإنسولين التي ينتجها الجسم، مما يساعد على فهم سبب بقاء السكر مرتفعاً بعد الأكل.\"},\"timing\":{\"en\":\"Within 1-2 weeks\",\"ar\":\"خلال أسبوع إلى أسبوعين\"},\"guideline\":{\"en\":\"General clinical practice\",\"ar\":\"الممارسة السريرية العامة\"},\"advisory\":{\"level\":{\"en\":\"discuss_with_doctor\",\"ar\":\"ناقش مع الطبيب\"},\"message\":{\"en\":\"Review the result with your doctor.\",\"ar\":\"راجع النتيجة مع طبيبك.\"}}}]}"
+    }
+  ],
+  "metadata": {
+    "en": {
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 1180,
+        "output_tokens": 312,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0
+      }
+    },
+    "ar": {
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 1180,
+        "output_tokens": 205,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0
+      }
+    }
+  }
+}

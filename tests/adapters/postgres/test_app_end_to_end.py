@@ -79,7 +79,7 @@ class Rig:
     def work(self):
         run_work_cycle(self.services, datetime.now(UTC))
 
-    def aws_answers(self, source, text):
+    def aws_answers(self, source, text, **extra):
         """Play AWS and Event Grid: write the answer of the last uploaded file to Blob 2 and tell the app."""
         uploaded_source, s3_key = self.s3.uploads[-1]
         assert uploaded_source == source
@@ -87,7 +87,7 @@ class Rig:
         key = name.removesuffix(".json")
         path = f"aws-output-merged/{source}/{lane}/{year}/{month}/{day}/{name}"
         record = {"recordId": key, "model": "model-x", "content": [{"type": "text", "text": text}],
-                  "metadata": {"en": {"usage": {"input_tokens": 1, "output_tokens": 2}}}}
+                  "metadata": {"en": {"usage": {"input_tokens": 1, "output_tokens": 2}}}, **extra}
         self.blob_2.files[path] = json.dumps(record).encode()
         event = [{"eventType": "Microsoft.Storage.BlobCreated",
                   "subject": f"/blobServices/default/containers/ai-output/blobs/{path}", "data": {}}]
@@ -129,6 +129,21 @@ def test_the_whole_service_from_an_incoming_visit_to_the_delivered_symptom_resul
     assert visit_row["stage"] == "delivered_symptom" and visit_row["tier"] == "MILD"
     statuses = seed.fetch(rig.db, "SELECT analysis, status FROM record_processing ORDER BY analysis")
     assert [(r["analysis"], r["status"]) for r in statuses] == [("symptom", "delivered"), ("visit", "delivered")]
+
+
+def test_a_symptom_check_is_refused_with_409_when_the_visit_result_closed_the_checker(rig):
+    visit = rig.sample("urgent_mild") | {"visit_id": VISIT_ID, "patient_id": PATIENT_ID}
+    assert rig.post(visit).status_code == 202
+    rig.work()
+    blocked = {"amazon-bedrock-guardrailAction": "INTERVENED"}
+    assert rig.aws_answers("urgent", answer(), **blocked).status_code == 200
+    rig.work()
+    assert rig.wrapper.results[0]["symptom_flag"] is False                  # the Backend was told: no symptom box
+    reply = rig.post(rig.sample("symptom_check"))
+    assert reply.status_code == 409
+    assert reply.json() == {"response": {"code": 1, "message": "SYMPTOM_CHECKER_CLOSED"}}
+    assert seed.fetch(rig.db, "SELECT symptom_received_at FROM visits")[0]["symptom_received_at"] is None
+    assert [source for source, _ in rig.s3.uploads] == ["urgent"]            # nothing was processed or uploaded
 
 
 def test_a_wrong_or_missing_api_key_is_refused_and_nothing_is_saved(rig):

@@ -4,17 +4,17 @@
   "visit_id": 2070000003,
   "company_name": 10,
   "patient": {
-    "birthdate": "1974-03-15",
+    "age_days": 19200,
     "sex": 1
   },
   "tests": [
     {
-      "test_id": 100,
+      "test_id": 18,
       "test_name": "Fasting Blood Glucose",
       "test_remark": null,
       "results": [
         {
-          "parameter_id": 5000,
+          "parameter_id": 2,
           "parameter_name": "Fasting Blood Glucose",
           "result_date": "2026-09-29",
           "value": "95",
@@ -32,12 +32,12 @@
       ]
     },
     {
-      "test_id": 106,
+      "test_id": 2241,
       "test_name": "Glucose After 2 Hours",
       "test_remark": null,
       "results": [
         {
-          "parameter_id": 5006,
+          "parameter_id": 2234,
           "parameter_name": "Glucose After 2 Hours",
           "result_date": "2026-09-29",
           "value": "168",

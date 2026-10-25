@@ -34,6 +34,13 @@ def _count(db, table):
     return seed.fetch(db, f"SELECT count(*) AS n FROM {table}")[0]["n"]
 
 
+def test_an_age_sent_as_text_is_stored_as_a_number_of_days(db, store, sample):
+    payload = sample("urgent_mild")
+    payload["patient"]["age_days"] = "19200"
+    _save(store, payload)
+    assert seed.fetch(db, "SELECT age_days FROM visits")[0]["age_days"] == 19200
+
+
 def test_save_visit_urgent_mild(db, store, sample):
     payload = sample("urgent_mild")
     raw = _save(store, payload)
@@ -45,18 +52,18 @@ def test_save_visit_urgent_mild(db, store, sample):
     assert (visit["company_id"], visit["sex_id"], visit["stage"], visit["created_at"]) == (10, 1, "received", NOW)
     assert visit["age_days"] > 365 * 50
 
-    assert [r["test_id"] for r in seed.fetch(db, "SELECT test_id FROM visit_tests ORDER BY test_id")] == [100, 106]
+    assert [r["test_id"] for r in seed.fetch(db, "SELECT test_id FROM visit_tests ORDER BY test_id")] == [18, 2241]
     rows = {r["parameter_id"]: r for r in seed.fetch(db, "SELECT * FROM lab_results")}
-    assert rows[5000]["value"] == "95"
-    assert (rows[5000]["status"], rows[5000]["alert"], rows[5000]["lab_flag"]) == ("normal", "NORMAL", None)
-    assert rows[5006]["value"] == "168"
-    assert (rows[5006]["status"], rows[5006]["alert"], rows[5006]["lab_flag"]) == ("high", "MEDICAL_ATTENTION", "High")
-    assert rows[5006]["reference_range"].startswith("Normal: 70 - 139\r\n")
-    assert rows[5006]["parameter_remark"] == "Fructosamine and HBA1c are recommended."
-    assert rows[5006]["critical_low"] is None
+    assert rows[2]["value"] == "95"
+    assert (rows[2]["status"], rows[2]["alert"], rows[2]["lab_flag"]) == ("normal", "NORMAL", None)
+    assert rows[2234]["value"] == "168"
+    assert (rows[2234]["status"], rows[2234]["alert"], rows[2234]["lab_flag"]) == ("high", "MEDICAL_ATTENTION", "High")
+    assert rows[2234]["reference_range"].startswith("Normal: 70 - 139\r\n")
+    assert rows[2234]["parameter_remark"] == "Fructosamine and HBA1c are recommended."
+    assert rows[2234]["critical_low"] is None
 
     [history] = seed.fetch(db, "SELECT * FROM lab_result_history")
-    assert (history["parameter_id"], history["history_visit_id"], history["history_value"]) == (5006, 2069999903, "149")
+    assert (history["parameter_id"], history["history_visit_id"], history["history_value"]) == (2234, 2069999903, "149")
     assert [(a["preparation_id"], a["answer"]) for a in seed.fetch(db, "SELECT * FROM visit_answers ORDER BY 2")] == [
         (900, "10"), (901, "No")]
     assert _count(db, "descriptive_results") == 0
@@ -90,7 +97,7 @@ def test_descriptive_results_use_plain_text_and_history(db, store, sample):
     _save(store, payload)
 
     [result] = seed.fetch(db, "SELECT * FROM descriptive_results")
-    assert (result["test_id"], result["status"]) == (107, "text")
+    assert (result["test_id"], result["status"]) == (2380, "text")
     assert "<" not in result["text_value"] and "deletions" in result["text_value"]
     [history] = seed.fetch(db, "SELECT * FROM descriptive_result_history")      # the history is plain text too
     assert (history["history_visit_id"], history["history_value"]) == (7, "Old text\nhere")
@@ -103,20 +110,20 @@ def test_unknown_company_test_and_parameter_get_placeholders(db, store, sample):
 
     assert seed.fetch(db, "SELECT * FROM companies WHERE company_id = 77") == [
         {"company_id": 77, "company_name": "Company 77"}]
-    test = seed.fetch(db, "SELECT test_name_en, active FROM tests WHERE test_id = 100")
+    test = seed.fetch(db, "SELECT test_name_en, active FROM tests WHERE test_id = 18")
     assert test == [{"test_name_en": "Fasting Blood Glucose", "active": False}]
-    assert seed.fetch(db, "SELECT parameter_name, active FROM parameters WHERE parameter_id = 5000") == [
+    assert seed.fetch(db, "SELECT parameter_name, active FROM parameters WHERE parameter_id = 2") == [
         {"parameter_name": "Fasting Blood Glucose", "active": False}]
 
 
 def test_known_company_test_and_parameter_are_left_alone(db, store, sample):
-    seed.add_test(db, 100, "Glucose (reviewed)", categories=(1,))
-    seed.add_parameter(db, 5000, "Glucose parameter")
+    seed.add_test(db, 18, "Glucose (reviewed)", categories=(1,))
+    seed.add_parameter(db, 2, "Glucose parameter")
     _save(store, sample("urgent_mild"))
 
-    assert seed.fetch(db, "SELECT test_name_en, active FROM tests WHERE test_id = 100") == [
+    assert seed.fetch(db, "SELECT test_name_en, active FROM tests WHERE test_id = 18") == [
         {"test_name_en": "Glucose (reviewed)", "active": True}]
-    assert seed.fetch(db, "SELECT parameter_name FROM parameters WHERE parameter_id = 5000") == [
+    assert seed.fetch(db, "SELECT parameter_name FROM parameters WHERE parameter_id = 2") == [
         {"parameter_name": "Glucose parameter"}]
     assert seed.fetch(db, "SELECT company_name FROM companies WHERE company_id = 10") == [
         {"company_name": "Al-Mokhtbar"}]
@@ -173,6 +180,20 @@ def test_symptom_check_states(db, store):
 
     store.save_symptom_check({"visit_id": 10, "patient_symptoms": "cough"}, b'{"visit_id": 10}', NOW, "blob")
     assert store.symptom_check_state(10, 500) == "already_used"
+
+
+def test_a_closed_symptom_checker_is_read_from_the_saved_visit_result(db, store):
+    seed.add_visit(db, 10, patient_id=500)
+    assert store.symptom_check_state(10, 500) == "ok"                      # no result yet: still open
+    seed.add_payload(db, 10, "output_public", {"ai": {}})
+    assert store.symptom_check_state(10, 500) == "ok"                      # a result without the flag: still open
+    seed.add_payload(db, 10, "output_public", {"symptom_flag": True})
+    assert store.symptom_check_state(10, 500) == "ok"
+    seed.add_payload(db, 10, "output_public", {"symptom_flag": False})     # the newest version counts
+    assert store.symptom_check_state(10, 500) == "closed"
+    assert store.symptom_check_state(10, 501) == "no_visit"                # another patient: not closed, unknown
+    seed.add_payload(db, 10, "output_public", {"symptom_flag": False}, analysis="symptom")
+    assert store.symptom_check_state(10, 500) == "closed"                  # a symptom result does not change the answer
 
 
 def test_save_and_read_symptom_check(db, store, sample):

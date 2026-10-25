@@ -1,15 +1,18 @@
 """Strict payload models = the Backend -> AI contract (tests/fixtures/flow). Unknown keys are rejected."""
 from __future__ import annotations
 
-from datetime import date
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, StringConstraints, model_validator
+
+from patient360.domain.payload.values import age_days_as_number
 
 Date = Annotated[str, StringConstraints(pattern=r"^\d{4}-\d{2}-\d{2}$")]
 Scalar = str | int | float   # a lab value or limit may arrive as text, decimal or integer
 BigId = Annotated[int, Field(ge=1, le=9_223_372_036_854_775_807)]   # fits a PostgreSQL bigint
 SmallId = Annotated[int, Field(ge=1, le=2_147_483_647)]            # fits a PostgreSQL int
+# whole days, counted by the Backend (0 = newborn); sent as a number or as whole-number text
+AgeDays = Annotated[int, BeforeValidator(age_days_as_number), Field(ge=0, le=60_000)]
 
 
 class Strict(BaseModel):
@@ -76,16 +79,8 @@ class PreparationAnswer(Strict):
 
 
 class Patient(Strict):
-    birthdate: Date
+    age_days: AgeDays
     sex: Literal[1, 2]   # 1 Male, 2 Female
-
-    @model_validator(mode="after")
-    def _birthdate_is_a_real_date(self) -> Patient:
-        try:
-            date.fromisoformat(self.birthdate)
-        except ValueError:
-            raise ValueError("birthdate is not a real date") from None
-        return self
 
 
 class VisitPayload(Strict):

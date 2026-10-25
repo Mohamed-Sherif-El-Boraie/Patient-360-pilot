@@ -11,7 +11,15 @@ import structlog
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, Request
 from fastapi.responses import JSONResponse
 
-from patient360.flow.intake import SYMPTOM_CHECKER, Accepted, Duplicate, Rejected, TooLarge, VisitNotFound
+from patient360.flow.intake import (
+    SYMPTOM_CHECKER,
+    Accepted,
+    Duplicate,
+    Rejected,
+    SymptomCheckerClosed,
+    TooLarge,
+    VisitNotFound,
+)
 from patient360.services import Services
 
 log = structlog.get_logger()
@@ -84,6 +92,8 @@ def create_app(services: Services, lifespan=None) -> FastAPI:
             return reply(422, "Invalid payload", errors=outcome.errors)
         if isinstance(outcome, VisitNotFound):
             return reply(404, "VISIT_NOT_FOUND")
+        if isinstance(outcome, SymptomCheckerClosed):
+            return reply(409, "SYMPTOM_CHECKER_CLOSED")
         assert isinstance(outcome, TooLarge)
         return reply(413, "Payload too large")
 

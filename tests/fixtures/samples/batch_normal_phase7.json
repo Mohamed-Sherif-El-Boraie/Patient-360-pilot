@@ -1,0 +1,34 @@
+{
+  "recordId": "2dc869853602315f68113a9385aeff48",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-haiku-5-5",
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"summary\":{\"en\":\"All results in this report are within the laboratory reference ranges. Fasting blood glucose (92 mg/dL), haemoglobin (14.2 g/dL) and serum creatinine (0.9 mg/dL) are normal, and the hepatitis B surface antigen screen did not detect the antigen. No abnormal or critical findings were reported.\",\"ar\":\"جميع النتائج في هذا التقرير ضمن المعدلات المرجعية للمعمل. سكر الدم الصائم (92 ملجم/ديسيلتر) والهيموجلوبين (14.2 جم/ديسيلتر) وكرياتينين الدم (0.9 ملجم/ديسيلتر) طبيعية، ولم يكشف فحص المستضد السطحي لفيروس الكبد ب عن وجود المستضد. لم يتم الإبلاغ عن أي نتائج غير طبيعية أو حرجة.\"},\"simple_summary\":{\"en\":\"Your results are all normal. Nothing needs special attention right now.\",\"ar\":\"نتائجك كلها طبيعية. لا يوجد ما يستدعي اهتماماً خاصاً حالياً.\"},\"critical_alerts\":[],\"note\":{\"en\":\"No additional tests are recommended based on these results.\",\"ar\":\"لا يوصى بإجراء فحوصات إضافية بناءً على هذه النتائج.\"},\"recommendations\":[]}"
+    }
+  ],
+  "metadata": {
+    "en": {
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 1180,
+        "output_tokens": 312,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0
+      }
+    },
+    "ar": {
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 1180,
+        "output_tokens": 205,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0
+      }
+    }
+  }
+}

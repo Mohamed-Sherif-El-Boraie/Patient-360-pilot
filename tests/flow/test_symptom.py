@@ -154,6 +154,7 @@ def test_the_whole_way_the_visit_result_and_the_symptom_result_are_two_posts(wor
     ResultSender(world.store, backend, lambda: NOW).run()
     assert [post["source"] for post in backend.posts] == [world.source, 3]          # urgent goes before symptom-checker
     visit_post, symptom_post = backend.posts
+    assert visit_post["symptom_flag"] is True and symptom_post["symptom_flag"] is False      # used once, now closed
     assert symptom_post["visit_id"] == VISIT_ID and symptom_post["patient_id"] == PATIENT_ID
     assert symptom_post["ai"]["recommendations"][0]["change_type"] == both("kept")
     assert symptom_post["ai"]["recommendations"][0]["explanation"] == both("still applies")
@@ -214,12 +215,13 @@ def test_a_not_normal_patients_symptom_check_keeps_the_same_rule_as_the_visit(sa
     assert [t["test_name"] for t in data["retrieved_tests"]] == ["Extra test"]
 
 
-def test_a_visit_whose_result_was_blocked_is_never_symptom_checked(world):
+def test_a_symptom_check_that_arrived_before_its_visit_result_was_blocked_is_never_processed(world):
+    """Intake refuses a symptom check once the result is known to be blocked; this is the check that arrived earlier."""
+    world.receive_the_symptom_check()                      # accepted: the visit has no result yet, so it waits
     blocked = aws_record(world.key, answer(), **{"amazon-bedrock-guardrailAction": "INTERVENED"})
     path = f"aws-output-merged/urgent/normal/2026/10/24/{world.key}.json"
     world.out.files[path] = json.dumps(blocked).encode()
     world.receiver().receive(path)
-    world.receive_the_symptom_check()
     assert world.symptom_processor().process(VISIT_ID) is None
     assert process_waiting_symptoms(world.store, world.symptom_processor(), NOW + timedelta(days=1)) == []
     assert world.store.symptom_checks[VISIT_ID]["stage"] == "received_symptom" and not world.s3.uploads

@@ -4,17 +4,17 @@
   "visit_id": 2071739799,
   "company_name": 10,
   "patient": {
-    "birthdate": "2007-03-15",
+    "age_days": 7900,
     "sex": 1
   },
   "tests": [
     {
-      "test_id": 104,
+      "test_id": 22,
       "test_name": "Blood Urea",
       "test_remark": null,
       "results": [
         {
-          "parameter_id": 5004,
+          "parameter_id": 61,
           "parameter_name": "Blood Urea",
           "result_date": "2026-09-29",
           "value": "177",
@@ -32,12 +32,12 @@
       ]
     },
     {
-      "test_id": 105,
+      "test_id": 27,
       "test_name": "Calcium",
       "test_remark": "Result confirmed on repeat analysis by the laboratory consultant.",
       "results": [
         {
-          "parameter_id": 5005,
+          "parameter_id": 57,
           "parameter_name": "Calcium",
           "result_date": "2026-09-29",
           "value": "5.3",
@@ -59,12 +59,12 @@
       ]
     },
     {
-      "test_id": 102,
+      "test_id": 30,
       "test_name": "Creatinine, serum",
       "test_remark": null,
       "results": [
         {
-          "parameter_id": 5002,
+          "parameter_id": 54,
           "parameter_name": "CREATININE (serum)",
           "result_date": "2026-09-29",
           "value": "13.67",
@@ -86,12 +86,12 @@
       ]
     },
     {
-      "test_id": 106,
+      "test_id": 2241,
       "test_name": "Glucose After 2 Hours",
       "test_remark": null,
       "results": [
         {
-          "parameter_id": 5006,
+          "parameter_id": 2234,
           "parameter_name": "Glucose After 2 Hours",
           "result_date": "2026-08-02",
           "value": "280",

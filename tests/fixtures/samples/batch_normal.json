@@ -4,17 +4,17 @@
   "visit_id": 2070000001,
   "company_name": 10,
   "patient": {
-    "birthdate": "1985-03-15",
+    "age_days": 15900,
     "sex": 2
   },
   "tests": [
     {
-      "test_id": 100,
+      "test_id": 18,
       "test_name": "Fasting Blood Glucose",
       "test_remark": null,
       "results": [
         {
-          "parameter_id": 5000,
+          "parameter_id": 2,
           "parameter_name": "Fasting Blood Glucose",
           "result_date": "2026-09-29",
           "value": "92",
@@ -32,12 +32,12 @@
       ]
     },
     {
-      "test_id": 101,
-      "test_name": "Haemoglobin (Hb) & Haematocrit HCT",
+      "test_id": 1209,
+      "test_name": "Haemoglobin (Hb) &Haematocrit HCT",
       "test_remark": null,
       "results": [
         {
-          "parameter_id": 5001,
+          "parameter_id": 285,
           "parameter_name": "Haemoglobin",
           "result_date": "2026-09-29",
           "value": "14.2",
@@ -55,12 +55,12 @@
       ]
     },
     {
-      "test_id": 102,
+      "test_id": 30,
       "test_name": "Creatinine, serum",
       "test_remark": null,
       "results": [
         {
-          "parameter_id": 5002,
+          "parameter_id": 54,
           "parameter_name": "CREATININE (serum)",
           "result_date": "2026-09-29",
           "value": "0.9",
@@ -82,12 +82,12 @@
       ]
     },
     {
-      "test_id": 103,
-      "test_name": "Hepatitis B Surface Antigen",
+      "test_id": 46,
+      "test_name": "HBsAg by Chemiluminescent technology",
       "test_remark": null,
       "results": [
         {
-          "parameter_id": 5003,
+          "parameter_id": 69,
           "parameter_name": "HBsAg",
           "result_date": "2026-09-29",
           "value": "Negative",

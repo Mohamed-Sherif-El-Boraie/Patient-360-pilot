@@ -1,0 +1,175 @@
+{
+  "source": "tests/fixtures/Packages & tests & paramters.xlsx (the rows the samples use)",
+  "categories": {
+    "4": "blood",
+    "5": "bone",
+    "10": "electrolyte",
+    "14": "genetics",
+    "15": "glucose",
+    "16": "hormone",
+    "18": "infection",
+    "21": "liver",
+    "27": "pancreas",
+    "30": "renal"
+  },
+  "tests": {
+    "18": {
+      "test_name": "Fasting Blood Glucose",
+      "test_name_ar": "الجلوكوز (صائم)",
+      "category_id": [
+        15
+      ]
+    },
+    "22": {
+      "test_name": "Blood Urea",
+      "test_name_ar": "يوريا الدم",
+      "category_id": [
+        30
+      ]
+    },
+    "27": {
+      "test_name": "Calcium",
+      "test_name_ar": "الكالسيوم",
+      "category_id": [
+        5,
+        10
+      ]
+    },
+    "30": {
+      "test_name": "Creatinine, serum",
+      "test_name_ar": "الكرياتينين في الدم",
+      "category_id": [
+        30
+      ]
+    },
+    "46": {
+      "test_name": "HBsAg by Chemiluminescent technology",
+      "test_name_ar": "مستضد HBsAg (استضاءة كيميائية)",
+      "category_id": [
+        21,
+        18
+      ]
+    },
+    "723": {
+      "test_name": "Parathyroid Hormone (PTH)",
+      "test_name_ar": "هرمون الغدة الجار درقية (PTH)",
+      "category_id": [
+        16,
+        5,
+        10
+      ]
+    },
+    "1209": {
+      "test_name": "Haemoglobin (Hb) &Haematocrit HCT",
+      "test_name_ar": "الهيموجلوبين (Hb) والهيماتوكريت (HCT)",
+      "category_id": [
+        4
+      ]
+    },
+    "1393": {
+      "test_name": "ionized Ca++",
+      "test_name_ar": "الكالسيوم المتأين",
+      "category_id": [
+        5,
+        10
+      ]
+    },
+    "1398": {
+      "test_name": "Uric acid",
+      "test_name_ar": "حمض اليوريك",
+      "category_id": [
+        30
+      ]
+    },
+    "1926": {
+      "test_name": "Haemoglobin A1C",
+      "test_name_ar": "الهيموجلوبين السكري (HbA1c)",
+      "category_id": [
+        15
+      ]
+    },
+    "2241": {
+      "test_name": "Glucose After 2 Hours",
+      "test_name_ar": "الجلوكوز بعد ساعتين",
+      "category_id": [
+        15
+      ]
+    },
+    "2380": {
+      "test_name": "B -Thalassemia genetic defects by PCR",
+      "test_name_ar": "العيوب الجينية لبيتا ثلاسيميا بتقنية PCR",
+      "category_id": [
+        4,
+        14
+      ]
+    },
+    "3012": {
+      "test_name": "Sodium & Potassium in serum",
+      "test_name_ar": "الصوديوم والبوتاسيوم في الدم",
+      "category_id": [
+        10
+      ]
+    },
+    "4472": {
+      "test_name": "C-Peptide (Fasting)",
+      "test_name_ar": "الببتيد السي (صائم)",
+      "category_id": [
+        15,
+        16,
+        27
+      ]
+    },
+    "8393": {
+      "test_name": "eGFR (MDRD)",
+      "test_name_ar": "معدل الترشيح الكبيبي المقدر (MDRD)",
+      "category_id": [
+        30
+      ]
+    }
+  },
+  "parameters": {
+    "2": {
+      "parameter_name": "Fasting Blood Glucose",
+      "category_id": [
+        15
+      ]
+    },
+    "54": {
+      "parameter_name": "CREATININE (serum)",
+      "category_id": [
+        30
+      ]
+    },
+    "57": {
+      "parameter_name": "Calcium",
+      "category_id": [
+        5,
+        10
+      ]
+    },
+    "61": {
+      "parameter_name": "Blood Urea",
+      "category_id": [
+        30
+      ]
+    },
+    "69": {
+      "parameter_name": "HBsAg",
+      "category_id": [
+        18
+      ]
+    },
+    "285": {
+      "parameter_name": "Haemoglobin",
+      "category_id": [
+        4
+      ]
+    },
+    "2234": {
+      "parameter_name": "Glucose After 2 Hours",
+      "category_id": [
+        15
+      ]
+    }
+  }
+}

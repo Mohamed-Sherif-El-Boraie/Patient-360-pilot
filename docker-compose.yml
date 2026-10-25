@@ -68,22 +68,25 @@ services:
     environment:
       MINIO_ROOT_USER: devminio
       MINIO_ROOT_PASSWORD: devminio-secret
+      MINIO_SITE_REGION: eu-west-1       # the same region the app signs with
     ports:
       - "127.0.0.1:9000:9000"
       - "127.0.0.1:9001:9001"
 
-  # Waits for MinIO by trying until it answers (no healthcheck: the minio image may not contain a client), then makes
-  # the four buckets.
+  # Makes the four buckets with our own image (tools/create_buckets.py, boto3): the MinIO client image can not be pulled
+  # without a login. The script waits until MinIO answers, so no healthcheck is needed.
   minio-setup:
-    image: quay.io/minio/mc
+    build: *app-build
+    image: patient360:local
+    working_dir: /app
+    command: ["python", "tools/create_buckets.py"]
+    environment: *app-env
+    volumes:
+      - ./tools:/app/tools:ro
     depends_on:
       minio:
         condition: service_started
     restart: "no"
-    entrypoint: >
-      /bin/sh -c "
-      until mc alias set local http://minio:9000 devminio devminio-secret; do echo waiting for minio; sleep 2; done &&
-      mc mb --ignore-existing local/p360-urgent local/p360-on-demand local/p360-symptom-checker local/p360-batch"
 
   # Same app image, running tools/mock_wrapper.py from a read-only mount (fastapi and uvicorn are already in the image).
   mock-wrapper:

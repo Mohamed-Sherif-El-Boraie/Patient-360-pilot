@@ -4,7 +4,15 @@ from datetime import UTC, datetime
 import pytest
 
 from patient360.domain.common.ids import make_idempotency_key
-from patient360.flow.intake import Accepted, Duplicate, Intake, Rejected, TooLarge, VisitNotFound
+from patient360.flow.intake import (
+    Accepted,
+    Duplicate,
+    Intake,
+    Rejected,
+    SymptomCheckerClosed,
+    TooLarge,
+    VisitNotFound,
+)
 from tests.fakes import FakeBlobs, FakeStore
 
 SECRET = b"a-long-test-secret-value"
@@ -133,6 +141,38 @@ def symptom_for(visit, sample):
     body = sample("symptom_check")
     body["patient_id"], body["visit_id"] = visit["patient_id"], visit["visit_id"]
     return body
+
+
+def test_a_symptom_check_is_refused_when_the_visit_result_says_the_checker_is_closed(parts, sample):
+    intake, store, blobs = parts
+    visit = sample("urgent_mild")
+    intake.receive(raw(visit))
+    store.visits[visit["visit_id"]]["public_output"] = {"symptom_flag": False}      # a fully normal or blocked result
+    files_before = dict(blobs.files)
+    assert intake.receive(raw(symptom_for(visit, sample))) == SymptomCheckerClosed(visit["visit_id"])
+    assert not store.symptom_checks and blobs.files == files_before                 # nothing was saved
+
+
+def test_a_symptom_check_is_accepted_when_the_flag_is_true_or_the_visit_has_no_result_yet(parts, sample):
+    intake, store, _ = parts
+    visit = sample("urgent_mild")
+    intake.receive(raw(visit))
+    assert isinstance(intake.receive(raw(symptom_for(visit, sample))), Accepted)      # no result yet: it waits
+    store.symptom_checks.clear()
+    store.visits[visit["visit_id"]]["public_output"] = {"symptom_flag": True}
+    assert isinstance(intake.receive(raw(symptom_for(visit, sample))), Accepted)
+    store.symptom_checks.clear()
+    store.visits[visit["visit_id"]]["public_output"] = {"ai": {}}                      # an old result without the flag
+    assert isinstance(intake.receive(raw(symptom_for(visit, sample))), Accepted)
+
+
+def test_a_symptom_check_already_received_is_a_duplicate_even_if_the_checker_is_closed_now(parts, sample):
+    intake, store, _ = parts
+    visit = sample("urgent_mild")
+    intake.receive(raw(visit))
+    intake.receive(raw(symptom_for(visit, sample)))
+    store.visits[visit["visit_id"]]["public_output"] = {"symptom_flag": False}
+    assert isinstance(intake.receive(raw(symptom_for(visit, sample))), Duplicate)
 
 
 def test_a_symptom_check_for_a_stored_visit_is_accepted_once(parts, sample):

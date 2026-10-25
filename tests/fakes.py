@@ -298,7 +298,9 @@ class FakeStore:
         visit = self.visits.get(visit_id)
         if visit is None or visit["payload"]["patient_id"] != patient_id:
             return "no_visit"
-        return "already_used" if visit_id in self.symptom_checks else "ok"
+        if visit_id in self.symptom_checks:
+            return "already_used"
+        return "closed" if (visit.get("public_output") or {}).get("symptom_flag") is False else "ok"
 
     def save_symptom_check(self, payload, raw, received_at, read_from):
         if self.fail_on_save:

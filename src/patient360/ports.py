@@ -201,7 +201,12 @@ class VisitStore(Protocol):
     def set_batch_read_from(self, batch_id: str, read_from: Literal["blob", "postgresql"]) -> None:
         """Where the batch's visits are read from once the batch files were (or could not be) written."""
 
-    def symptom_check_state(self, visit_id: int, patient_id: int) -> Literal["no_visit", "already_used", "ok"]: ...
+    def symptom_check_state(
+        self, visit_id: int, patient_id: int,
+    ) -> Literal["no_visit", "already_used", "closed", "ok"]:
+        """``no_visit``: unknown visit or another patient; ``already_used``: its symptom check was received;
+        ``closed``: the visit's saved result says ``symptom_flag`` false (a fully normal patient or a blocked result);
+        ``ok`` otherwise, also while the visit has no result yet (the flag is not known: the check waits for it)."""
 
     def save_symptom_check(self, payload: dict[str, Any], raw: bytes, received_at: datetime,
                            read_from: Literal["blob", "postgresql"]) -> None: ...

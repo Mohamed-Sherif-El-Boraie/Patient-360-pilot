@@ -1,7 +1,7 @@
 import pytest
 
 from patient360.domain.builders.ai_input import build_ai_input
-from patient360.domain.rules.classify import LANE_BY_TIER, decide_tier, lane_for_tier
+from patient360.domain.rules.classify import LANE_BY_TIER, decide_tier, lane_for_tier, symptom_checker_open
 
 EXPECTED = {"batch_normal": "NORMAL", "batch_critical": "CRITICAL", "urgent_mild": "MILD",
             "on_demand_critical": "CRITICAL", "descriptive_only": "MODERATE"}
@@ -55,3 +55,9 @@ def test_lanes_follow_the_tier():
     tiers = ("NORMAL", "MILD", "MODERATE", "CRITICAL")
     assert [lane_for_tier(t) for t in tiers] == ["normal", "normal", "critical", "critical"]
     assert set(LANE_BY_TIER) == set(tiers)
+
+
+def test_the_symptom_checker_is_open_unless_the_patient_is_fully_normal_or_the_result_was_blocked():
+    tiers = ("NORMAL", "MILD", "MODERATE", "CRITICAL")
+    assert [symptom_checker_open(tier) for tier in tiers] == [False, True, True, True]
+    assert [symptom_checker_open(tier, blocked=True) for tier in tiers] == [False, False, False, False]
