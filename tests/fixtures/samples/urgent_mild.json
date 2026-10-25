@@ -2,7 +2,7 @@
   "source": 1,
   "patient_id": 2141000003,
   "visit_id": 2070000003,
-  "company_name": 10,
+  "company_id": 10,
   "patient": {
     "age_days": 19200,
     "sex": 1

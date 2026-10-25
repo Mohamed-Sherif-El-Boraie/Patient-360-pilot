@@ -38,7 +38,7 @@ class VisitsMixin:
         descriptive_text = {r["test_id"]: r["text_value"] for r in ai.descriptive_rows}
         visit_id = payload["visit_id"]
         with self._db.transaction() as conn:
-            number = payload["company_name"]
+            number = payload["company_id"]
             conn.execute("INSERT INTO companies (company_id, company_name) VALUES (%s, %s) ON CONFLICT DO NOTHING",
                          (number, f"Company {number}"))
             for test in sent["tests"]:

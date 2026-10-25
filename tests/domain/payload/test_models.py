@@ -113,19 +113,19 @@ def test_the_same_parameter_in_two_different_tests_is_allowed(sample):
 
 def test_ids_and_other_numbers_may_arrive_as_text(sample):
     body = sample("urgent_mild")
-    body["visit_id"], body["patient_id"], body["company_name"] = "2070000003", "2141000003", "10.0"
+    body["visit_id"], body["patient_id"], body["company_id"] = "2070000003", "2141000003", "10.0"
     body["patient"]["sex"] = "1"
     body["tests"][0]["test_id"] = "18"
     body["tests"][0]["results"][0]["parameter_id"] = " 2 "
     result = validate_payload(raw(body))
     assert isinstance(result, Valid)
-    assert (result.payload.visit_id, result.payload.patient_id, result.payload.company_name) == (
+    assert (result.payload.visit_id, result.payload.patient_id, result.payload.company_id) == (
         2070000003, 2141000003, 10)
     assert (result.payload.patient.sex, result.payload.tests[0].test_id) == (1, 18)
 
 
 @pytest.mark.parametrize("bad", ["abc", "20.5", "-5", "0", "", True])
-@pytest.mark.parametrize("where", [("visit_id",), ("patient_id",), ("company_name",), ("tests", 0, "test_id"),
+@pytest.mark.parametrize("where", [("visit_id",), ("patient_id",), ("company_id",), ("tests", 0, "test_id"),
                                    ("tests", 0, "results", 0, "parameter_id"),
                                    ("visit_answer_list", 0, "preparation_id")])
 def test_an_id_that_is_not_a_whole_positive_number_is_refused(sample, where, bad):

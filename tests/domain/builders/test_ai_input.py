@@ -4,7 +4,7 @@ import pytest
 
 from patient360.domain.builders.ai_input import build_ai_input
 
-FORBIDDEN_IN_THE_AI_INPUT = {"patient_id", "visit_id", "company_name", "test_id", "parameter_id", "status",
+FORBIDDEN_IN_THE_AI_INPUT = {"patient_id", "visit_id", "company_id", "test_id", "parameter_id", "status",
                                 "history_visit_id", "previous_value", "previous_date", "tier"}
 
 

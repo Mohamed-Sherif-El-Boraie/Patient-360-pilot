@@ -105,7 +105,7 @@ def test_descriptive_results_use_plain_text_and_history(db, store, sample):
 
 def test_unknown_company_test_and_parameter_get_placeholders(db, store, sample):
     payload = sample("urgent_mild")
-    payload["company_name"] = 77
+    payload["company_id"] = 77
     _save(store, payload)
 
     assert seed.fetch(db, "SELECT * FROM companies WHERE company_id = 77") == [
@@ -131,7 +131,7 @@ def test_known_company_test_and_parameter_are_left_alone(db, store, sample):
 
 def test_a_failure_halfway_leaves_nothing(db, store, sample):
     payload = sample("urgent_mild")
-    payload["company_name"] = 77
+    payload["company_id"] = 77
     payload["visit_answer_list"][1]["preparation_id"] = payload["visit_answer_list"][0]["preparation_id"]
     with pytest.raises(psycopg.errors.UniqueViolation):
         _save(store, payload)

@@ -89,7 +89,7 @@ class VisitPayload(Strict):
     source: Literal[1, 2, 4]
     patient_id: BigId
     visit_id: BigId
-    company_name: SmallId   # the Backend sends the company number here (15 El-Borg, 10 Al-Mokhtbar)
+    company_id: SmallId   # the company number (15 El-Borg, 10 Al-Mokhtbar)
     patient: Patient
     tests: list[Test]
     descriptive_results: list[DescriptiveResult]
