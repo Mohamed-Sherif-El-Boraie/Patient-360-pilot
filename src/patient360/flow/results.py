@@ -118,5 +118,5 @@ class OutputReceiver:
         return build_backend_output(
             patient_id=raw["patient_id"], visit_id=stored.visit_id,
             source=SYMPTOM_CHECKER_ID if symptom else stored.source_id, rows=built.rows,
-            descriptive_rows=built.descriptive_rows, ai=ai, arabic_test_names=self._catalogue.test_names_ar(),
+            ai=ai, arabic_test_names=self._catalogue.test_names_ar(),
             html_reasons=symptom, symptom_flag=not symptom and symptom_checker_open(tier, blocked))

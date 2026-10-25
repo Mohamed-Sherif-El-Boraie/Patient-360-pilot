@@ -314,7 +314,7 @@ Builds the final result that is sent back to the Backend system.
 
 | Function | What it does | Output |
 |---|---|---|
-| `build_backend_output(patient_id, visit_id, source, rows, ai, ..., symptom_flag)` | Groups result rows by test, adds the AI answer, optional packages, the HTML page and the `symptom_flag`. | The result as a dictionary: ids, symptom_flag, tests with statuses and alerts, the AI part and the html. |
+| `build_backend_output(patient_id, visit_id, source, rows, ai, ..., symptom_flag)` | Groups result rows by test, adds the AI answer, optional packages, the HTML page and the `symptom_flag`. | The result as a dictionary: ids, symptom_flag, tests with statuses and alerts (`alert` is `null` for a text value), the AI part and the html. No descriptive results. |
 
 ### `domain/builders/blocked.py`
 Handles answers the safety filter (guardrail) blocked: the Backend gets one fixed message, never what the model wrote.

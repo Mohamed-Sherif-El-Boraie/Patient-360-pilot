@@ -19,10 +19,14 @@ def test_the_output_has_ids_status_and_alert_per_parameter(sample):
     assert [t["test_id"] for t in out["tests"]] == list(dict.fromkeys(r["test_id"] for r in rows))
 
 
-def test_a_result_without_an_alert_has_no_alert_key():
-    rows = [{"test_id": 1, "parameter_id": 5, "status": "text", "alert": None}]
+def test_the_alert_is_only_medical_attention_or_critical_and_null_for_normal_and_text():
+    rows = [{"test_id": 1, "parameter_id": 5, "status": "text", "alert": None},
+            {"test_id": 1, "parameter_id": 6, "status": "normal", "alert": "NORMAL"},
+            {"test_id": 1, "parameter_id": 7, "status": "abnormal", "alert": "MEDICAL_ATTENTION"},
+            {"test_id": 1, "parameter_id": 8, "status": "critical", "alert": "CRITICAL"}]
     out = build_backend_output(patient_id=1, visit_id=2, source=1, rows=rows, ai=AI)
-    assert out["tests"] == [{"test_id": 1, "results": [{"parameter_id": 5, "status": "text"}]}]
+    assert [(r["status"], r["alert"]) for r in out["tests"][0]["results"]] == [
+        ("text", None), ("normal", None), ("abnormal", "MEDICAL_ATTENTION"), ("critical", "CRITICAL")]
 
 
 def test_results_are_grouped_by_test_in_the_order_they_came():
@@ -57,11 +61,11 @@ def test_the_symptom_flag_is_always_in_the_result_and_is_false_unless_it_is_give
     assert build_backend_output(patient_id=1, visit_id=2, source=1, rows=[], ai=AI)["symptom_flag"] is False
 
 
-def test_descriptive_results_are_listed_with_their_status_only_when_there_are_some():
-    descriptive = [{"test_id": 7, "test_name": "PCR", "status": "text"}]
-    out = build_backend_output(patient_id=1, visit_id=2, source=1, rows=[], descriptive_rows=descriptive, ai=AI)
-    assert out["descriptive_results"] == [{"test_id": 7, "status": "text"}]
-    assert "descriptive_results" not in build_backend_output(patient_id=1, visit_id=2, source=1, rows=[], ai=AI)
+def test_the_result_has_no_descriptive_results_and_no_symptom_keys_for_a_visit(sample):
+    rows = build_ai_input(sample("descriptive_only")).rows
+    out = build_backend_output(patient_id=1, visit_id=2, source=1, rows=rows, ai=AI)
+    assert "descriptive_results" not in out
+    assert all("change_type" not in r and "explanation" not in r for r in out["ai"]["recommendations"])
 
 
 def test_the_arabic_test_names_come_from_the_database_names_given():
