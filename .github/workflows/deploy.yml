@@ -1,0 +1,51 @@
+# Build the image, push it to Azure Container Registry, deploy it to the web app.
+#
+# The owner must create these three GitHub repository secrets (Settings > Secrets and variables > Actions).
+# They identify the pipeline's Azure identity; none is a password:
+#   AZURE_CLIENT_ID        the app registration / managed identity used by the pipeline
+#   AZURE_TENANT_ID        the Azure tenant
+#   AZURE_SUBSCRIPTION_ID  the subscription holding 360acr and the web app
+#
+# One-time Azure setup:
+#   1. A federated credential on that identity for this GitHub repo (branch main), so azure/login works without a secret.
+#   2. Role AcrPush on the registry 360acr for the pipeline identity.
+#   3. Role AcrPull on 360acr for the web app's managed identity (and set the web app to pull with it).
+#   4. On the web app, set the application settings of .env.example (secrets as Key Vault references)
+#      plus WEBSITES_PORT=8000; health check path /health. See docs/deploy.md.
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  IMAGE: 360acr.azurecr.io/patient360
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - run: az acr login --name 360acr
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+      - uses: azure/webapps-deploy@v3
+        with:
+          app-name: P360-Ai-Service-Linux
+          images: ${{ env.IMAGE }}:${{ github.sha }}

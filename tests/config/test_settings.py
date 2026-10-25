@@ -89,28 +89,47 @@ def test_the_pgbouncer_port_and_the_timeouts_can_be_set():
     assert settings.pg_port == 6432
     assert (settings.backend_connect_timeout_s, settings.backend_read_timeout_s) == (2.5, 60.0)
 
+BACKEND = {"BACKEND_BASE_URL": "https://wrapper.example/", "BACKEND_CALLER_SOURCE": "Patient360",
+           "BACKEND_CALLER_SOURCE_KEY": "caller-key-value", "BACKEND_CALLER_USER_NAME": "Patient360",
+           "BACKEND_USERNAME": "api-user", "BACKEND_PASSWORD": "api-password-xyz", "BACKEND_COMPANY_ID": "10"}
+
 
 def test_aws_and_backend_settings_are_optional_until_they_are_used():
     settings = load_settings(env())
-    assert settings.aws_region is None and settings.s3_buckets == () and settings.backend_results_url is None
+    assert settings.aws_region is None and settings.s3_buckets == () and settings.backend is None
+    assert settings.aws_endpoint_url is None
     full = load_settings(env(AWS_REGION="eu-west-1", S3_BUCKET_URGENT="urgent-bucket", S3_BUCKET_BATCH="batch-bucket",
-                             BACKEND_RESULTS_URL="https://backend.example/results"))
+                             AWS_ENDPOINT_URL_S3="http://minio:9000"))
     assert full.s3_buckets == (("urgent", "urgent-bucket"), ("batch", "batch-bucket"))
-    assert full.aws_region == "eu-west-1"
-    assert full.backend_results_url == "https://backend.example/results"
+    assert full.aws_region == "eu-west-1" and full.aws_endpoint_url == "http://minio:9000"
 
 
-def test_the_request_size_limit_is_off_until_it_is_set():
-    assert load_settings(env()).max_request_bytes is None
-    assert load_settings(env(MAX_REQUEST_BYTES="1048576")).max_request_bytes == 1_048_576
-    for bad in ("big", "0", "-5"):
-        with pytest.raises(SettingsError, match="MAX_REQUEST_BYTES"):
-            load_settings(env(MAX_REQUEST_BYTES=bad))
+def test_the_backend_settings_come_all_together_and_the_secrets_stay_out_of_the_text():
+    backend = load_settings(env(**BACKEND)).backend
+    assert (backend.base_url, backend.company_id, backend.username) == ("https://wrapper.example", "10", "api-user")
+    assert "api-password-xyz" not in repr(backend) and "caller-key-value" not in repr(backend)
+    partial = {name: value for name, value in BACKEND.items() if name != "BACKEND_PASSWORD"}
+    with pytest.raises(SettingsError, match="BACKEND_PASSWORD") as error:
+        load_settings(env(**partial))
+    assert "api-user" not in str(error.value)
 
 
-def test_the_batch_size_is_100_unless_it_is_set_and_stays_between_100_and_50000():
-    assert load_settings(env()).batch_size == 100
-    assert [load_settings(env(BATCH_SIZE=value)).batch_size for value in ("100", "250", "50000")] == [100, 250, 50000]
-    for bad in ("many", "0", "-3", "99", "50001", "2.5"):
-        with pytest.raises(SettingsError, match="BATCH_SIZE"):
-            load_settings(env(BATCH_SIZE=bad))
+def test_the_blob_account_url_or_the_emulator_connection_string_is_enough_but_one_is_needed():
+    assert load_settings(env()).azure_storage_account_url == "https://acct.blob.core.windows.net"
+    local = load_settings(
+        env(AZURE_STORAGE_ACCOUNT_URL=None, AZURE_STORAGE_CONNECTION_STRING="UseDevelopmentStorage=true"))
+    assert local.azure_storage_account_url is None and local.azure_storage_connection_string
+    assert "UseDevelopmentStorage" not in repr(local)
+    with pytest.raises(SettingsError, match="AZURE_STORAGE_ACCOUNT_URL or AZURE_STORAGE_CONNECTION_STRING"):
+        load_settings(env(AZURE_STORAGE_ACCOUNT_URL=None))
+
+
+def test_the_inbound_key_and_the_two_intervals():
+    default = load_settings(env())
+    assert (default.inbound_api_key, default.job_interval_s, default.work_interval_s) == (None, 300, 5)
+    custom = load_settings(env(INBOUND_API_KEY="shared-key-123", JOB_INTERVAL_S="60", WORK_INTERVAL_S="2.5"))
+    assert (custom.inbound_api_key, custom.job_interval_s, custom.work_interval_s) == ("shared-key-123", 60, 2.5)
+    assert "shared-key-123" not in repr(custom)
+    for name in ("JOB_INTERVAL_S", "WORK_INTERVAL_S"):
+        with pytest.raises(SettingsError, match=name):
+            load_settings(env(**{name: "0"}))

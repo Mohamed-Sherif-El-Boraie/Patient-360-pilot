@@ -7,6 +7,7 @@ from azure.core.exceptions import (
     ServiceRequestError,
 )
 
+from patient360.adapters import blob
 from patient360.adapters.blob import AzureBlobStore
 from patient360.ports import BlobUnavailable
 
@@ -39,6 +40,27 @@ class FakeContainer:
         if name not in self.blobs:
             raise ResourceNotFoundError("BlobNotFound")
         return FakeDownload(self.blobs[name])
+
+
+def test_the_emulator_stores_make_missing_containers_and_keep_existing_ones(monkeypatch):
+    made = []
+
+    class Container:
+        def __init__(self, name):
+            self.name = name
+
+        def create_container(self):
+            made.append(self.name)
+            if self.name == "out":
+                raise ResourceExistsError("exists")
+
+    class Service:
+        def get_container_client(self, name):
+            return Container(name)
+
+    monkeypatch.setattr(blob.BlobServiceClient, "from_connection_string", lambda *args, **kwargs: Service())
+    first, second = blob.build_blob_stores_from_connection_string("cs", "in", "out")
+    assert made == ["in", "out"] and isinstance(first, AzureBlobStore) and isinstance(second, AzureBlobStore)
 
 
 def test_a_new_file_is_created_and_read_back():

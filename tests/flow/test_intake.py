@@ -31,7 +31,7 @@ def test_a_valid_visit_is_saved_raw_in_blob_and_in_the_database_and_accepted(par
     body = raw(visit)
     outcome = intake.receive(body)
     key = key_of(visit)
-    assert outcome == Accepted(visit["visit_id"], key)
+    assert outcome == Accepted(visit["visit_id"], key, visit["source"])
     assert blobs.files[f"raw/urgent/2026/10/24/{key}.json"] == body
     saved = store.visits[visit["visit_id"]]
     assert saved["raw"] == body and saved["idempotency_key"] == key and saved["read_from"] == "blob"
@@ -141,7 +141,7 @@ def test_a_symptom_check_for_a_stored_visit_is_accepted_once(parts, sample):
     intake.receive(raw(visit))
     symptom = symptom_for(visit, sample)
     body = raw(symptom)
-    assert intake.receive(body) == Accepted(visit["visit_id"], key_of(visit))
+    assert intake.receive(body) == Accepted(visit["visit_id"], key_of(visit), 3)      # source 3: the symptom checker
     assert blobs.files[f"raw/symptom-checker/2026/10/24/{key_of(visit)}.json"] == body
     assert store.symptom_checks[visit["visit_id"]]["read_from"] == "blob"
     assert isinstance(intake.receive(body), Duplicate)

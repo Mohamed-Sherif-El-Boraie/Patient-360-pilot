@@ -21,6 +21,7 @@ SYMPTOM_CHECKER = 3
 class Accepted:        # answer 202
     visit_id: int
     idempotency_key: str
+    source_id: int
 
 
 @dataclass(frozen=True)
@@ -86,7 +87,7 @@ class Intake:
             self._store.save_symptom_check(payload, raw, received_at, read_from)
         else:
             self._store.save_visit(payload, raw, key, received_at, read_from)
-        return Accepted(visit_id, key)   # only after the database has it: the answer means "safely saved"
+        return Accepted(visit_id, key, source_id)   # only after the database has it: the answer means "safely saved"
 
     def _save_raw_to_blob(self, source: str, key: str, raw: bytes, received_at: datetime) -> str:
         """"blob" if the file is in Blob (or was already), else "postgresql": PostgreSQL has the bytes either way."""

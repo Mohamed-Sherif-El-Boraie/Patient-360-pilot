@@ -33,8 +33,8 @@ class S3Uploader:
             raise S3Unavailable from error
 
 
-def build_s3_client(region: str | None = None) -> Any:
+def build_s3_client(region: str | None = None, endpoint_url: str | None = None) -> Any:
     """A boto3 S3 client with the default credential chain (environment, profile or role). Short timeouts and one
-    retry: the dispatcher has its own retry schedule."""
+    retry: the dispatcher has its own retry schedule. ``endpoint_url`` points at a local MinIO server."""
     config = Config(connect_timeout=5, read_timeout=30, retries={"max_attempts": 2, "mode": "standard"})
-    return boto3.client("s3", region_name=region, config=config)
+    return boto3.client("s3", region_name=region, endpoint_url=endpoint_url, config=config)

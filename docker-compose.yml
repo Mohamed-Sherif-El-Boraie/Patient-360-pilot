@@ -1,0 +1,125 @@
+# LOCAL SIMULATION ONLY. Every password, key and secret here is a fake development value; none is real.
+# Start: docker compose up --build        Reset: docker compose down -v
+
+x-app-build: &app-build
+  context: .
+
+x-app-env: &app-env
+  APP_ENV: development
+  PGHOST: postgres
+  PGPORT: "5432"
+  PGDATABASE: patient360
+  PGUSER: postgres
+  PGPASSWORD: test
+  PGSSLMODE: disable
+  # devstoreaccount1 and its key are the public, documented Azurite emulator account (not a secret).
+  AZURE_STORAGE_CONNECTION_STRING: >-
+    DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;
+  BLOB_INPUT_CONTAINER: ai-input
+  BLOB_OUTPUT_CONTAINER: ai-output
+  IDEMPOTENCY_KEY_SECRET: dev-only-fake-idempotency-secret
+  INBOUND_API_KEY: dev-inbound-key
+  AWS_REGION: eu-west-1
+  AWS_ENDPOINT_URL_S3: http://minio:9000
+  AWS_ACCESS_KEY_ID: devminio
+  AWS_SECRET_ACCESS_KEY: devminio-secret
+  S3_BUCKET_URGENT: p360-urgent
+  S3_BUCKET_ON_DEMAND: p360-on-demand
+  S3_BUCKET_SYMPTOM_CHECKER: p360-symptom-checker
+  S3_BUCKET_BATCH: p360-batch
+  BACKEND_BASE_URL: http://mock-wrapper:8081
+  BACKEND_CALLER_SOURCE: Patient360
+  BACKEND_CALLER_SOURCE_KEY: fake-caller-source-key
+  BACKEND_CALLER_USER_NAME: Patient360
+  BACKEND_USERNAME: fake-user
+  BACKEND_PASSWORD: fake-password
+  BACKEND_COMPANY_ID: "10"
+  WORK_INTERVAL_S: "2"
+  JOB_INTERVAL_S: "30"
+  BATCH_SIZE: "100"
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: patient360
+    ports:
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d patient360"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite
+    command: azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck
+    ports:
+      - "127.0.0.1:10000:10000"
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: devminio
+      MINIO_ROOT_PASSWORD: devminio-secret
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+
+  # Waits for MinIO by trying until it answers (no healthcheck: the minio image may not contain a client), then makes
+  # the four buckets.
+  minio-setup:
+    image: minio/mc
+    depends_on:
+      minio:
+        condition: service_started
+    restart: "no"
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 devminio devminio-secret; do echo waiting for minio; sleep 2; done &&
+      mc mb --ignore-existing local/p360-urgent local/p360-on-demand local/p360-symptom-checker local/p360-batch"
+
+  # Same app image, running tools/mock_wrapper.py from a read-only mount (fastapi and uvicorn are already in the image).
+  mock-wrapper:
+    build: *app-build
+    image: patient360:local
+    working_dir: /app
+    command: ["uvicorn", "tools.mock_wrapper:app", "--host", "0.0.0.0", "--port", "8081"]
+    volumes:
+      - ./tools:/app/tools:ro
+    ports:
+      - "127.0.0.1:8081:8081"
+
+  migrate:
+    build: *app-build
+    image: patient360:local
+    command: ["python", "-m", "patient360.migrate"]
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    build: *app-build
+    image: patient360:local
+    environment: *app-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-setup:
+        condition: service_completed_successfully
+      azurite:
+        condition: service_started
+      mock-wrapper:
+        condition: service_started
+    ports:
+      - "127.0.0.1:8000:8000"
+
+volumes:
+  pgdata:

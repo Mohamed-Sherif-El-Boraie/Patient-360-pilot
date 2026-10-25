@@ -56,6 +56,11 @@ def test_a_missing_bucket_stops_the_app_at_start_up():
         S3Uploader(object(), {name: bucket for name, bucket in BUCKETS.items() if name != "batch"})
 
 
+def test_a_local_endpoint_can_be_given():
+    client = build_s3_client("eu-west-1", "http://127.0.0.1:9000")
+    assert client.meta.endpoint_url == "http://127.0.0.1:9000"
+
+
 def test_the_real_client_is_built_with_short_timeouts():
     client = build_s3_client("eu-west-1")
     assert client.meta.region_name == "eu-west-1" and client.meta.config.connect_timeout == 5

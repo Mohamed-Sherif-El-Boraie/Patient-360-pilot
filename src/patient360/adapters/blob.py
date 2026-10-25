@@ -48,3 +48,20 @@ def build_blob_stores(
                                 connection_timeout=5, read_timeout=30, retry_total=2)
     return (AzureBlobStore(service.get_container_client(input_container)),
             AzureBlobStore(service.get_container_client(output_container)))
+
+
+def build_blob_stores_from_connection_string(
+    connection_string: str, input_container: str, output_container: str,
+) -> tuple[AzureBlobStore, AzureBlobStore]:
+    """Same as ``build_blob_stores`` for the local Azurite emulator, which starts empty: a missing container is made."""
+    service = BlobServiceClient.from_connection_string(connection_string, connection_timeout=5, read_timeout=30,
+                                                       retry_total=2)
+    containers = []
+    for name in (input_container, output_container):
+        container = service.get_container_client(name)
+        try:
+            container.create_container()
+        except ResourceExistsError:
+            pass
+        containers.append(AzureBlobStore(container))
+    return containers[0], containers[1]
