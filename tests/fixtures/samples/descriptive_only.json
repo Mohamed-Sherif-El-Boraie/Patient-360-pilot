@@ -1,0 +1,27 @@
+{
+  "source": 4,
+  "patient_id": 2141000005,
+  "visit_id": 2070000005,
+  "company_name": 10,
+  "patient": {
+    "birthdate": "1992-03-15",
+    "sex": 2
+  },
+  "tests": [],
+  "descriptive_results": [
+    {
+      "test_id": 107,
+      "test_name": "B -Thalassemia genetic defects by PCR",
+      "result_date": "2026-09-28",
+      "text": "RESULT: No common thalassemia gene deletions or mutations were detected in the regions tested. INTERPRETATION: The tested variants were not found. This does not exclude other rare variants. Clinical correlation is advised.",
+      "history": []
+    }
+  ],
+  "visit_answer_list": [
+    {
+      "preparation_id": 900,
+      "preparation_name": "Fasting hours 6-8 hours",
+      "answer": "10"
+    }
+  ]
+}
