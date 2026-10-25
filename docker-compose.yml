@@ -61,8 +61,9 @@ services:
     ports:
       - "127.0.0.1:10000:10000"
 
+  # MinIO no longer publishes on Docker Hub: its official images are on quay.io.
   minio:
-    image: minio/minio
+    image: quay.io/minio/minio
     command: server /data --console-address :9001
     environment:
       MINIO_ROOT_USER: devminio
@@ -74,7 +75,7 @@ services:
   # Waits for MinIO by trying until it answers (no healthcheck: the minio image may not contain a client), then makes
   # the four buckets.
   minio-setup:
-    image: minio/mc
+    image: quay.io/minio/mc
     depends_on:
       minio:
         condition: service_started
