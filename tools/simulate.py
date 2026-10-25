@@ -11,7 +11,7 @@ import boto3
 import httpx
 from azure.storage.blob import BlobServiceClient
 
-APP, WRAPPER, MINIO = "http://127.0.0.1:8000", "http://127.0.0.1:8081", "http://127.0.0.1:9000"
+APP, WRAPPER, FAKE_S3 = "http://127.0.0.1:8000", "http://127.0.0.1:8081", "http://127.0.0.1:9000"
 API_KEY = {"X-Api-Key": "dev-inbound-key"}
 # The public Azurite emulator account and key (documented by Microsoft, not a secret).
 AZURITE = ("DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT"
@@ -51,15 +51,15 @@ def main():
         fail(f"expected 202, got {reply.status_code}")
     print("   accepted (202)")
 
-    print("2. Waiting for the processed file in MinIO bucket p360-urgent")
-    s3 = boto3.client("s3", endpoint_url=MINIO, region_name="eu-west-1",
-                      aws_access_key_id="devminio", aws_secret_access_key="devminio-secret")
+    print("2. Waiting for the processed file in the fake S3 bucket p360-urgent")
+    s3 = boto3.client("s3", endpoint_url=FAKE_S3, region_name="eu-west-1",
+                      aws_access_key_id="dev-fake-key", aws_secret_access_key="dev-fake-secret")
 
     def find_key():
         listing = s3.list_objects_v2(Bucket="p360-urgent", Prefix="processed/")
         return next((o["Key"] for o in listing.get("Contents", [])), None)
 
-    key = wait_for("the file in MinIO", find_key)
+    key = wait_for("the file in the fake S3", find_key)
     _, lane, year, month, day, name = key.split("/")       # processed/<lane>/<yyyy>/<MM>/<dd>/<key>.json
     record_id = name.removesuffix(".json")
     print(f"   found, lane={lane}")

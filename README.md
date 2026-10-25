@@ -654,7 +654,7 @@ AWS S3: writes a file into the bucket of a source. Writing the file starts the A
 | `S3Uploader` (class) | Uploads files to S3, one bucket per source. | An uploader object with `put`. |
 | `S3Uploader.__init__(client, buckets)` | Checks that all four sources have a bucket. A missing one stops the app at start-up. | Nothing returned; raises `ValueError` if a bucket is missing. |
 | `S3Uploader.put(source, key, data)` | Uploads the bytes to the source's bucket. `.jsonl` files get type ndjson, others JSON. S3 errors raise `S3Unavailable`. | Nothing returned (the file is saved in S3). |
-| `build_s3_client(region, endpoint_url)` | Makes an S3 client using the normal AWS login chain. Short timeouts, one retry. `endpoint_url` can point to local MinIO. | A boto3 S3 client. |
+| `build_s3_client(region, endpoint_url)` | Makes an S3 client using the normal AWS login chain. Short timeouts, one retry. `endpoint_url` can point to a local fake S3. | A boto3 S3 client. |
 
 ### `adapters/postgres/db.py`
 The database connection pool and small helpers every other Postgres file uses.

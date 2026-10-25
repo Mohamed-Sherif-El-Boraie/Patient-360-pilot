@@ -20,9 +20,9 @@ x-app-env: &app-env
   IDEMPOTENCY_KEY_SECRET: dev-only-fake-idempotency-secret
   INBOUND_API_KEY: dev-inbound-key
   AWS_REGION: eu-west-1
-  AWS_ENDPOINT_URL_S3: http://minio:9000
-  AWS_ACCESS_KEY_ID: devminio
-  AWS_SECRET_ACCESS_KEY: devminio-secret
+  AWS_ENDPOINT_URL_S3: http://s3:9000
+  AWS_ACCESS_KEY_ID: dev-fake-key
+  AWS_SECRET_ACCESS_KEY: dev-fake-secret
   S3_BUCKET_URGENT: p360-urgent
   S3_BUCKET_ON_DEMAND: p360-on-demand
   S3_BUCKET_SYMPTOM_CHECKER: p360-symptom-checker
@@ -60,21 +60,17 @@ services:
     ports:
       - "127.0.0.1:10000:10000"
 
-  # MinIO no longer publishes on Docker Hub: its official images are on quay.io.
-  minio:
-    image: quay.io/minio/minio
-    command: server /data --console-address :9001
-    environment:
-      MINIO_ROOT_USER: devminio
-      MINIO_ROOT_PASSWORD: devminio-secret
-      MINIO_SITE_REGION: eu-west-1       # the same region the app signs with
+  # A fake AWS S3 for local work: moto's server, installed from PyPI into a plain Python image. (MinIO's images need a
+  # login on both Docker Hub and quay.io.) It accepts any access key.
+  s3:
+    image: python:3.13-slim
+    command: ["sh", "-c", "pip install --no-cache-dir 'moto[server]' && moto_server -H 0.0.0.0 -p 9000"]
     ports:
       - "127.0.0.1:9000:9000"
-      - "127.0.0.1:9001:9001"
 
-  # Makes the four buckets with our own image (tools/create_buckets.py, boto3): the MinIO client image can not be pulled
-  # without a login. The script waits until MinIO answers, so no healthcheck is needed.
-  minio-setup:
+  # Makes the four buckets with our own image (tools/create_buckets.py, boto3). The script waits until the fake S3
+  # answers (it first has to install moto), so no healthcheck is needed.
+  s3-setup:
     build: *app-build
     image: patient360:local
     working_dir: /app
@@ -83,7 +79,7 @@ services:
     volumes:
       - ./tools:/app/tools:ro
     depends_on:
-      minio:
+      s3:
         condition: service_started
     restart: "no"
 
@@ -115,7 +111,7 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-      minio-setup:
+      s3-setup:
         condition: service_completed_successfully
       azurite:
         condition: service_started
