@@ -144,10 +144,13 @@ def parse_merged_output_path(path: str) -> MergedOutput | None:
 def s3_processed_key(
     source: str, lane: str, day: date, idempotency_key: str | None, batch_id: str | None = None,
 ) -> str:
-    """The key inside the S3 bucket of this source (one bucket per source). A batch uploads its JSONL, so it has no
-    idempotency key."""
+    """The key inside the S3 bucket of this source (one bucket per source), the layout the AWS team gave:
+    ``processed/<lane>/<yyyy>/<MM>/<dd>/00-input/<idempotency_key>.json`` for a visit, and
+    ``processed/<lane>/<yyyy>/<MM>/<dd>/<batch_id>/00-input/<batch_id>.jsonl`` for a batch (it has a folder of its own).
+    AWS adds its own folders next to ``00-input``."""
     _check(source, lane)
     _batch_rules(source, batch_id)
     if batch_id is not None:
-        return f"processed/{lane}-jsonls/{_day(day)}/{_name(batch_id, 'batch_id')}.jsonl"
-    return f"processed/{lane}/{_day(day)}/{_key(idempotency_key)}.json"
+        name = _name(batch_id, "batch_id")
+        return f"processed/{lane}/{_day(day)}/{name}/00-input/{name}.jsonl"
+    return f"processed/{lane}/{_day(day)}/00-input/{_key(idempotency_key)}.json"

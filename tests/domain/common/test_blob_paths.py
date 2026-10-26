@@ -63,9 +63,11 @@ def test_the_merged_output_lives_in_blob_2():
 
 
 def test_the_s3_key_is_inside_the_bucket_of_the_source():
-    assert s3_processed_key("urgent", "critical", DAY, KEY) == f"processed/critical/2026/10/24/{FILE}"
+    assert s3_processed_key("urgent", "critical", DAY, KEY) == f"processed/critical/2026/10/24/00-input/{FILE}"
+    assert s3_processed_key("symptom-checker", "normal", DAY, KEY) == f"processed/normal/2026/10/24/00-input/{FILE}"
+    assert s3_processed_key("on-demand", "normal", DAY, KEY) == f"processed/normal/2026/10/24/00-input/{FILE}"
     assert s3_processed_key("batch", "normal", DAY, KEY, batch_id="normal_000001") == (
-        "processed/normal-jsonls/2026/10/24/normal_000001.jsonl")
+        "processed/normal/2026/10/24/normal_000001/00-input/normal_000001.jsonl")
 
 
 def test_the_date_folder_is_the_utc_day_the_visit_was_received():

@@ -110,7 +110,8 @@ class Rig:
         route, or as a message in the storage queue that the app reads)."""
         uploaded_source, s3_key = self.s3.uploads[-1]
         assert uploaded_source == source
-        _, lane, year, month, day, name = s3_key.split("/")
+        # processed/<lane>/<y>/<M>/<d>/00-input/<key>.json
+        _, lane, year, month, day, _input, name = s3_key.split("/")
         key = name.removesuffix(".json")
         path = f"aws-output-merged/{source}/{lane}/{year}/{month}/{day}/{name}"
         record = {"recordId": key, "model": "model-x", "content": [{"type": "text", "text": text}],

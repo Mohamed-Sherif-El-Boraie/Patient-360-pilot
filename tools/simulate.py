@@ -68,7 +68,8 @@ def main():
         return next(iter(urgent_keys() - old_keys), None)
 
     key = wait_for("the file in the fake S3", find_key)
-    _, lane, year, month, day, name = key.split("/")       # processed/<lane>/<yyyy>/<MM>/<dd>/<key>.json
+    # processed/<lane>/<yyyy>/<MM>/<dd>/00-input/<key>.json
+    _, lane, year, month, day, _input, name = key.split("/")
     record_id = name.removesuffix(".json")
     print(f"   found, lane={lane}")
 

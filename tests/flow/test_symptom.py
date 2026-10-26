@@ -147,7 +147,7 @@ def test_the_whole_way_the_visit_result_and_the_symptom_result_are_two_posts(wor
     world.symptom_processor().process(VISIT_ID)
     Dispatcher(world.store, world.blobs, world.s3, lambda: NOW).run()
     assert [source for source, _ in world.s3.uploads] == ["symptom-checker"]
-    assert world.s3.uploads[0][1] == f"processed/normal/2026/10/24/{world.key}.json"
+    assert world.s3.uploads[0][1] == f"processed/normal/2026/10/24/00-input/{world.key}.json"
     path = world.put_symptom_answer(aws_record(world.key, answer(with_symptom_keys=True)))
     assert [r.outcome for r in world.receiver().receive(path)] == ["saved"]
     backend = FakeBackend()
