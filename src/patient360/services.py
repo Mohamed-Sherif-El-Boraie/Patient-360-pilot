@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from patient360.adapters.postgres.db import Database
 from patient360.config.settings import Settings
 from patient360.flow.batching import BatchTrigger
+from patient360.flow.blob_events import BlobEventConsumer
 from patient360.flow.dispatch import Dispatcher
 from patient360.flow.intake import Intake
 from patient360.flow.process import Processor
@@ -28,3 +29,4 @@ class Services:
     dispatcher: Dispatcher
     receiver: OutputReceiver
     sender: ResultSender | None           # None when the Backend settings are not given: nothing is delivered
+    event_consumer: BlobEventConsumer | None = None    # None when no event queue is set: events come by HTTP only

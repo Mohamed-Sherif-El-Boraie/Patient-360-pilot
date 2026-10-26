@@ -16,13 +16,14 @@ from patient360.adapters.postgres.store import PostgresStore
 from patient360.adapters.s3 import S3Uploader, build_s3_client
 from patient360.config.settings import Settings
 from patient360.flow.batching import BatchTrigger
+from patient360.flow.blob_events import BlobEventConsumer
 from patient360.flow.dispatch import Dispatcher
 from patient360.flow.intake import Intake
 from patient360.flow.process import Processor
 from patient360.flow.results import OutputReceiver
 from patient360.flow.send_result import ResultSender
 from patient360.flow.symptom import SymptomProcessor
-from patient360.ports import BackendClient, BlobStore, S3Store
+from patient360.ports import BackendClient, BlobStore, EventQueue, S3Store
 from patient360.services import Services
 
 log = structlog.get_logger()
@@ -34,7 +35,7 @@ def _now() -> datetime:
 
 def build_services(
     settings: Settings, *, db: Database | None = None, blob_stores: tuple[BlobStore, BlobStore] | None = None,
-    s3: S3Store | None = None, backend: BackendClient | None = None,
+    s3: S3Store | None = None, backend: BackendClient | None = None, event_queue: EventQueue | None = None,
 ) -> Services:
     if db is None:
         db = Database.connect(make_conninfo(
@@ -55,8 +56,14 @@ def build_services(
         backend = WrapperBackend(settings.backend, settings.backend_connect_timeout_s, settings.backend_read_timeout_s)
     if backend is None:
         log.warning("backend_not_configured")
+    if event_queue is None and settings.event_queue_name:
+        from patient360.adapters.storage_queue import build_event_queue  # local: only needed when a queue is configured
+        event_queue = build_event_queue(
+            settings.event_queue_name, connection_string=settings.azure_storage_connection_string,
+            account_url=settings.azure_storage_account_url)
     blob_1, blob_2 = blob_stores
     store, catalogue = PostgresStore(db), PostgresCatalogue(db)
+    receiver = OutputReceiver(store, blob_2, catalogue)
     return Services(
         settings=settings, db=db, store=store,
         intake=Intake(store, blob_1, settings.idempotency_key_secret.encode(), _now, settings.max_request_bytes),
@@ -64,6 +71,7 @@ def build_services(
         symptom_processor=SymptomProcessor(store, catalogue, blob_1),
         batch_trigger=BatchTrigger(store, blob_1, settings.batch_size),
         dispatcher=Dispatcher(store, blob_1, s3, _now),
-        receiver=OutputReceiver(store, blob_2, catalogue),
+        receiver=receiver,
         sender=ResultSender(store, backend, _now) if backend is not None else None,
+        event_consumer=BlobEventConsumer(event_queue, receiver) if event_queue is not None else None,
     )

@@ -1,4 +1,4 @@
-"""Makes the four S3 buckets in the local fake S3 (the `s3` service of docker-compose.yml).
+"""Makes the four S3 buckets in the local fake S3, and the event queue and its poison queue in Azurite.
 
 Run by the `s3-setup` service with our own image. It waits until the fake S3 answers, so the start order is free.
 """
@@ -7,9 +7,28 @@ import sys
 import time
 
 import boto3
+from azure.core.exceptions import AzureError, ResourceExistsError
+from azure.storage.queue import QueueClient
 from botocore.exceptions import BotoCoreError, ClientError
 
 BUCKET_VARIABLES = ("S3_BUCKET_URGENT", "S3_BUCKET_ON_DEMAND", "S3_BUCKET_SYMPTOM_CHECKER", "S3_BUCKET_BATCH")
+
+
+def make_queues() -> None:
+    """Event Grid's queue and its poison queue. In Azure they are made once by hand (docs/wiring-and-deployment.md)."""
+    name, connection = os.environ.get("EVENT_QUEUE_NAME"), os.environ.get("AZURE_STORAGE_CONNECTION_STRING")
+    for queue_name in (name, f"{name}-poison") if name and connection else ():
+        for _ in range(30):
+            try:
+                QueueClient.from_connection_string(connection, queue_name).create_queue()
+                print("created queue", queue_name, flush=True)
+            except ResourceExistsError:
+                pass
+            except AzureError:                  # Azurite is not ready yet
+                print("waiting for Azurite", flush=True)
+                time.sleep(2)
+                continue
+            break
 
 
 def main() -> int:
@@ -31,6 +50,7 @@ def main() -> int:
             client.create_bucket(Bucket=bucket, CreateBucketConfiguration={"LocationConstraint": region})
             print("created", bucket, flush=True)
     print("buckets ready", flush=True)
+    make_queues()
     return 0
 
 

@@ -17,7 +17,7 @@ BLOB_ACCESS = ("AZURE_STORAGE_ACCOUNT_URL", "AZURE_STORAGE_CONNECTION_STRING")  
 OPTIONAL = (
     "APP_ENV", "TELEMETRY_ENABLED", "LOG_LEVEL", "LOG_FORMAT", "PGPORT", "PGSSLMODE", "AWS_REGION", "AWS_ROLE_ARN",
     "AWS_ENDPOINT_URL_S3", "BACKEND_CONNECT_TIMEOUT_S", "BACKEND_READ_TIMEOUT_S", "MAX_REQUEST_BYTES", "BATCH_SIZE",
-    "INBOUND_API_KEY", "JOB_INTERVAL_S", "WORK_INTERVAL_S",
+    "INBOUND_API_KEY", "JOB_INTERVAL_S", "WORK_INTERVAL_S", "EVENT_QUEUE_NAME",
 )
 BACKEND_SETTINGS = (          # the wrapper: all six or none
     "BACKEND_BASE_URL", "BACKEND_CALLER_SOURCE", "BACKEND_CALLER_SOURCE_KEY", "BACKEND_CALLER_USER_NAME",
@@ -72,6 +72,7 @@ class Settings:
     s3_buckets: tuple[tuple[str, str], ...] = ()   # (source, bucket name), only the buckets that are set
     aws_role_arn: str | None = None
     backend: BackendSettings | None = None
+    event_queue_name: str | None = None             # the storage queue Event Grid writes to; None = no queue is read
     max_request_bytes: int | None = None            # None = no limit, until we know the real size of the Backend JSONs
     batch_size: int = DEFAULT_BATCH_SIZE            # visits per batch (per lane), 100 to 50000; change it in .env
     inbound_api_key: str | None = field(default=None, repr=False)   # callers must send it; None = not checked
@@ -155,5 +156,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         aws_endpoint_url=values["AWS_ENDPOINT_URL_S3"] or None,
         s3_buckets=tuple((source, values[name]) for source, name in S3_SETTINGS.items() if values[name]),
         backend=backend, max_request_bytes=max_request_bytes, batch_size=batch_size,
-        inbound_api_key=values["INBOUND_API_KEY"] or None, job_interval_s=job_interval, work_interval_s=work_interval,
+        event_queue_name=values["EVENT_QUEUE_NAME"] or None,
+        inbound_api_key=values["INBOUND_API_KEY"] or None,
+        job_interval_s=job_interval, work_interval_s=work_interval,
     )

@@ -30,6 +30,31 @@ class S3Store(Protocol):
         """Upload to the bucket of ``source``. Writing here starts the AWS automation. Raises ``S3Unavailable``."""
 
 
+@dataclass(frozen=True)
+class EventMessage:
+    body: bytes                  # the Event Grid event(s), as JSON
+    handle: Any = None           # the adapter's own message object, handed back to complete / abandon / dead_letter
+
+
+class EventQueue(Protocol):
+    """Where Event Grid puts its "a file was created" events (an Azure Storage queue)."""
+
+    def receive(self) -> list[EventMessage]:
+        """Wait a few seconds for messages; an empty list if there are none. Each one is locked until settled."""
+
+    def complete(self, message: EventMessage) -> None:
+        """Done: remove it from the queue."""
+
+    def abandon(self, message: EventMessage) -> None:
+        """Failed for now: put it back so it is delivered again (the queue dead-letters it after too many tries)."""
+
+    def dead_letter(self, message: EventMessage, reason: str) -> None:
+        """It can never work: move it to the dead-letter queue to look at later."""
+
+    def close(self) -> None:
+        """Release the connection (at shutdown)."""
+
+
 class BackendUnavailable(Exception):
     """A timeout, no connection, 429 or a 5xx from the Backend: the same call may work later."""
 

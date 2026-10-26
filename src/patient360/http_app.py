@@ -11,6 +11,7 @@ import structlog
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, Request
 from fastapi.responses import JSONResponse
 
+from patient360.domain.common.blob_events import blob_paths_from_events
 from patient360.flow.intake import (
     SYMPTOM_CHECKER,
     Accepted,
@@ -25,7 +26,6 @@ from patient360.services import Services
 log = structlog.get_logger()
 
 BATCH = 2
-BLOB_CREATED = "Microsoft.Storage.BlobCreated"
 
 
 def reply(status: int, message: str, code: int = 1, **more: Any) -> JSONResponse:
@@ -110,7 +110,7 @@ def create_app(services: Services, lifespan=None) -> FastAPI:
             events = json.loads(raw)
             if aeg_event_type == "SubscriptionValidation":
                 return {"validationResponse": events[0]["data"]["validationCode"]}
-            paths = [e["subject"].split("/blobs/", 1)[1] for e in events if e["eventType"] == BLOB_CREATED]
+            paths = blob_paths_from_events(events)
         except (ValueError, KeyError, IndexError, TypeError):
             return reply(400, "Invalid payload")
         # Before answering: if it fails we answer 500 and Event Grid retries (it never retries a 200, and a lost event

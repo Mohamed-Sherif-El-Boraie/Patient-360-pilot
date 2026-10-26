@@ -14,7 +14,8 @@ x-app-env: &app-env
   PGSSLMODE: disable
   # devstoreaccount1 and its key are the public, documented Azurite emulator account (not a secret).
   AZURE_STORAGE_CONNECTION_STRING: >-
-    DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;
+    DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;QueueEndpoint=http://azurite:10001/devstoreaccount1;
+  EVENT_QUEUE_NAME: blob-events      # Event Grid's queue; Azurite plays the storage account
   BLOB_INPUT_CONTAINER: ai-input
   BLOB_OUTPUT_CONTAINER: ai-output
   IDEMPOTENCY_KEY_SECRET: dev-only-fake-idempotency-secret
@@ -56,9 +57,10 @@ services:
 
   azurite:
     image: mcr.microsoft.com/azure-storage/azurite
-    command: azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck
+    command: azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0 --skipApiVersionCheck
     ports:
       - "127.0.0.1:10000:10000"
+      - "127.0.0.1:10001:10001"
 
   # A fake AWS S3 for local work: moto's server, installed from PyPI into a plain Python image. (MinIO's images need a
   # login on both Docker Hub and quay.io.) It accepts any access key.
@@ -80,6 +82,8 @@ services:
       - ./tools:/app/tools:ro
     depends_on:
       s3:
+        condition: service_started
+      azurite:
         condition: service_started
     restart: "no"
 

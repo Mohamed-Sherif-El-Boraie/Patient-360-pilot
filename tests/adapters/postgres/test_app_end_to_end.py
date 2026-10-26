@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from patient360.adapters.backend import WrapperBackend
 from patient360.config.settings import load_settings
 from patient360.http_app import create_app
+from patient360.ports import EventMessage
 from patient360.runtime import build_services
 from patient360.timers import run_job_cycle, run_work_cycle
 from tests.adapters.postgres import seed
@@ -61,6 +62,29 @@ class PretendWrapper:
                                          "data": {"Patient360Loader": {"ID": len(self.results), "Action": "Insert"}}})
 
 
+class PretendQueue:
+    """The storage queue Event Grid writes to: messages wait in a list and are settled by the consumer."""
+
+    def __init__(self):
+        self.waiting, self.settled = [], []
+
+    def receive(self):
+        messages, self.waiting = self.waiting, []
+        return messages
+
+    def complete(self, message):
+        self.settled.append("complete")
+
+    def abandon(self, message):
+        self.settled.append("abandon")
+
+    def dead_letter(self, message, reason):
+        self.settled.append("dead_letter")
+
+    def close(self):
+        pass
+
+
 class Rig:
     def __init__(self, db, sample):
         self.db, self.sample = db, sample
@@ -69,8 +93,9 @@ class Rig:
         seed.add_category(db, 1, "Kidney")
         seed.add_test(db, 900, "Extra test", name_ar="AR-Extra test", description="why", categories=(1,))
         backend = WrapperBackend(settings.backend, 5, 30, transport=httpx.MockTransport(self.wrapper))
+        self.queue = PretendQueue()
         self.services = build_services(settings, db=db, blob_stores=(self.blob_1, self.blob_2), s3=self.s3,
-                                       backend=backend)
+                                       backend=backend, event_queue=self.queue)
         self.client = TestClient(create_app(self.services))
 
     def post(self, document):
@@ -80,8 +105,9 @@ class Rig:
     def work(self):
         run_work_cycle(self.services, datetime.now(UTC))
 
-    def aws_answers(self, source, text, **extra):
-        """Play AWS and Event Grid: write the answer of the last uploaded file to Blob 2 and tell the app."""
+    def aws_answers(self, source, text, via_queue=False, **extra):
+        """Play AWS and Event Grid: write the answer of the last uploaded file to Blob 2 and tell the app (by the HTTP
+        route, or as a message in the storage queue that the app reads)."""
         uploaded_source, s3_key = self.s3.uploads[-1]
         assert uploaded_source == source
         _, lane, year, month, day, name = s3_key.split("/")
@@ -92,6 +118,9 @@ class Rig:
         self.blob_2.files[path] = json.dumps(record).encode()
         event = [{"eventType": "Microsoft.Storage.BlobCreated",
                   "subject": f"/blobServices/default/containers/ai-output/blobs/{path}", "data": {}}]
+        if via_queue:
+            self.queue.waiting.append(EventMessage(body=json.dumps(event[0]).encode(), handle=path))
+            return self.services.event_consumer.run_once()
         return self.client.post("/api/v1/patient360/blob-events", json=event, headers=KEY)
 
 
@@ -130,6 +159,21 @@ def test_the_whole_service_from_an_incoming_visit_to_the_delivered_symptom_resul
     assert visit_row["stage"] == "delivered_symptom" and visit_row["tier"] == "MILD"
     statuses = seed.fetch(rig.db, "SELECT analysis, status FROM record_processing ORDER BY analysis")
     assert [(r["analysis"], r["status"]) for r in statuses] == [("symptom", "delivered"), ("visit", "delivered")]
+
+
+def test_the_answer_file_can_arrive_through_the_storage_queue_instead_of_http(rig):
+    visit = rig.sample("urgent_mild") | {"visit_id": VISIT_ID, "patient_id": PATIENT_ID}
+    assert rig.post(visit).status_code == 202
+    rig.work()
+
+    assert rig.aws_answers("urgent", answer(), via_queue=True) == 1            # one message read
+    assert rig.queue.settled == ["complete"]
+    rig.work()
+    [posted] = rig.wrapper.results
+    assert (posted["visit_id"], posted["source"]) == (VISIT_ID, 1) and posted["ai"]["summary"] == both("summary")
+
+    rig.queue.waiting.append(EventMessage(body=b"garbage", handle="bad"))        # a message that is not an event
+    assert rig.services.event_consumer.run_once() == 1 and rig.queue.settled == ["complete", "dead_letter"]
 
 
 def test_a_symptom_check_is_refused_with_409_when_the_visit_result_closed_the_checker(rig):

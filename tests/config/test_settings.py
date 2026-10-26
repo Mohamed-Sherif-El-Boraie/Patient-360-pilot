@@ -133,3 +133,9 @@ def test_the_inbound_key_and_the_two_intervals():
     for name in ("JOB_INTERVAL_S", "WORK_INTERVAL_S"):
         with pytest.raises(SettingsError, match=name):
             load_settings(env(**{name: "0"}))
+
+
+def test_the_event_queue_is_off_unless_its_name_is_given():
+    assert load_settings(env()).event_queue_name is None
+    assert load_settings(env(EVENT_QUEUE_NAME=" blob-events ")).event_queue_name == "blob-events"
+    assert load_settings(env(EVENT_QUEUE_NAME="  ")).event_queue_name is None

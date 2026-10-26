@@ -110,7 +110,8 @@ def test_the_lifespan_runs_both_loops_and_stops_them(monkeypatch):
     monkeypatch.setattr(timers, "run_job_cycle", lambda services, now: calls.__setitem__("job", calls["job"] + 1))
     monkeypatch.setattr(timers, "run_work_cycle", lambda services, now: calls.__setitem__("work", calls["work"] + 1))
     db = SpyDb()
-    services = SimpleNamespace(settings=SimpleNamespace(job_interval_s=0.01, work_interval_s=0.01), db=db)
+    services = SimpleNamespace(settings=SimpleNamespace(job_interval_s=0.01, work_interval_s=0.01), db=db,
+                               event_consumer=None)
 
     async def scenario():
         async with timers.lifespan(services)(None):
@@ -121,3 +122,40 @@ def test_the_lifespan_runs_both_loops_and_stops_them(monkeypatch):
         leftover = asyncio.run(scenario())
     assert calls["job"] >= 2 and calls["work"] >= 2 and leftover == [] and db.closed
     assert logs == []
+
+
+class BrokenConsumer:
+    closed = False
+
+    def run_once(self):
+        raise RuntimeError("queue is down")
+
+    def close(self):
+        self.closed = True
+
+
+def test_the_event_cycle_logs_a_failing_queue_without_data_and_does_nothing_without_a_consumer(sample):
+    services = replace(make_services(FakeStore(), FakeBlobs(), FakeBlobs(), FakeS3(), FakeCatalogue()),
+                       event_consumer=BrokenConsumer())
+    with capture_logs() as logs:
+        timers.run_event_cycle(services, LATER)
+    assert logs == [{"event": "job_failed", "error_type": "RuntimeError", "log_level": "warning"}]
+    timers.run_event_cycle(replace(services, event_consumer=None), LATER)       # no queue set: nothing happens
+
+
+def test_the_lifespan_also_runs_the_event_loop_and_closes_the_consumer(monkeypatch):
+    calls = {"event": 0}
+    monkeypatch.setattr(timers, "run_job_cycle", lambda services, now: None)
+    monkeypatch.setattr(timers, "run_work_cycle", lambda services, now: None)
+    monkeypatch.setattr(timers, "run_event_cycle", lambda services, now: calls.__setitem__("event", calls["event"] + 1))
+    monkeypatch.setattr(timers, "EVENT_PAUSE_S", 0.01)
+    consumer, db = BrokenConsumer(), SpyDb()
+    services = SimpleNamespace(settings=SimpleNamespace(job_interval_s=0.01, work_interval_s=0.01), db=db,
+                               event_consumer=consumer)
+
+    async def scenario():
+        async with timers.lifespan(services)(None):
+            await asyncio.sleep(0.2)
+        return [task for task in asyncio.all_tasks() if task is not asyncio.current_task()]
+
+    assert asyncio.run(scenario()) == [] and calls["event"] >= 2 and consumer.closed and db.closed

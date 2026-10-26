@@ -31,7 +31,7 @@ flowchart TD
     L --> M[("S3 bucket of the source")]
     M --> N["AWS: Bedrock<br/>English, Arabic, guardrails"]
     N --> O[("Blob 2<br/>aws-output-merged")]
-    O -- "Event Grid" --> P["POST /api/v1/patient360/blob-events<br/>(Receiver)"]
+    O -- "Event Grid -> storage queue<br/>(local: POST .../blob-events)" --> P["Read the file from Blob<br/>(Receiver)"]
     P --> Q{"Guardrail blocked it?"}
     Q -- "yes" --> S["Fixed message in the summary,<br/>everything else null"]
     Q -- "no" --> T["Check the answer shape,<br/>build the HTML (EN and AR)"]
@@ -82,6 +82,7 @@ symptom check is accepted and waits for it.
 |---|---|---|
 | Right after a visit is accepted | Process it (and, for a batch visit, check if a batch is full) | `http_app.py` |
 | Every 5 seconds | Upload ready files to S3, deliver ready results to the Backend | `timers.run_work_cycle` |
+| Always (if an event queue is set) | Read the "a file was created" events Event Grid writes to the queue, and save each AWS answer | `timers.run_event_cycle` |
 | Every 5 minutes | Start full batches, process visits and symptom checks a restart cut short | `timers.run_job_cycle` |
 | When a file appears in Blob 2 | Read the AWS answer and prepare the result | `POST /api/v1/patient360/blob-events` |
 
@@ -269,6 +270,12 @@ The one place that builds every file path in Azure Blob and S3 (folders by sourc
 | `MergedOutput` | Describes a merged result file read back from its path: kind, source, lane, day, key, batch id. | an object with those fields |
 | `parse_merged_output_path(path)` | Works out what a merged-result path is (visit, batch file, or batch visit). | A `MergedOutput`, or None if it is not ours or the date is fake. |
 | `s3_processed_key(source, lane, day, idempotency_key, batch_id=None)` | Builds the file key inside the S3 bucket. A batch uses its batch file and has no idempotency key. | A key text. |
+
+### `domain/common/blob_events.py`
+
+| Name | What it does (simple) | What you get back |
+|---|---|---|
+| `blob_paths_from_events(events)` | Takes one Event Grid event or a list, keeps the "blob created" ones and returns the path inside the container. A body that is not an event raises an error. | A list of paths. |
 
 ### `domain/common/compat.py`
 Makes `frozendict` (a dictionary that cannot be changed) work on older Python versions.
@@ -548,6 +555,13 @@ Sends each finished result to the Backend, one call per result, and retries when
 | `ResultSender._retry_time(unit)` | (helper) Works out when the next try should happen, using the retry schedule. | A time, or None when no tries are left. |
 | `ResultSender._fail(unit, error, retry_at)` | (helper) Records the failed attempt in the database and writes a warning to the log. | A Delivered object with "retry" or "failed". |
 
+### `flow/blob_events.py`
+
+| Name | What it does (simple) | What you get back |
+|---|---|---|
+| `BlobEventConsumer(queue, receiver)` | Class: reads the "a file was created" events that Event Grid writes into the storage queue and hands each file to the `OutputReceiver`. | An object with `run_once` and `close`. |
+| `BlobEventConsumer.run_once()` | Takes the waiting messages (the queue waits a few seconds for some). A message is removed only after its files are saved; if saving fails it goes back to the queue; a message that is not an event is dead-lettered. | How many messages were handled. |
+
 ### `flow/symptom.py`
 Runs the symptom check: a second AI run for a visit that already has its result.
 
@@ -571,9 +585,9 @@ The web application: receives visits, receives new-file events from Azure, and a
 | `require_api_key(x_api_key)` | (helper) Checks the X-API-Key header against the secret key, if one is configured. | Nothing, or a 401 answer. |
 | `visit_body(request)` | (helper) Refuses a body whose declared size is over the limit before reading it, else reads it. | The body bytes, or a 413 answer. |
 | `event_body(request)` | (helper) Reads the request body as it is. | The body bytes. |
-| `POST /api/v1/patient360/visits` | Receives a visit (source 1, 2 or 4) from the Backend app service; a symptom check sent here is refused (422 `wrong_endpoint`). Numbers (`source`, ids, `sex`, `age_days`) may arrive as text ("1", "10.0"). The API key is checked only if `INBOUND_API_KEY` is set. Processing continues in the background. | 202 Accepted, 200 Duplicate, 422 invalid, 413 too large, 401 bad key, 500 error. |
+| `POST /api/v1/patient360/visits` | Receives a visit (source 1, 2 or 4) from the Backend app service; a symptom check sent here is refused (422 `wrong_endpoint`). Numbers (`source`, ids, `sex`, `age_days`) may arrive as text ("1", "10.0"). The API key is checked only if `INBOUND_API_KEY` is set (leave it empty inside the private network). Processing continues in the background. | 202 Accepted, 200 Duplicate, 422 invalid, 413 too large, 401 bad key, 500 error. |
 | `POST /api/v1/patient360/visits-symptoms` | Receives a symptom check (source 3) from the wrapper; a visit sent here is refused (422 `wrong_endpoint`). | 202 Accepted, 200 Duplicate, 422 invalid, 404 VISIT_NOT_FOUND, 409 SYMPTOM_CHECKER_CLOSED, 413 too large, 401 bad key, 500 error. |
-| `POST /api/v1/patient360/blob-events` | Event Grid webhook for new files in Blob 2; answers the setup handshake or saves each new result file. | 200 with count or validation code, 400 bad payload, 401 bad key, 500 error (so Event Grid retries). |
+| `POST /api/v1/patient360/blob-events` | For local testing only (in Azure, Event Grid writes to a storage queue that the app reads): takes the same "file created" events by HTTP, answers the setup handshake or saves each new result file. | 200 with count or validation code, 400 bad payload, 401 bad key, 500 error (so Event Grid retries). |
 | `GET /health` | Checks that the database answers a simple query. | 200 status "ok", or 503 "database_unavailable". |
 
 ### `runtime.py`
@@ -585,7 +599,7 @@ Builds the running service by connecting every flow class to the database, Blob,
 | `build_services(settings, db, blob_stores, s3, backend)` | Creates every connection not passed in (so tests can replace them) and every flow class. Warns if no Backend is set. | A Services object holding all of them (sender is None without a Backend). |
 
 ### `timers.py`
-The two background loops: a job loop every 5 minutes and a work loop every 5 seconds.
+The background loops: a job loop every 5 minutes, a work loop every 5 seconds, and (only if an event queue is set) an event loop that reads the queue all the time.
 
 | Function | What it does | Output |
 |---|---|---|
@@ -593,7 +607,8 @@ The two background loops: a job loop every 5 minutes and a work loop every 5 sec
 | `run_job_cycle(services, now)` | One 5-minute round: process stuck visits, process waiting symptom checks, then make batches. | Nothing returned; work is saved in the database. |
 | `run_work_cycle(services, now)` | One 5-second round: upload to S3, then deliver to the Backend (if one is set). | Nothing returned. |
 | `_loop(cycle, services, interval_s)` | (helper) Runs a round in a thread, waits, repeats; the next round starts after the last one ends. | Never returns (runs until cancelled). |
-| `lifespan(services)` | Gives the app a start and stop routine: starts both loops, and on stop cancels them and closes the database. | A function for FastAPI's lifespan setting. |
+| `run_event_cycle(services, now)` | One pass over the storage queue of Event Grid events (does nothing if no queue is set). A failure is logged and never stops the loop. | Nothing returned. |
+| `lifespan(services)` | Gives the app a start and stop routine: starts the loops, and on stop cancels them, closes the queue and the database. | A function for FastAPI's lifespan setting. |
 | `lifespan.manager(app)` | (helper) The start and stop routine itself, described above. | Nothing returned. |
 
 ### `main.py`
@@ -645,6 +660,13 @@ Azure Blob Storage: saves and reads raw files in two containers (input and outpu
 | `AzureBlobStore.get(path)` | Downloads the file's bytes. A missing file is not an error. Other Azure problems raise `BlobUnavailable`. | The bytes, or None when the file is missing. |
 | `build_blob_stores(account_url, input_container, output_container, credential)` | Connects with the managed identity (or the developer's `az login`) unless a credential is given. Short timeouts, two retries. | A pair: (input store, output store). |
 | `build_blob_stores_from_connection_string(connection_string, input_container, output_container)` | Same, for the local Azurite test emulator. Makes either container if it is missing. | A pair: (input store, output store). |
+
+### `adapters/storage_queue.py`
+
+| Name | What it does (simple) | What you get back |
+|---|---|---|
+| `StorageQueueEventQueue` | Class: an Azure Storage queue behind the `EventQueue` port. A message that is read is hidden for 5 minutes; deleting it is "done", "try again" hides it for longer each time (2, 4, 8 ... minutes, at most an hour), and after 50 reads (or at once if unreadable) it goes to the `<queue>-poison` queue (`tools/replay_poison.py` moves them back). Plain JSON and base64 messages are both read. | An object with `receive`, `complete`, `abandon`, `dead_letter`, `close`. |
+| `build_event_queue(queue_name, connection_string=, account_url=)` | Connects to the queue from the Azurite connection string (local) or from the blob URL read as the queue URL, with the app's managed identity (Azure). | A `StorageQueueEventQueue`. |
 
 ### `adapters/s3.py`
 AWS S3: writes a file into the bucket of a source. Writing the file starts the AWS automation.
