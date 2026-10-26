@@ -34,6 +34,7 @@ BATCH_SIZE = 100            # the compose stack's BATCH_SIZE: one batch is sent 
 s3 = boto3.client("s3", endpoint_url=FAKE_S3, region_name="eu-west-1",
                   aws_access_key_id="dev-fake-key", aws_secret_access_key="dev-fake-secret")
 failed = []
+before = {}
 
 
 def sample(name, **changes):
@@ -50,13 +51,14 @@ def keys_in(bucket):
     return [o["Key"] for o in s3.list_objects_v2(Bucket=bucket, Prefix="processed/").get("Contents", [])]
 
 
-def wait_for_keys(bucket, count=1, seconds=90):
+def wait_for_new_keys(bucket, count=1, seconds=90):
+    """The keys that were not in the bucket when this run started: files of earlier runs stay in the buckets."""
     deadline = time.time() + seconds
     while time.time() < deadline:
-        if len(found := keys_in(bucket)) >= count:
+        if len(found := [k for k in keys_in(bucket) if k not in before[bucket]]) >= count:
             return found
         time.sleep(2)
-    return keys_in(bucket)
+    return [k for k in keys_in(bucket) if k not in before[bucket]]
 
 
 def check(bucket, pattern, found):
@@ -71,15 +73,15 @@ def main():
     for name in ("ai-input", "ai-output"):
         if not blobs.get_container_client(name).exists():
             blobs.create_container(name)
-    before = {bucket: set(keys_in(bucket)) for bucket in (*EXPECTED, "p360-batch")}
+    before.update({bucket: set(keys_in(bucket)) for bucket in (*EXPECTED, "p360-batch")})
 
     post(VISITS, sample("urgent_mild", visit_id=RUN + 1, patient_id=RUN + 1))
     visit = sample("on_demand_critical", source=4, visit_id=RUN + 2, patient_id=RUN + 2)
     post(VISITS, visit)
     for bucket in ("p360-urgent", "p360-on-demand"):
-        check(bucket, EXPECTED[bucket], [k for k in wait_for_keys(bucket) if k not in before[bucket]])
+        check(bucket, EXPECTED[bucket], wait_for_new_keys(bucket))
 
-    on_demand_key = next(k for k in keys_in("p360-on-demand") if k not in before["p360-on-demand"])
+    on_demand_key = wait_for_new_keys("p360-on-demand")[0]
     answer = {"summary": {"en": "s", "ar": "AR-s"}, "simple_summary": {"en": "s", "ar": "AR-s"}, "critical_alerts": [],
               "note": {"en": "n", "ar": "AR-n"}, "recommendations": []}
     record = {"recordId": on_demand_key.rsplit("/", 1)[1].removesuffix(".json"), "type": "message", "role": "assistant",
@@ -89,14 +91,14 @@ def main():
     post(EVENTS, [{"eventType": "Microsoft.Storage.BlobCreated", "data": {},
                    "subject": f"/blobServices/default/containers/ai-output/blobs/{path}"}], want=200)
     post(SYMPTOMS, sample("symptom_check", visit_id=visit["visit_id"], patient_id=visit["patient_id"]))
-    check("p360-symptom-checker", EXPECTED["p360-symptom-checker"], wait_for_keys("p360-symptom-checker"))
+    check("p360-symptom-checker", EXPECTED["p360-symptom-checker"], wait_for_new_keys("p360-symptom-checker"))
 
     for lane, name in (("normal", "batch_normal"), ("critical", "batch_critical")):
         print(f"posting {BATCH_SIZE} {lane} batch visits ...")
         for number in range(BATCH_SIZE):
             post(VISITS, sample(name, visit_id=RUN + 1000 + (0 if lane == "normal" else 500) + number,
                                 patient_id=RUN + 1000 + (0 if lane == "normal" else 500) + number))
-    found = [k for k in wait_for_keys("p360-batch", count=2, seconds=120) if k not in before["p360-batch"]]
+    found = wait_for_new_keys("p360-batch", count=2, seconds=120)
     for lane, pattern in BATCH.items():
         check(f"p360-batch ({lane})", pattern, [k for k in found if f"/{lane}-jsonls/" in k])
 

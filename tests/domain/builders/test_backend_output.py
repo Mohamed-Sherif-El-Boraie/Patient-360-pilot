@@ -39,11 +39,13 @@ def test_results_are_grouped_by_test_in_the_order_they_came():
 
 def test_packages_and_html_are_added_and_the_ai_input_is_not_changed():
     before = copy.deepcopy(AI)
-    packages = package_entries([Package(1, "Kidney check", 3, None, None, frozenset({1, 2}))],
-                               {1: "Urea", 2: "Creatinine"})
+    packages = package_entries([Package(1, "Kidney check", 3, None, None, frozenset({1, 2}), "فحص الكلى")],
+                               {1: ("Urea", "اليوريا"), 2: ("Creatinine", "الكرياتينين")})
     out = build_backend_output(patient_id=1, visit_id=2, source=1, rows=[], ai=AI, packages=packages)
-    assert out["ai"]["packages"] == [{"package_name": "Kidney check",
-                                      "tests": [{"test_name": "Urea"}, {"test_name": "Creatinine"}]}]
+    assert out["ai"]["packages"] == [{
+        "package_name": {"en": "Kidney check", "ar": "فحص الكلى"},
+        "tests": [{"test_name": {"en": "Urea", "ar": "اليوريا"}},
+                  {"test_name": {"en": "Creatinine", "ar": "الكرياتينين"}}]}]
     assert out["html"]["en"].startswith('<div lang="en">') and AI == before
     assert "packages" not in build_backend_output(patient_id=1, visit_id=2, source=1, rows=[], ai=AI)["ai"]
 

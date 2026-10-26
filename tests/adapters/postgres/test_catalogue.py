@@ -107,3 +107,60 @@ def test_end_to_end_retrieval(db):
     result = select_retrieved_tests(rows, catalogue.parameter_categories(), catalogue.tests_by_category(), ())
 
     assert [t["test_name"] for t in result] == ["Urea", "Kidney scan", "Liver panel"]
+
+
+def _add_package(db, package_id, name, *, tests=(), active=True, sex=3, age=(None, None), kind="GENERAL", name_ar=None):
+    with db.transaction() as conn:
+        conn.execute("INSERT INTO packages (package_id, package_name_en, package_name_ar, package_type, sex_id, "
+                     "age_min, age_max, active) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                     (package_id, name, name_ar, kind, sex, age[0], age[1], active))
+        for test_id in tests:
+            conn.execute("INSERT INTO test_package_map (package_id, test_id) VALUES (%s, %s)", (package_id, test_id))
+
+
+def test_packages_come_with_their_active_tests_and_only_active_packages_are_read(db):
+    seed.add_test(db, 1, "Urea", name_ar="اليوريا")
+    seed.add_test(db, 2, "Old test", active=False)
+    _add_package(db, 10, "Kidney check", tests=(1, 2), name_ar="فحص الكلى", sex=2, age=(18, 40), kind="WELLNESS")
+    _add_package(db, 11, "Empty", tests=())
+    _add_package(db, 12, "Switched off", tests=(1,), active=False)
+
+    packages = {p.package_id: p for p in PostgresCatalogue(db).packages()}
+    assert sorted(packages) == [10, 11]
+    kidney = packages[10]
+    assert (kidney.name, kidney.name_ar) == ("Kidney check", "فحص الكلى")
+    assert (kidney.package_type, kidney.sex_id) == ("WELLNESS", 2)
+    assert (kidney.age_min, kidney.age_max, kidney.test_ids) == (18, 40, frozenset({1}))     # the old test is left out
+    assert packages[11].test_ids == frozenset()
+
+
+def test_test_names_are_found_by_their_english_or_arabic_name_without_case_or_extra_spaces(db):
+    seed.add_test(db, 1, "HbA1c ", name_ar="الهيموجلوبين السكري")
+    seed.add_test(db, 2, "Vitamin  D")
+    seed.add_test(db, 3, "Old", active=False)
+    seed.add_test(db, 4, "Vitamin D")                        # the same name as test 2 once spaces are collapsed
+    catalogue = PostgresCatalogue(db)
+    by_name = catalogue.test_ids_by_name()
+    assert by_name == {"hba1c": 1, "الهيموجلوبين السكري": 1, "vitamin d": 2}   # the lower id keeps a shared name
+    assert catalogue.test_names()[1] == ("HbA1c ", "الهيموجلوبين السكري")
+    assert catalogue.test_names()[3] == ("Old", None)                           # names are for every test
+
+
+def test_the_package_data_is_kept_for_a_while_so_a_batch_does_not_ask_the_database_for_every_visit(db):
+    now = [0.0]
+    seed.add_test(db, 1, "Urea")
+    _add_package(db, 10, "First", tests=(1,))
+    catalogue = PostgresCatalogue(db, cache_s=300, clock=lambda: now[0])
+    assert [p.name for p in catalogue.packages()] == ["First"]
+    _add_package(db, 11, "Second", tests=(1,))
+    now[0] = 299
+    assert [p.name for p in catalogue.packages()] == ["First"]                  # still the saved copy
+    now[0] = 300
+    assert [p.name for p in catalogue.packages()] == ["First", "Second"]        # read again
+
+
+def test_without_a_cache_every_call_reads_the_database(db):
+    catalogue = PostgresCatalogue(db, cache_s=0)
+    assert catalogue.packages() == []
+    _add_package(db, 10, "New")
+    assert [p.name for p in catalogue.packages()] == ["New"]

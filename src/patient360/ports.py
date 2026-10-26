@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal, Protocol
 
+from patient360.domain.rules.packages import Package
 from patient360.domain.rules.retrieval import CatalogueTest
 
 
@@ -133,6 +134,15 @@ class Catalogue(Protocol):
     def test_names_ar(self) -> Mapping[str, str]:
         """English test name -> Arabic test name (``tests.test_name_ar``), for the Arabic html. All tests, active or
         not: a result saved when a test was active still needs its name."""
+
+    def packages(self) -> Sequence[Package]:
+        """The active packages, each with the ids of its active tests."""
+
+    def test_ids_by_name(self) -> Mapping[str, int]:
+        """``normalize_name`` of an English or Arabic test name -> test id, for the active tests."""
+
+    def test_names(self) -> Mapping[int, tuple[str, str | None]]:
+        """test id -> (English name, Arabic name), for every test: a package shows the names of its tests."""
 
 
 class VisitStore(Protocol):

@@ -20,7 +20,10 @@ from patient360.ports import (
 
 
 class FakeCatalogue:
-    def __init__(self, parameter_categories=None, tests_by_category=None, names_ar=None) -> None:
+    def __init__(self, parameter_categories=None, tests_by_category=None, names_ar=None, packages=None,
+                 test_ids_by_name=None, test_names=None) -> None:
+        self._packages, self._test_names = packages or [], test_names or {}
+        self._test_ids_by_name = test_ids_by_name or {}
         self._parameter_categories = parameter_categories or {}
         self._tests_by_category = tests_by_category or {}
         self._names_ar = names_ar or {}
@@ -33,6 +36,15 @@ class FakeCatalogue:
 
     def test_names_ar(self):
         return self._names_ar
+
+    def packages(self):
+        return self._packages
+
+    def test_ids_by_name(self):
+        return self._test_ids_by_name
+
+    def test_names(self):
+        return self._test_names
 
 
 class FakeBlobs:

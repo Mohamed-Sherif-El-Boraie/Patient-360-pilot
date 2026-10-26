@@ -231,8 +231,10 @@ The shape of a test package (a bundle of tests) and how packages are shown in th
 
 | Function | What it does | Output |
 |---|---|---|
-| `Package` | One test package: id, English name, sex it fits (1 male, 2 female, 3 both), age range in years, and its test ids. | an object with those fields |
-| `package_entries(packages, test_names)` | Turns the chosen packages (best first) into entries with a name and the tests inside. Unknown test names show the id. | A list of dictionaries with `package_name` and `tests`. |
+| `Package` | One test package: id, English and Arabic name, type (WELLNESS or GENERAL), sex it fits (1 male, 2 female, 3 both), age range in years, and its test ids. | an object with those fields |
+| `normalize_name(name)` | Lower case, trimmed, spaces collapsed, so `"HbA1c "` equals `"hba1c"`. Test names are matched by it. | Text. |
+| `select_packages(packages, requested_test_ids, age_days, sex_id)` | The owner's rule: keep packages that fit the sex and the age (completed years = age_days / 365.25); score each by coverage (80%) and focus (20%) of the AI's recommended tests; keep near-best ones that do not repeat covered tests; add routine (WELLNESS) packages when nothing matched or from age 50; at most 5. | A list of packages, best first. |
+| `package_entries(packages, test_names)` | Turns the chosen packages (best first) into entries with the English and Arabic name of each package and of each test in it. A missing Arabic name shows the English one; an unknown test shows its id. | A list of dictionaries with `package_name` (`en`, `ar`) and `tests`. |
 
 ### `domain/rules/retrieval.py`
 A simple fixed stand-in for the search step: picks catalogue tests from the categories of parameters that are not normal.
@@ -416,6 +418,9 @@ Lists what the core flow needs from the outside world (storage, S3, Backend, dat
 | `Catalogue.parameter_categories()` | Gives the categories of each lab parameter (active ones only). | A map from parameter id to its category ids. |
 | `Catalogue.tests_by_category()` | Gives the tests listed under each category. | A map from category id to its tests. |
 | `Catalogue.test_names_ar()` | Gives the Arabic name of every test, active or not. | A map from English test name to Arabic name. |
+| `Catalogue.packages()` | The active packages, each with the ids of its active tests. | A list of packages. |
+| `Catalogue.test_ids_by_name()` | Finds a test id from its English or Arabic name (case and extra spaces do not matter), for active tests. | A map from normalized name to test id. |
+| `Catalogue.test_names()` | The English and Arabic name of every test, for the package entries. | A map from test id to (English, Arabic). |
 | `VisitStore.visit_exists(visit_id)` | Checks if a visit is already saved. | True or False. |
 | `VisitStore.stored_visit(visit_id)` | Loads a visit as it was received. | A `StoredVisit`. |
 | `VisitStore.save_processed(visit_id, tier, model_input, read_from)` | In one transaction saves the tier, the model request and the stage "processed", and adds a waiting work row. | Nothing returned. |
@@ -783,8 +788,9 @@ Reads the reference lists (categories, tests, parameters) that the retrieval rul
 | Function | What it does | Output |
 |---|---|---|
 | `PostgresCatalogue` (class) | The database version of the `Catalogue` port. | A catalogue object. |
-| `PostgresCatalogue.__init__(db)` | Keeps the `Database`. | Nothing returned. |
+| `PostgresCatalogue.__init__(db, cache_s=300)` | Keeps the `Database` and how long the package data is cached. | Nothing returned. |
 | `PostgresCatalogue._load_maps()` | (helper) Reads active categories, all tests and all parameters in one transaction, then builds the two lookup maps. | A pair of maps: parameter to categories, category to tests. |
 | `PostgresCatalogue.parameter_categories()` | Says which categories each parameter belongs to. | A map: parameter id to its category ids. |
 | `PostgresCatalogue.tests_by_category()` | Lists the tests in each category. | A map: category id to a list of tests. |
 | `PostgresCatalogue.test_names_ar()` | Reads the Arabic name of every test that has one. | A map: English test name to Arabic name. |
+| `PostgresCatalogue.packages()` / `test_ids_by_name()` / `test_names()` | Read the package data from PostgreSQL. The answer is kept for 5 minutes (`cache_s`), because a batch result asks once per visit; a catalogue load shows up within 5 minutes or after a restart. | See the `Catalogue` port. |

@@ -14,7 +14,9 @@ from patient360.domain.builders.backend_output import build_backend_output
 from patient360.domain.builders.blocked import blocked_ai, is_blocked
 from patient360.domain.common.blob_paths import MergedOutput, merged_output_path, parse_merged_output_path
 from patient360.domain.payload.ai_answer import AiAnswer
+from patient360.domain.payload.values import as_whole_number
 from patient360.domain.rules.classify import decide_tier, symptom_checker_open
+from patient360.domain.rules.packages import normalize_name, package_entries, select_packages
 from patient360.ports import BlobStore, Catalogue, StoredVisit, VisitStore
 
 log = structlog.get_logger()
@@ -118,5 +120,17 @@ class OutputReceiver:
         return build_backend_output(
             patient_id=raw["patient_id"], visit_id=stored.visit_id,
             source=SYMPTOM_CHECKER_ID if symptom else stored.source_id, rows=built.rows,
-            ai=ai, arabic_test_names=self._catalogue.test_names_ar(),
+            ai=ai, packages=None if blocked else self._packages(raw["patient"], ai),
+            arabic_test_names=self._catalogue.test_names_ar(),
             html_reasons=symptom, symptom_flag=not symptom and symptom_checker_open(tier, blocked))
+
+    def _packages(self, patient: dict[str, Any], ai: dict[str, Any]) -> list[dict[str, Any]]:
+        """The packages for this patient (sex and age come from the visit we saved) and the tests the AI recommended.
+        A test the symptom check removed is not asked for. A blocked answer gets no packages."""
+        by_name = self._catalogue.test_ids_by_name()
+        asked = [r["test_name"] for r in ai.get("recommendations") or []
+                 if str((r.get("change_type") or {}).get("en", "")).strip().lower() != "removed"]
+        requested = {by_name[key] for name in asked if (key := normalize_name(name)) in by_name}
+        chosen = select_packages(self._catalogue.packages(), requested, as_whole_number(patient["age_days"]),
+                                 as_whole_number(patient["sex"]))
+        return package_entries(chosen, self._catalogue.test_names())
