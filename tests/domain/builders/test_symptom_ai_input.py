@@ -31,6 +31,12 @@ def test_the_ai_input_holds_symptoms_current_results_history_and_the_previous_an
     assert set(doc["previous_ai_analysis"]) == expected
 
 
+def test_the_time_the_symptoms_were_received_reaches_the_model_when_given(sample):
+    given = build_symptom_ai_input(*build(sample), "2026-10-29T08:30:00Z")
+    assert given["symptom_received_at"] == "2026-10-29T08:30:00Z"
+    assert "symptom_received_at" not in build_symptom_ai_input(*build(sample))
+
+
 def test_the_previous_analysis_is_english_only_and_has_no_packages(sample):
     doc = build_symptom_ai_input(*build(sample))
     assert '"ar"' not in json.dumps(doc, ensure_ascii=False) and "packages" not in doc["previous_ai_analysis"]

@@ -41,23 +41,24 @@ def test_the_category_of_a_critical_parameter_comes_first_then_the_others():
     names = [t["test_name"] for t in run([row(10, "low"), row(10, "text"), row(11, "critical")])]
     assert names == ["HbA1c", "Estimated (eGFR)", "Urea", "Cystatin C"]
     names = [t["test_name"] for t in run([row(11, "high"), row(10, "critical")])]
-    assert names == ["Estimated (eGFR)", "Urea", "Cystatin C", "HbA1c"]
+    assert names == ["Estimated (eGFR)", "HbA1c", "Urea", "Cystatin C"]
 
 
-def test_at_most_fifty_tests_are_returned_by_default_and_the_limit_can_be_changed():
+def test_at_most_seventy_tests_are_returned_by_default_and_the_limit_can_be_changed():
     many = {7: [CatalogueTest(i, f"Test {i}", None) for i in range(1, 121)]}
     rows = [{"parameter_id": 1, "status": "high", "value": "1"}]
-    assert len(select_retrieved_tests(rows, {1: [7]}, many, [])) == 50
+    assert len(select_retrieved_tests(rows, {1: [7]}, many, [])) == 70
     assert len(select_retrieved_tests(rows, {1: [7]}, many, [], max_tests=7)) == 7
 
 
-def test_the_cap_keeps_the_critical_categorys_tests_first():
-    many = {5: [CatalogueTest(i, f"C{i}", None) for i in range(1, 40)],
-            6: [CatalogueTest(100 + i, f"O{i}", None) for i in range(1, 40)]}
-    rows = [{"parameter_id": 1, "status": "critical", "value": "1"},
-            {"parameter_id": 2, "status": "high", "value": "1"}]
+def test_the_cap_shares_the_slots_between_categories_and_the_critical_one_goes_first_in_each_round():
+    many = {5: [CatalogueTest(i, f"C{i}", None) for i in range(1, 101)],
+            6: [CatalogueTest(200 + i, f"O{i}", None) for i in range(1, 101)]}
+    rows = [{"parameter_id": 1, "status": "high", "value": "1"},
+            {"parameter_id": 2, "status": "critical", "value": "1"}]
     names = [t["test_name"] for t in select_retrieved_tests(rows, {1: [5], 2: [6]}, many, [])]
-    assert len(names) == 50 and names[:39] == [f"C{i}" for i in range(1, 40)] and names[39] == "O1"
+    assert len(names) == 70 and names[:4] == ["O1", "C1", "O2", "C2"]
+    assert sum(n.startswith("C") for n in names) == sum(n.startswith("O") for n in names) == 35
 
 
 def test_each_entry_has_the_name_and_the_description():
@@ -70,22 +71,12 @@ def test_a_parameter_without_a_category_or_a_value_adds_nothing():
     assert run([row(10, "text", value="")]) == []
 
 
-def test_include_normal_also_takes_the_categories_of_normal_parameters_after_the_others():
-    rows = [row(11, "normal"), row(10, "high")]
-    names = [t["test_name"] for t in select_retrieved_tests(rows, CATEGORIES, CATALOGUE, (), include_normal=True)]
-    assert names == ["Estimated (eGFR)", "Urea", "Cystatin C", "HbA1c"]        # not-normal category first
-    all_normal = [row(11, "normal"), row(10, "normal")]
-    names = [t["test_name"] for t in select_retrieved_tests(all_normal, CATEGORIES, CATALOGUE, (), include_normal=True)]
-    assert names == ["Estimated (eGFR)", "Urea", "Cystatin C", "HbA1c"]
-    assert select_retrieved_tests(all_normal, CATEGORIES, CATALOGUE, ()) == []   # off by default
-
-
 def test_a_parameter_in_two_categories_pulls_both_and_a_test_in_two_categories_comes_once():
     shared = CatalogueTest(9, "Shared test", None)
     catalogue = {KIDNEY: [*CATALOGUE[KIDNEY], shared], SUGAR: [*CATALOGUE[SUGAR], shared]}
     names = [t["test_name"] for t in select_retrieved_tests(
         [row(20, "high")], {20: [KIDNEY, SUGAR]}, catalogue, ())]
-    assert names == ["Estimated (eGFR)", "Urea", "Cystatin C", "Shared test", "HbA1c"]
+    assert names == ["Estimated (eGFR)", "HbA1c", "Urea", "Shared test", "Cystatin C"]
 
 
 def names_for(rows, tests, parameters, active_categories=(1, 2)):

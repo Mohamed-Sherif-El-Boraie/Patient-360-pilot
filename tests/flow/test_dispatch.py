@@ -108,7 +108,8 @@ def test_a_missing_blob_file_falls_back_to_the_database_copy(world):
     visit = world.add("urgent_mild", 1)
     world.blobs.files.clear()
     world.dispatcher().run()
-    assert json.loads(next(iter(world.s3.files.values()))) == visit["model_input"]
+    sent = json.loads(next(iter(world.s3.files.values())))
+    assert sent == {"recordId": visit["idempotency_key"], "modelInput": visit["model_input"]}
 
 
 def test_a_failed_upload_waits_longer_each_time_and_after_five_tries_gives_up(world):

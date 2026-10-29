@@ -1,7 +1,8 @@
 """Checks the S3 layout of all four buckets against the local docker compose stack. Prints no secret.
 
 Run (the stack must be up):  uv run python tools/check_s3_layout.py
-It plays the Backend, and AWS once (the symptom check needs the visit's result first). It uses new ids on every run.
+It plays the Backend, and AWS once (the symptom check needs the visit's result first: the answer is
+posted to the app's /api/v1/patient360/ai-results, as the Function app does). It uses new ids on every run.
 """
 import json
 import re
@@ -11,13 +12,10 @@ from pathlib import Path
 
 import boto3
 import httpx
-from azure.storage.blob import BlobServiceClient
 
 APP, FAKE_S3 = "http://127.0.0.1:8000", "http://127.0.0.1:9000"
 API_KEY = {"X-Api-Key": "dev-inbound-key"}
-VISITS, SYMPTOMS, EVENTS = (f"{APP}/api/v1/patient360/{name}" for name in ("visits", "visits-symptoms", "blob-events"))
-AZURITE = ("DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT"
-           "50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;")
+VISITS, SYMPTOMS, RESULTS = (f"{APP}/api/v1/patient360/{name}" for name in ("visits", "visits-symptoms", "ai-results"))
 SAMPLES = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "samples"
 DAY = r"\d{4}/\d{2}/\d{2}"
 RUN = int(time.time()) * 10                # new ids on every run, so nothing is a duplicate
@@ -69,10 +67,6 @@ def check(bucket, pattern, found):
 
 
 def main():
-    blobs = BlobServiceClient.from_connection_string(AZURITE)
-    for name in ("ai-input", "ai-output"):
-        if not blobs.get_container_client(name).exists():
-            blobs.create_container(name)
     before.update({bucket: set(keys_in(bucket)) for bucket in (*EXPECTED, "p360-batch")})
 
     post(VISITS, sample("urgent_mild", visit_id=RUN + 1, patient_id=RUN + 1))
@@ -88,10 +82,11 @@ def main():
     _, lane, year, month, day, _input, file_name = on_demand_key.split("/")
     record = {"recordId": file_name.removesuffix(".json"), "type": "message", "role": "assistant",
               "model": "simulated-model", "content": [{"type": "text", "text": json.dumps(answer)}], "metadata": {}}
-    path = f"aws-output-merged/on-demand/{lane}/{year}/{month}/{day}/{file_name}"
-    blobs.get_blob_client("ai-output", path).upload_blob(json.dumps(record).encode(), overwrite=True)
-    post(EVENTS, [{"eventType": "Microsoft.Storage.BlobCreated", "data": {},
-                   "subject": f"/blobServices/default/containers/ai-output/blobs/{path}"}], want=200)
+    path = f"{lane}/{year}/{month}/{day}/{record['recordId']}/05-output-merged.json"
+    reply = httpx.post(RESULTS, content=json.dumps(record).encode(), timeout=30,
+                       headers=API_KEY | {"X-Source": "on-demand", "X-Blob-Path": path})
+    if reply.status_code != 200:
+        sys.exit(f"FAIL: {RESULTS} answered {reply.status_code}: {reply.text[:200]}")
     post(SYMPTOMS, sample("symptom_check", visit_id=visit["visit_id"], patient_id=visit["patient_id"]))
     check("p360-symptom-checker", EXPECTED["p360-symptom-checker"], wait_for_new_keys("p360-symptom-checker"))
 

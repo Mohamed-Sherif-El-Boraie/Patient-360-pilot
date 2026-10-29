@@ -8,6 +8,7 @@ from typing import Literal
 
 import structlog
 
+from patient360.domain.builders.backend_output import for_wrapper
 from patient360.domain.rules.dispatch import retry_after
 from patient360.ports import BackendClient, BackendRejected, BackendUnavailable, DeliveryUnit, VisitStore
 
@@ -33,7 +34,7 @@ class ResultSender:
 
     def _send(self, unit: DeliveryUnit) -> Delivered:
         try:
-            self._backend.post_result(self._store.public_output_of(unit))
+            self._backend.post_result(for_wrapper(self._store.public_output_of(unit)))
         except BackendUnavailable as error:
             return self._fail(unit, error, retry_at=self._retry_time(unit))
         except BackendRejected as error:      # the same body would be refused again: do not waste tries

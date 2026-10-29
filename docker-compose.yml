@@ -12,12 +12,11 @@ x-app-env: &app-env
   PGUSER: postgres
   PGPASSWORD: test
   PGSSLMODE: disable
+  PGSCHEMA: p360               # the migration makes this schema; look at the tables with: SET search_path TO p360;
   # devstoreaccount1 and its key are the public, documented Azurite emulator account (not a secret).
   AZURE_STORAGE_CONNECTION_STRING: >-
     DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;QueueEndpoint=http://azurite:10001/devstoreaccount1;
-  EVENT_QUEUE_NAME: blob-events      # Event Grid's queue; Azurite plays the storage account
   BLOB_INPUT_CONTAINER: ai-input
-  BLOB_OUTPUT_CONTAINER: ai-output
   IDEMPOTENCY_KEY_SECRET: dev-only-fake-idempotency-secret
   INBOUND_API_KEY: dev-inbound-key
   AWS_REGION: eu-west-1
@@ -77,7 +76,9 @@ services:
     image: patient360:local
     working_dir: /app
     command: ["python", "tools/create_buckets.py"]
-    environment: *app-env
+    environment:
+      <<: *app-env
+      RUN_STARTUP_JOBS: "0"        # only the app service migrates and loads the catalogue
     volumes:
       - ./tools:/app/tools:ro
     depends_on:
@@ -93,28 +94,21 @@ services:
     image: patient360:local
     working_dir: /app
     command: ["uvicorn", "tools.mock_wrapper:app", "--host", "0.0.0.0", "--port", "8081"]
+    environment:
+      RUN_STARTUP_JOBS: "0"        # no database here
     volumes:
       - ./tools:/app/tools:ro
     ports:
       - "127.0.0.1:8081:8081"
 
-  migrate:
-    build: *app-build
-    image: patient360:local
-    command: ["python", "-m", "patient360.migrate"]
-    environment: *app-env
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: "no"
-
+  # The image entrypoint migrates the database and loads the catalogue, then starts uvicorn (RUN_STARTUP_JOBS default 1).
   app:
     build: *app-build
     image: patient360:local
     environment: *app-env
     depends_on:
-      migrate:
-        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
       s3-setup:
         condition: service_completed_successfully
       azurite:

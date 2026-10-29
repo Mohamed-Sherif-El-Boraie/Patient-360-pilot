@@ -33,6 +33,9 @@ class Duplicate:       # answer 200: we already have it
 @dataclass(frozen=True)
 class Rejected:        # answer 422, with the error list (never the input)
     errors: list[dict[str, Any]]
+    patient_id: int | None = None      # the ids that could still be read: enough to tell the Backend the patient failed
+    visit_id: int | None = None
+    source_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -51,18 +54,19 @@ class TooLarge:        # answer 413: over MAX_REQUEST_BYTES; nothing is read, sa
     limit: int
 
 
-def _peek(raw: bytes) -> tuple[int | None, int | None]:
-    """The source number and visit id of a payload that failed validation, if they are usable."""
+def _peek(raw: bytes) -> tuple[int | None, int | None, int | None]:
+    """The source number, visit id and patient id of a payload that failed validation, if they are usable."""
     try:
         obj = json.loads(raw)
     except (ValueError, RecursionError):
-        return None, None
+        return None, None, None
     if not isinstance(obj, dict):
-        return None, None
-    source, visit = as_whole_number(obj.get("source")), as_whole_number(obj.get("visit_id"))
+        return None, None, None
+    source, visit, patient = (as_whole_number(obj.get(k)) for k in ("source", "visit_id", "patient_id"))
     source = source if type(source) is int and source in SOURCE_NAMES else None
     visit = visit if type(visit) is int and visit >= 1 else None
-    return source, visit
+    patient = patient if type(patient) is int and patient >= 1 else None
+    return source, visit, patient
 
 
 class Intake:
@@ -96,7 +100,10 @@ class Intake:
                 return SymptomCheckerClosed(visit_id)
         elif self._store.visit_exists(visit_id):
             return Duplicate(visit_id)
-        key = make_idempotency_key(self._secret, patient_id=patient_id, visit_id=visit_id)
+        # A symptom check has no company_id: it keeps the key its stored visit already got.
+        key = (self._store.stored_visit(visit_id).idempotency_key if source_id == SYMPTOM_CHECKER
+               else make_idempotency_key(self._secret, patient_id=patient_id, visit_id=visit_id,
+                                         company_id=payload["company_id"]))
         read_from = self._save_raw_to_blob(SOURCE_NAMES[source_id], key, raw, received_at)
         if source_id == SYMPTOM_CHECKER:
             self._store.save_symptom_check(payload, raw, received_at, read_from)
@@ -113,7 +120,7 @@ class Intake:
         return "blob"
 
     def _reject(self, raw: bytes, errors: list[dict[str, Any]], received_at: datetime) -> Rejected:
-        source_id, visit_id = _peek(raw)
+        source_id, visit_id, patient_id = _peek(raw)
         day = blob_day(received_at)
         if source_id is not None and visit_id is not None:
             path = rejected_path(SOURCE_NAMES[source_id], day, visit_id)
@@ -124,4 +131,4 @@ class Intake:
         except BlobUnavailable:
             path = None
         self._store.save_rejected(source_id, raw, errors, path)
-        return Rejected(errors)
+        return Rejected(errors, patient_id, visit_id, source_id)

@@ -8,7 +8,7 @@ from patient360.domain.common.blob_paths import (
     blob_day,
     merged_output_jsonl_path,
     merged_output_path,
-    parse_merged_output_path,
+    parse_output_path,
     processed_path,
     raw_path,
     rejected_path,
@@ -53,13 +53,11 @@ def test_a_batch_visit_is_inside_its_batch_folder_and_the_batch_has_a_jsonl():
         "processed/batch/critical-jsonls/2026/10/24/critical_000007.jsonl")
 
 
-def test_the_merged_output_lives_in_blob_2():
-    assert merged_output_path("urgent", "normal", DAY, KEY) == (
-        f"aws-output-merged/urgent/normal/2026/10/24/{FILE}")
-    assert merged_output_path("batch", "critical", DAY, KEY, batch_id="critical_000007") == (
-        f"aws-output-merged/batch/critical/2026/10/24/critical_000007/{FILE}")
+def test_the_merged_output_lives_in_the_output_container_of_its_source():
+    assert merged_output_path("normal", DAY, KEY) == f"normal/2026/10/24/{KEY}/05-output-merged.json"
+    assert merged_output_path("critical", DAY, KEY) == f"critical/2026/10/24/{KEY}/05-output-merged.json"
     assert merged_output_jsonl_path("normal", DAY, "normal_000001") == (
-        "aws-output-merged/batch/normal-jsonls/2026/10/24/normal_000001.jsonl")
+        "normal-jsonls/2026/10/24/normal_000001/05-output-merged.jsonl")
 
 
 def test_the_s3_key_is_inside_the_bucket_of_the_source():
@@ -89,7 +87,7 @@ def test_all_files_of_one_visit_share_the_day_it_was_received():
     received = datetime(2026, 10, 24, 23, 59, tzinfo=UTC)
     day = blob_day(received)   # still used at 00:10 the next day, when the result is saved
     assert raw_path("urgent", day, KEY).split("/")[2:5] == ["2026", "10", "24"]
-    assert merged_output_path("urgent", "normal", day, KEY).split("/")[3:6] == ["2026", "10", "24"]
+    assert merged_output_path("normal", day, KEY).split("/")[1:4] == ["2026", "10", "24"]
 
 
 def test_an_unknown_source_or_lane_is_refused():
@@ -134,27 +132,50 @@ def test_a_rejected_payload_without_a_usable_visit_is_named_by_a_hash_of_its_byt
 KEY32 = "a" * 32
 
 
-def test_a_blob_2_path_is_read_back_into_its_parts():
-    visit = parse_merged_output_path(f"aws-output-merged/on-demand/critical/2026/10/24/{KEY32}.json")
+def test_an_output_path_is_read_back_into_its_parts():
+    visit = parse_output_path("on-demand", f"critical/2026/10/24/{KEY32}/05-output-merged.json")
     assert visit == MergedOutput("visit", "on-demand", "critical", date(2026, 10, 24), key=KEY32)
-    jsonl = parse_merged_output_path("aws-output-merged/batch/normal-jsonls/2026/10/25/normal_000001.jsonl")
+    jsonl = parse_output_path("batch", "normal-jsonls/2026/10/25/normal_000001/05-output-merged.jsonl")
     assert jsonl == MergedOutput("batch_jsonl", "batch", "normal", date(2026, 10, 25), batch_id="normal_000001")
-    split = parse_merged_output_path(f"aws-output-merged/batch/critical/2026/10/25/critical_000002/{KEY32}.json")
-    assert split == MergedOutput("batch_visit", "batch", "critical", date(2026, 10, 25), key=KEY32,
-                                 batch_id="critical_000002")
+    copy = parse_output_path("batch", f"critical/2026/10/25/{KEY32}/05-output-merged.json")
+    assert copy == MergedOutput("batch_visit", "batch", "critical", date(2026, 10, 25), key=KEY32)
+
+
+@pytest.mark.parametrize("source", ["urgent", "on-demand", "symptom-checker", "batch"])
+def test_a_failed_file_is_a_failure_in_every_source_container_the_batch_one_too(source):
+    found = parse_output_path(source, f"critical/2026/10/24/{KEY32}/07-failed.json")
+    assert found == MergedOutput("failed", source, "critical", date(2026, 10, 24), key=KEY32)
 
 
 def test_a_path_built_by_us_is_read_back_the_same_way():
     day = date(2026, 10, 24)
-    assert parse_merged_output_path(merged_output_path("urgent", "normal", day, KEY32)).key == KEY32
-    path = merged_output_path("batch", "critical", day, KEY32, "critical_000003")
-    assert parse_merged_output_path(path).batch_id == "critical_000003"
-    assert parse_merged_output_path(merged_output_jsonl_path("normal", day, "normal_000001")).kind == "batch_jsonl"
+    assert parse_output_path("urgent", merged_output_path("normal", day, KEY32)).key == KEY32
+    assert parse_output_path("batch", merged_output_path("critical", day, KEY32)).kind == "batch_visit"
+    jsonl = parse_output_path("batch", merged_output_jsonl_path("normal", day, "normal_000001"))
+    assert (jsonl.kind, jsonl.batch_id) == ("batch_jsonl", "normal_000001")
 
 
-@pytest.mark.parametrize("path", [
-    "processed/urgent/normal/2026/10/24/" + KEY32 + ".json", "aws-output-merged/urgent/normal/2026/13/45/x.json",
-    "aws-output-merged/urgent/normal/2026/10/24/../x.json", "aws-output-merged/other/normal/2026/10/24/x.json",
-    "aws-output-merged/urgent/normal/2026/10/24/x.txt", ""])
-def test_any_other_path_is_not_ours(path):
-    assert parse_merged_output_path(path) is None
+@pytest.mark.parametrize("source,path", [
+    ("urgent", f"normal/2026/10/24/{KEY32}/01-input.json"),             # another phase file
+    ("urgent", f"normal/2026/10/24/{KEY32}/06-failed.json"),
+    ("urgent", "normal/2026/13/45/x/07-failed.json"),                    # a failed file with a date that does not exist
+    ("urgent", f"normal/2026/10/24/{KEY32}/07-failed.txt"),
+    ("urgent", f"normal/2026/10/24/{KEY32}/07-failed.jsonl"),
+    ("urgent", f"normal/2026/10/24/{KEY32}/logs/07-failed.json"),
+    ("urgent", f"normal/2026/10/24/{KEY32}/logs/05-output-merged.json"),
+    ("urgent", "normal/2026/13/45/x/05-output-merged.json"),             # a date that does not exist
+    ("urgent", "normal/2026/10/24/../05-output-merged.json"),
+    ("urgent", "high/2026/10/24/x/05-output-merged.json"),               # unknown lane
+    ("urgent", "normal-jsonls/2026/10/24/b/05-output-merged.jsonl"),     # a jsonl outside the batch container
+    ("batch", "normal-jsonls/2026/10/24/b/05-output-merged.json"),       # a batch folder holds a jsonl
+    ("batch", "normal-jsonls/2026/10/24/b/01-input.jsonl"),
+    ("walk-in", f"normal/2026/10/24/{KEY32}/05-output-merged.json"),     # unknown source
+    ("urgent", "")])
+def test_any_other_path_is_not_ours(source, path):
+    assert parse_output_path(source, path) is None
+
+
+def test_a_batch_id_that_is_too_long_to_be_ours_is_not_an_answer():
+    assert parse_output_path("batch", f"normal-jsonls/2026/10/24/normal_{'1' * 200}/05-output-merged.jsonl") is None
+    ours = parse_output_path("batch", "normal-jsonls/2026/10/24/normal_000001/05-output-merged.jsonl")
+    assert ours.batch_id == "normal_000001"

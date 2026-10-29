@@ -34,8 +34,8 @@ class Recommendation(_Answer):
 
 
 class AiAnswer(_Answer):
-    summary: EnAr
-    simple_summary: EnAr
+    summary: EnAr | None = None          # a symptom check answers with note and recommendations only
+    simple_summary: EnAr | None = None
     critical_alerts: list[EnAr] = []
     note: EnAr
     recommendations: list[Recommendation] = []

@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import Any, Literal
 
 from patient360.domain.builders.ai_input import SOURCE_NAMES, build_ai_input
-from patient360.domain.builders.model_input import build_model_input
+from patient360.domain.builders.model_input import aws_record, build_model_input
 from patient360.domain.common.blob_paths import blob_day, processed_path
 from patient360.domain.rules.classify import decide_tier, lane_for_tier
 from patient360.domain.rules.retrieval import select_retrieved_tests
@@ -27,10 +27,12 @@ class Processed:
     read_from: Literal["blob", "postgresql"]
 
 
-def write_model_input(blobs: BlobStore, path: str, model_input: dict[str, Any]) -> Literal["blob", "postgresql"]:
-    """Save the request in Blob. ``postgresql`` when Blob is down: the database copy is then the one that is read."""
+def write_model_input(blobs: BlobStore, path: str, record_id: str,
+                      model_input: dict[str, Any]) -> Literal["blob", "postgresql"]:
+    """Save the file AWS reads (``{recordId, modelInput}``, the visit's key) in Blob. ``postgresql`` when Blob is down:
+    the database copy (the bare request) is then the one that is read."""
     try:
-        blobs.put(path, json.dumps(model_input, ensure_ascii=False).encode())
+        blobs.put(path, json.dumps(aws_record(record_id, model_input), ensure_ascii=False).encode())
     except BlobUnavailable:
         return "postgresql"
     return "blob"
@@ -56,7 +58,7 @@ class Processor:
         # A batch visit is not written here: its file goes inside its batch folder, once the batch exists.
         read_from = "postgresql" if stored.source_id == BATCH else write_model_input(
             self._blobs, processed_path(SOURCE_NAMES[stored.source_id], lane, blob_day(stored.received_at),
-                                        stored.idempotency_key), model_input)
+                                        stored.idempotency_key), stored.idempotency_key, model_input)
         self._store.save_processed(visit_id, tier, model_input, read_from)
         return Processed(visit_id, tier, lane, read_from)
 

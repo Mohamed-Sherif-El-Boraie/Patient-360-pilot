@@ -43,7 +43,8 @@ def test_an_urgent_or_on_demand_visit_is_written_to_its_lane_folder(sample, name
     assert (outcome.tier, outcome.lane, outcome.read_from) == (tier, lane, "blob")
     written = json.loads(blobs.files[f"processed/{folder}/{lane}/2026/10/24/{key}.json"])
     saved = store.visits[visit["visit_id"]]
-    assert written == saved["model_input"] and saved["tier"] == tier and saved["stage"] == "processed"
+    assert written == {"recordId": key, "modelInput": saved["model_input"]}   # file wrapped, database bare
+    assert "recordId" not in saved["model_input"] and saved["tier"] == tier and saved["stage"] == "processed"
 
 
 def test_the_ai_json_has_no_ids_and_carries_the_retrieved_tests(sample):

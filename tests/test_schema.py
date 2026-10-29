@@ -115,6 +115,8 @@ def test_results_are_identified_by_visit_test_and_parameter_with_real_foreign_ke
 def test_history_is_per_parameter_and_per_earlier_visit():
     history = table("lab_result_history")
     assert "history_visit_id bigint NOT NULL" in history
+    assert "company_id int NOT NULL REFERENCES companies (company_id)" in history   # which company's history
+    assert "company_id int NOT NULL REFERENCES companies (company_id)" in table("descriptive_result_history")
     assert "history_date text" in history and "history_value text" in history
     assert "FOREIGN KEY (visit_id, test_id, parameter_id) REFERENCES lab_results" in history
     assert "history_visit_id bigint NOT NULL REFERENCES" not in history      # the earlier visit may not be ours

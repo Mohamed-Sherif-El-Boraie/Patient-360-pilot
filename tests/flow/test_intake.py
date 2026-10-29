@@ -30,7 +30,8 @@ def raw(payload) -> bytes:
 
 
 def key_of(payload) -> str:
-    return make_idempotency_key(SECRET, patient_id=payload["patient_id"], visit_id=payload["visit_id"])
+    return make_idempotency_key(SECRET, patient_id=payload["patient_id"], visit_id=payload["visit_id"],
+                                company_id=payload["company_id"])
 
 
 def test_a_valid_visit_is_saved_raw_in_blob_and_in_the_database_and_accepted(parts, sample):
@@ -73,6 +74,14 @@ def test_an_invalid_payload_is_rejected_saved_in_blob_and_database_and_never_bec
     assert blobs.files[path] == body
     assert store.rejected == [{"source_id": 1, "raw": body, "errors": outcome.errors, "blob_path": path}]
     assert store.visits == {}
+    assert (outcome.patient_id, outcome.visit_id, outcome.source_id) == (visit["patient_id"], visit["visit_id"], 1)
+
+
+def test_a_rejection_without_a_usable_patient_id_carries_none_for_it(parts, sample):
+    intake, _, _ = parts
+    visit = sample("urgent_mild") | {"patient_id": "not a number"}
+    outcome = intake.receive(raw(visit))
+    assert isinstance(outcome, Rejected) and outcome.patient_id is None and outcome.visit_id == visit["visit_id"]
 
 
 def test_a_payload_that_is_not_json_is_rejected_under_unknown(parts):

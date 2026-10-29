@@ -45,6 +45,12 @@ def test_a_real_critical_limit_is_shown_exactly_as_sent(sample):
     assert shown["critical"]["low"] == -1 and shown["critical"]["high"] == 6
 
 
+@pytest.mark.parametrize(("range_text", "shown"), [(" - ", None), ("6 - ", "6 - "), ("> 6", "> 6")])
+def test_a_bare_dash_critical_range_text_is_null_but_a_one_sided_range_is_kept(sample, range_text, shown):
+    _, out = result(sample, "5", {"low": "1", "high": "9"}, {"low": 6, "high": None, "range_text": range_text})
+    assert out["critical"].get("range_text") == shown
+
+
 def test_a_marker_pair_is_left_out_of_the_ai_input(sample):
     _, shown = result(sample, "5", {"low": "1", "high": "9"}, {"low": -1, "high": 9999, "range_text": None})
     assert "critical" not in shown or ("low" not in shown["critical"] and "high" not in shown["critical"])

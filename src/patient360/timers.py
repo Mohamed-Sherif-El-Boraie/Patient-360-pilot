@@ -3,9 +3,6 @@
 The job loop (every ``job_interval_s``, 5 minutes) picks up what a restart cut short and starts the batches. The work
 loop (every ``work_interval_s``, 5 seconds) uploads to S3 and delivers to the Backend. A cycle is plain synchronous code
 so tests can call it; one failing job is logged and never stops the next.
-
-A third loop reads the storage queue of Event Grid events, when a queue is set: each pass waits a few seconds for
-messages inside the queue adapter, then pauses a moment.
 """
 from __future__ import annotations
 
@@ -23,8 +20,6 @@ from patient360.flow.symptom import process_waiting_symptoms
 from patient360.services import Services
 
 log = structlog.get_logger()
-
-EVENT_PAUSE_S = 2       # between two passes over the Event Grid queue (a storage queue does not wait for messages)
 
 
 def _run_each(jobs: list[Callable[[], Any]]) -> None:
@@ -50,11 +45,6 @@ def run_work_cycle(services: Services, now: datetime) -> None:
     _run_each(jobs)
 
 
-def run_event_cycle(services: Services, now: datetime) -> None:
-    if services.event_consumer is not None:
-        _run_each([services.event_consumer.run_once])
-
-
 async def _loop(cycle: Callable[[Services, datetime], None], services: Services, interval_s: float) -> None:
     """Run ``cycle`` in a thread, wait ``interval_s``, again: the next cycle starts after the previous one finished."""
     while True:
@@ -69,8 +59,6 @@ def lifespan(services: Services):
     async def manager(app: Any = None) -> AsyncIterator[None]:
         loops = [asyncio.create_task(_loop(run_job_cycle, services, services.settings.job_interval_s)),
                  asyncio.create_task(_loop(run_work_cycle, services, services.settings.work_interval_s))]
-        if services.event_consumer is not None:
-            loops.append(asyncio.create_task(_loop(run_event_cycle, services, EVENT_PAUSE_S)))
         try:
             yield
         finally:
@@ -79,8 +67,6 @@ def lifespan(services: Services):
             for task in loops:
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
-            if services.event_consumer is not None:
-                services.event_consumer.close()
             services.db.close()
 
     return manager

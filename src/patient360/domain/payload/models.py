@@ -110,4 +110,4 @@ class SymptomPayload(Strict):
     patient_id: BigId
     visit_id: BigId
     patient_symptoms: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
-    symptom_recieved_at: Annotated[str, StringConstraints(min_length=1, max_length=40)]   # the Backend's spelling
+    symptom_received_at: Annotated[str, StringConstraints(min_length=1, max_length=40)]

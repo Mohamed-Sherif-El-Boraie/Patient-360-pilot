@@ -49,16 +49,18 @@ class OutputsMixin:
                                 (visit_id, analysis)).fetchone() is not None
 
     def save_output(self, visit_id: int, internal_output: dict[str, Any], public_output: dict[str, Any],
-                    analysis: Analysis = "visit") -> None:
+                    analysis: Analysis = "visit", internal_raw: bytes | None = None) -> None:
         ai = public_output["ai"]
         blocked = is_blocked_ai(ai)
         status = "guardrail_blocked" if blocked else "answered" if analysis == "symptom" else "success"
         html = public_output.get("html") or {}
         with self._db.transaction() as conn:
-            source_id = conn.execute("SELECT source_id FROM visits WHERE visit_id = %s", (visit_id,)).fetchone()[
-                "source_id"]
-            # a second save replaces the answer rows (the children go with it); the payload history stays
-            conn.execute("DELETE FROM ai_outputs WHERE visit_id = %s AND analysis = %s", (visit_id, analysis))
+            # the visit row is locked: two deliveries of the same answer (a repeated event, two instances) save in turn
+            source_id = conn.execute("SELECT source_id FROM visits WHERE visit_id = %s FOR UPDATE",
+                                     (visit_id,)).fetchone()["source_id"]
+            if conn.execute("SELECT 1 FROM ai_outputs WHERE visit_id = %s AND analysis = %s",
+                            (visit_id, analysis)).fetchone():
+                return      # the answer is already saved (and may be delivered): a late duplicate changes nothing
             conn.execute(
                 "INSERT INTO ai_outputs (visit_id, analysis, status, summary_en, summary_ar, simple_summary_en, "
                 "simple_summary_ar, note_en, note_ar, html_en, html_ar, generated_at) "
@@ -73,7 +75,7 @@ class OutputsMixin:
                 self._save_recommendation(conn, visit_id, analysis, recommendation)
             mode = "batch_inference" if analysis == "visit" and source_id == BATCH_SOURCE_ID else "on_demand"
             self._save_model_calls(conn, visit_id, analysis, internal_output, mode)
-            insert_payload(conn, visit_id, analysis, "output_internal", internal_output)
+            insert_payload(conn, visit_id, analysis, "output_internal", internal_output, raw_bytes=internal_raw)
             insert_payload(conn, visit_id, analysis, "output_public", public_output)
             conn.execute(
                 "INSERT INTO record_processing (visit_id, analysis, step, read_from, status) "
@@ -81,7 +83,7 @@ class OutputsMixin:
                 "ON CONFLICT (visit_id, analysis) DO UPDATE SET step = 'deliver', status = 'pending', attempts = 0, "
                 "next_retry_at = NULL, last_error = NULL, claimed_by = NULL, updated_at = now()",
                 (visit_id, analysis))
-            if analysis == "visit":     # a symptom result always carries false and must not close the visit again
+            if analysis == "visit":     # a symptom result carries true and must not reopen the visit
                 conn.execute("UPDATE visits SET symptom_flag = %s WHERE visit_id = %s",
                              (public_output.get("symptom_flag"), visit_id))
             set_stage(conn, visit_id, _stage("post_processing", analysis))
@@ -143,10 +145,41 @@ class OutputsMixin:
                          "WHERE visit_id = %s AND analysis = %s", (error_type, visit_id, analysis))
             set_stage(conn, visit_id, _stage("failed", analysis))
 
+    def save_failed_output(self, visit_id: int, public_output: dict[str, Any], analysis: Analysis = "visit") -> None:
+        with self._db.transaction() as conn:
+            conn.execute("SELECT 1 FROM visits WHERE visit_id = %s FOR UPDATE", (visit_id,))     # as save_output
+            if conn.execute("SELECT 1 FROM ai_outputs WHERE visit_id = %s AND analysis = %s",
+                            (visit_id, analysis)).fetchone():
+                return
+            conn.execute("INSERT INTO ai_outputs (visit_id, analysis, status) VALUES (%s, %s, 'error')",
+                         (visit_id, analysis))
+            insert_payload(conn, visit_id, analysis, "output_public", public_output)
+            conn.execute(
+                "INSERT INTO record_processing (visit_id, analysis, step, read_from, status) "
+                "VALUES (%s, %s, 'deliver', 'postgresql', 'pending') "
+                "ON CONFLICT (visit_id, analysis) DO UPDATE SET step = 'deliver', status = 'pending', attempts = 0, "
+                "next_retry_at = NULL, last_error = NULL, claimed_by = NULL, updated_at = now()",
+                (visit_id, analysis))
+            set_stage(conn, visit_id, _stage("failed", analysis))
+
     def visit_ai_answer(self, visit_id: int) -> dict[str, Any] | None:
         with self._db.transaction() as conn:
             public = current_payload(conn, visit_id, "visit", "output_public")
         return public["ai"] if public else None
+
+    def visit_model_input(self, visit_id: int) -> dict[str, Any]:
+        with self._db.transaction() as conn:
+            model_input = current_payload(conn, visit_id, "visit", "processed")
+        if model_input is None:
+            raise LookupError(f"visit {visit_id} has no processed payload")
+        return model_input
+
+    def batch_fully_answered(self, batch_id: str) -> bool:
+        with self._db.transaction() as conn:
+            return conn.execute(
+                "SELECT NOT EXISTS (SELECT 1 FROM visits v WHERE v.batch_id = %s AND NOT EXISTS ("
+                "SELECT 1 FROM ai_outputs o WHERE o.visit_id = v.visit_id AND o.analysis = 'visit' "
+                "AND o.status <> 'error')) AS done", (batch_id,)).fetchone()["done"]
 
     def set_batch_status(self, batch_id: str, status: str) -> None:
         with self._db.transaction() as conn:
@@ -183,7 +216,9 @@ class OutputsMixin:
                 "UPDATE record_processing SET status = 'delivered', updated_at = now() "
                 "WHERE visit_id = %s AND analysis = %s RETURNING attempts", (unit.visit_id, unit.analysis)).fetchone()
             record_attempt(conn, unit.visit_id, unit.analysis, row["attempts"] + 1, "sent")
-            set_stage(conn, unit.visit_id, _stage("delivered", unit.analysis))
+            if conn.execute("SELECT 1 FROM ai_outputs WHERE visit_id = %s AND analysis = %s AND status = 'error'",
+                            (unit.visit_id, unit.analysis)).fetchone() is None:   # a failed visit stays failed
+                set_stage(conn, unit.visit_id, _stage("delivered", unit.analysis))
 
     def mark_delivery_failed_attempt(self, unit: DeliveryUnit, error_type: str, retry_at: datetime | None) -> None:
         with self._db.transaction() as conn:

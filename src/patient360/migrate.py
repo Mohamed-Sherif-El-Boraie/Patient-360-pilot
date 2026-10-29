@@ -11,9 +11,27 @@ import sys
 from pathlib import Path
 
 import psycopg
+from psycopg import sql as pgsql
 from psycopg.conninfo import make_conninfo
 
 LOCK_ID = 360_001_001
+SCHEMA_NAME = re.compile(r"[a-z_][a-z0-9_]{0,62}")
+
+
+def schema_from_env(env: dict[str, str] | os._Environ[str] = os.environ) -> str | None:
+    """``PGSCHEMA``: the schema that holds our tables (empty = the default ``public``). A name is checked, never quoted
+    blindly."""
+    schema = (env.get("PGSCHEMA") or "").strip()
+    if schema and not SCHEMA_NAME.fullmatch(schema):
+        raise ValueError("PGSCHEMA must be a lower-case name of letters, digits and underscores")
+    return schema or None
+
+
+def use_schema(conn: psycopg.Connection, schema: str | None) -> None:
+    """Make ``schema`` (created if absent) the one this connection reads and writes."""
+    if schema:
+        conn.execute(pgsql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(pgsql.Identifier(schema)))
+        conn.execute(pgsql.SQL("SET search_path TO {}").format(pgsql.Identifier(schema)))
 BASELINE = "001_init"
 DEFAULT_DIRECTORY = Path(__file__).resolve().parents[2] / "migrations"
 REQUIRED = ("PGHOST", "PGDATABASE", "PGUSER", "PGPASSWORD")
@@ -27,17 +45,19 @@ class MigrationError(Exception):
         self.version = version
 
 
-def migrate(dsn: str, directory: Path) -> list[str]:
-    """Apply the files not yet recorded, in name order. Returns the versions applied now."""
+def migrate(dsn: str, directory: Path, schema: str | None = None) -> list[str]:
+    """Apply the files not yet recorded, in name order. Returns the versions applied now. ``schema``: where the tables
+    (and ``schema_migrations``) live; made if absent."""
     applied: list[str] = []
     with psycopg.connect(dsn, autocommit=True) as conn:
         conn.execute("SELECT pg_advisory_lock(%s)", (LOCK_ID,))
         try:
+            use_schema(conn, schema)
             conn.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, "
                          "applied_at timestamptz NOT NULL DEFAULT now())")
             done = {row[0] for row in conn.execute("SELECT version FROM schema_migrations")}
             # Applied by hand with psql before this runner existed: record it, never run it again
-            if not done and conn.execute("SELECT to_regclass('public.visits')").fetchone()[0] is not None:
+            if not done and conn.execute("SELECT to_regclass('visits')").fetchone()[0] is not None:
                 conn.execute("INSERT INTO schema_migrations (version) VALUES (%s)", (BASELINE,))
                 done.add(BASELINE)
                 print(f"baselined {BASELINE}")
@@ -74,7 +94,10 @@ def main() -> int:
                         password=os.environ["PGPASSWORD"], sslmode=os.environ.get("PGSSLMODE", "prefer"))
     directory = Path(os.environ.get("MIGRATIONS_DIR") or DEFAULT_DIRECTORY)
     try:
-        migrate(dsn, directory)
+        migrate(dsn, directory, schema_from_env())
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return 2
     except MigrationError as error:
         print(f"migration failed: {error}", file=sys.stderr)
         return 1

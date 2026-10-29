@@ -23,8 +23,8 @@ END $$;
 -- a visit with everything under it
 INSERT INTO visit_tests (visit_id, test_id, test_remark) VALUES (9, 1, 'remark');
 INSERT INTO lab_results (visit_id, test_id, parameter_id, value, status, alert) VALUES (9, 1, 1, '95', 'text', NULL);
-INSERT INTO lab_result_history (visit_id, test_id, parameter_id, history_visit_id, history_date, history_value)
-  VALUES (9, 1, 1, 5, '2026-01-01', '90');
+INSERT INTO lab_result_history (visit_id, test_id, parameter_id, company_id, history_visit_id, history_date, history_value)
+  VALUES (9, 1, 1, 15, 5, '2026-01-01', '90');
 INSERT INTO visit_answers (visit_id, preparation_id, preparation_name, answer) VALUES (9, 995, 'Fasting hours', '10');
 INSERT INTO record_payloads (visit_id, analysis, kind, body, raw_bytes, sha256)
   VALUES (9, 'visit', 'raw', '{"a": 1}', convert_to('{"a": 1}', 'UTF8'), 'abc');

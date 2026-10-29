@@ -1,17 +1,18 @@
-"""The HTTP application: the inbound endpoint for the Backend, the Event Grid webhook for new AWS output files, and
-the health check. The flow code is synchronous, so the routes are plain ``def`` (FastAPI runs them in its thread pool);
-only the tiny body-reading dependency is async, because Starlette reads a request body asynchronously."""
+"""The HTTP application: the inbound endpoints for the Backend, the endpoint the Function app posts each AWS answer
+to (``ai-results``), and the health check. The flow code is synchronous, so the routes are plain ``def`` (FastAPI runs
+them in its thread pool); only the tiny body-reading dependencies are async, because Starlette reads a body
+asynchronously."""
 from __future__ import annotations
 
 import hmac
-import json
 from typing import Any
 
 import structlog
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, Request
 from fastapi.responses import JSONResponse
 
-from patient360.domain.common.blob_events import blob_paths_from_events
+from patient360.domain.builders.backend_output import build_failed_output
+from patient360.domain.common.blob_paths import SOURCES
 from patient360.flow.intake import (
     SYMPTOM_CHECKER,
     Accepted,
@@ -26,6 +27,7 @@ from patient360.services import Services
 log = structlog.get_logger()
 
 BATCH = 2
+MAX_RESULT_BYTES = 2_000_000
 
 
 def reply(status: int, message: str, code: int = 1, **more: Any) -> JSONResponse:
@@ -54,6 +56,19 @@ def _process(services: Services, accepted: Accepted) -> None:
         log.warning("background_failed", error_type=type(error).__name__)
 
 
+def _tell_backend_rejected(services: Services, rejected: Rejected) -> None:
+    """After the 422: the payload is in Blob 1 ``_rejected``, so tell the Backend this patient failed. Best effort: no
+    visit row exists, so the delivery queue cannot hold it and nothing is retried."""
+    if services.backend is None:
+        log.info("rejected_failed_message_skipped", reason="backend_not_configured")
+        return
+    try:
+        services.backend.post_result(build_failed_output(
+            patient_id=rejected.patient_id, visit_id=rejected.visit_id, source=rejected.source_id))
+    except Exception as error:
+        log.warning("rejected_failed_message_not_sent", error_type=type(error).__name__)
+
+
 def create_app(services: Services, lifespan=None) -> FastAPI:
     app = FastAPI(lifespan=lifespan)
     api_key = services.settings.inbound_api_key
@@ -73,8 +88,17 @@ def create_app(services: Services, lifespan=None) -> FastAPI:
             raise _Stop(reply(413, "Payload too large"))      # answered before the body is read
         return await request.body()
 
-    async def event_body(request: Request) -> bytes:
-        return await request.body()
+    async def result_body(request: Request) -> bytes:
+        """One AI answer is a few KB: a bigger body is refused, also when it arrives in chunks."""
+        declared = request.headers.get("content-length", "")
+        if declared.isdigit() and int(declared) > MAX_RESULT_BYTES:
+            raise _Stop(reply(413, "Payload too large"))
+        body = b""
+        async for chunk in request.stream():
+            body += chunk
+            if len(body) > MAX_RESULT_BYTES:
+                raise _Stop(reply(413, "Payload too large"))
+        return body
 
     def accept(background: BackgroundTasks, raw: bytes, symptom_check: bool) -> JSONResponse:
         try:
@@ -88,6 +112,8 @@ def create_app(services: Services, lifespan=None) -> FastAPI:
         if isinstance(outcome, Duplicate):                   # answered as success so the caller stops resending
             return reply(200, "Duplicate", -1, data={"visit_id": outcome.visit_id})
         if isinstance(outcome, Rejected):
+            if None not in (outcome.patient_id, outcome.visit_id, outcome.source_id):
+                background.add_task(_tell_backend_rejected, services, outcome)
             return reply(422, "Invalid payload", errors=outcome.errors)
         if isinstance(outcome, VisitNotFound):
             return reply(404, "VISIT_NOT_FOUND")
@@ -104,24 +130,23 @@ def create_app(services: Services, lifespan=None) -> FastAPI:
     def receive_symptom_check(background: BackgroundTasks, raw: bytes = Depends(visit_body)) -> JSONResponse:
         return accept(background, raw, symptom_check=True)
 
-    @app.post("/api/v1/patient360/blob-events", dependencies=[Depends(require_api_key)])
-    def blob_events(raw: bytes = Depends(event_body), aeg_event_type: str | None = Header(default=None)):
+    @app.post("/api/v1/patient360/ai-results", dependencies=[Depends(require_api_key)])      # from the Function app
+    def receive_ai_result(
+        raw: bytes = Depends(result_body), x_source: str | None = Header(default=None),
+        x_blob_path: str | None = Header(default=None), idempotency_key: str | None = Header(default=None),
+    ) -> JSONResponse:
+        if x_source not in SOURCES or not x_blob_path:
+            return reply(400, "Invalid headers")
+        log.info("ai_result_received", source=x_source, has_idempotency_key=idempotency_key is not None)
+        # Answered 200 for everything a retry cannot change; 500 only when it is worth retrying (the Function retries
+        # a 5xx). OutputReceiver is safe to run twice. Outcomes: saved, blocked, duplicate, unknown_visit,
+        # source_mismatch, invalid_output, ignored, failed_recorded (a ``07-failed.json``).
         try:
-            events = json.loads(raw)
-            if aeg_event_type == "SubscriptionValidation":
-                return {"validationResponse": events[0]["data"]["validationCode"]}
-            paths = blob_paths_from_events(events)
-        except (ValueError, KeyError, IndexError, TypeError):
-            return reply(400, "Invalid payload")
-        # Before answering: if it fails we answer 500 and Event Grid retries (it never retries a 200, and a lost event
-        # would leave the visit without its result). OutputReceiver is safe to run twice.
-        try:
-            for path in paths:
-                services.receiver.receive(path)
+            results = services.receiver.receive_record(x_source, x_blob_path, raw.decode(errors="replace"))
         except Exception as error:
             log.error("request_failed", error_type=type(error).__name__)
             return reply(500, "Internal error")
-        return {"received": len(events)}
+        return JSONResponse({"outcome": results[0].outcome})
 
     @app.get("/health")
     def health() -> JSONResponse:

@@ -23,7 +23,7 @@ def received(world, name="urgent_mild", catalogue=None, blocked=False):
     rec = record(key)
     if blocked:
         rec["amazon-bedrock-guardrailAction"] = "INTERVENED"
-    world.receiver().receive(world.write(f"aws-output-merged/urgent/normal/2026/10/24/{key}.json", rec))
+    world.receiver().receive("urgent", world.write("urgent", f"normal/2026/10/24/{key}/05-output-merged.json", rec))
     return visit["public_output"]
 
 

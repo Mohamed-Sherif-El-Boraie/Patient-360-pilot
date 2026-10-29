@@ -7,8 +7,11 @@ AI Service - that turns a patient's LIMS lab results into a plain-language repor
 1. The Backend sends one JSON per visit (source: batch, urgent, on-demand) or one symptom check (source: symptom-checker).
 2. We check it, save it safely (Blob first, then PostgreSQL) and answer.
 3. We prepare the AI request: results without ids, a status and alert per result, the patient tier (which lane: normal or critical), and tests we may recommend.
-4. We upload it to S3. AWS (Bedrock) writes the English and Arabic answer to Blob 2.
-5. We read that answer, build the final result (plus HTML and the `symptom_flag`: true if the patient may use the symptom
+4. We upload it to S3. AWS (Bedrock) writes the English and Arabic answer into the Azure Blob output container of the
+   source. AWS writes into 4 Azure output containers -> Event Grid -> 4 storage queues -> the Function app (a separate project and
+   image, see "Outside the code"; strict or weighted priority) reads them, pulls the files and POSTs each record to
+   `POST /api/v1/patient360/ai-results`.
+5. We build the final result from each posted record (plus HTML and the `symptom_flag`: true if the patient may use the symptom
    checker on this visit, false for a fully normal patient or a blocked result) and send it to the Backend wrapper.
 
 ## The process
@@ -30,8 +33,9 @@ flowchart TD
     K --> L["Dispatcher, every 5 seconds<br/>order: urgent, symptom-checker,<br/>on-demand, batch"]
     L --> M[("S3 bucket of the source")]
     M --> N["AWS: Bedrock<br/>English, Arabic, guardrails"]
-    N --> O[("Blob 2<br/>aws-output-merged")]
-    O -- "Event Grid -> storage queue<br/>(local: POST .../blob-events)" --> P["Read the file from Blob<br/>(Receiver)"]
+    N --> O[("Blob 2: output container<br/>of the source<br/>05-output-merged.json")]
+    O -- "Event Grid: BlobCreated event<br/>into the storage queue of the container" --> F2["Function app (separate project)<br/>reads the queues by priority,<br/>pulls the files"]
+    F2 -- "POST /api/v1/patient360/ai-results<br/>one record per call" --> P["Receiver"]
     P --> Q{"Guardrail blocked it?"}
     Q -- "yes" --> S["Fixed message in the summary,<br/>everything else null"]
     Q -- "no" --> T["Check the answer shape,<br/>build the HTML (EN and AR)"]
@@ -82,9 +86,8 @@ symptom check is accepted and waits for it.
 |---|---|---|
 | Right after a visit is accepted | Process it (and, for a batch visit, check if a batch is full) | `http_app.py` |
 | Every 5 seconds | Upload ready files to S3, deliver ready results to the Backend | `timers.run_work_cycle` |
-| Always (if an event queue is set) | Read the "a file was created" events Event Grid writes to the queue, and save each AWS answer | `timers.run_event_cycle` |
+| When the Function app posts an answer | Save the AI answer and prepare the result | `http_app.py` (`ai-results`) |
 | Every 5 minutes | Start full batches, process visits and symptom checks a restart cut short | `timers.run_job_cycle` |
-| When a file appears in Blob 2 | Read the AWS answer and prepare the result | `POST /api/v1/patient360/blob-events` |
 
 ## Where the data lives
 
@@ -92,8 +95,74 @@ symptom check is accepted and waits for it.
 |---|---|
 | Blob 1 (`BLOB_INPUT_CONTAINER`) | `raw/` the JSON as received, `raw/_rejected/` JSON that failed the checks, `processed/` the Bedrock request per visit, batch folders and their JSONL files |
 | S3 (one bucket per source) | The file AWS starts from: one JSON per visit, or the JSONL of a batch |
-| Blob 2 (`BLOB_OUTPUT_CONTAINER`) | `aws-output-merged/` the final English and Arabic answer written by AWS (batch answers are also split per visit by us) |
+| Blob 2 (four output containers, owned by the AWS side and the Function app) | The final English and Arabic answers written by AWS, one container per source. This app does not read them: the Function app does |
 | PostgreSQL | Everything as rows: visits, results, the raw and processed JSON versions, AI answers, work queue, batches (see `migrations/001_init.sql`) |
+
+## The output containers and the AI results endpoint
+
+AWS writes every final answer into one of four Azure Blob output containers (one per source). Event Grid sees the new
+file and writes a `Microsoft.Storage.BlobCreated` event into a storage queue per container. The Function app reads the
+queues, pulls the file and posts each record to this app. This app never reads the queues, the output containers or S3.
+
+`POST /api/v1/patient360/ai-results` (header `X-API-Key`, like the other routes):
+
+| Header | Meaning |
+|---|---|
+| `X-Source` | `urgent`, `symptom-checker`, `on-demand` or `batch`; anything else is answered 400 |
+| `X-Blob-Path` | The path of the file inside the output container (see below); required, else 400 |
+| `Idempotency-Key` | Informational: only logged that it exists, never required |
+
+The body is the file content as it is: the whole answer envelope for a visit file, and ONE line (one record) of the
+JSONL per call for a batch (`X-Blob-Path` is then the JSONL path). A body over 2,000,000 bytes is answered 413.
+The answer is 200 `{"outcome": ...}` for everything a retry cannot change: `saved`, `blocked`, `duplicate`,
+`unknown_visit`, `source_mismatch`, `invalid_output`, `failed_recorded` (a `07-failed.json`), `ignored` (a path that
+is not an answer). A 500 means "try again"
+(for example the database is down). A batch becomes `completed` when every one of its visits has its output saved
+(a blocked one counts), `partially_completed` until then.
+
+Answer file paths inside an output container (the layout is in `tests/fixtures/flow/Buckets-Structure.md`):
+
+| Answer | Path |
+|---|---|
+| One visit | `<lane>/<yyyy>/<MM>/<dd>/<idempotency_key>/05-output-merged.json` |
+| A batch (one record per line) | `<lane>-jsonls/<yyyy>/<MM>/<dd>/<batch_id>/05-output-merged.jsonl` |
+
+`<lane>` is `normal` or `critical`. The content is the AWS envelope; its `recordId` is the visit's idempotency key.
+`<lane>/<yyyy>/<MM>/<dd>/<idempotency_key>/07-failed.json` (any container, the batch one too) is a failure: see
+"Failures" below. Any other file in the containers (the other phase files, logs) is ignored. In the batch container a
+`.../<idempotency_key>/05-output-merged.json` file is a copy of one JSONL line, also ignored.
+
+The Function app posts each record to this app, and the path above goes in the `X-Blob-Path` header (see "The AI results endpoint" below).
+
+## Failures
+
+The wrapper gets a message for a failed patient: `{"success": false, "patient_id", "visit_id", "source"}` and
+`symptom_flag`, `tests`, `ai`, `html` all `null`. A normal result now has `"success": true` as its first key.
+Schema samples of every body: `tests/fixtures/flow/*/8_postprocessing_output_*.jsonc` (checked against the real output by a test);
+scenarios with real values: `urgent/9_scenario_guardrail_blocked_urgent.jsonc`, `urgent/9_scenario_failed_urgent.jsonc`,
+`symptom-checker/9_scenario_symptom_checker_result.jsonc`.
+
+- **`07-failed.json` in an output container.** The Function app forwards it like any record. The app does not read the
+  body: it finds the visit by the key in the path, records the failure (stage `failed`, output status `error`) and queues
+  the failed message in the normal delivery queue, so it is retried like any result. A failure after an answer was
+  already saved is `duplicate`. An AI answer that cannot be used (`invalid_output`, or a visit answer with no `summary`
+  or `simple_summary`) is handled the same way.
+- **A payload in Blob 1 `_rejected`.** When the ids can still be read, the app posts the failed message to the wrapper
+  right after the 422. This is best effort: no visit exists to hold a retry, so a Backend error is only logged. A
+  rejected payload with unusable ids sends nothing.
+
+## Outside the code (assumed in place)
+
+The app does not build or check these. They must exist before the flow works.
+
+| What | Detail |
+|---|---|
+| Network path and rights for AWS | AWS reaches the private storage account over the network, and has its own credentials to write the answer files into the four output containers |
+| Event Grid | A system topic on the storage account, with one `BlobCreated` subscription per output container, each delivering to its own storage queue (one queue per source). The queues exist |
+| The Function app | A separate project and a separate image outside this repo (`..\patient-360-function-app`, its own Dockerfile, pushed to the same ACR). It reads the four queues (strict or weighted priority), pulls each file from its output container and POSTs each record to `POST /api/v1/patient360/ai-results` of this app. It retries on a 5xx answer |
+| Roles of the Function's identity | Its managed identity has Storage Queue Data Message Processor on the queues and Storage Blob Data Reader on the output containers. This app has no role on the queues or the output containers |
+| Network path to this app | The Function app can reach this app's address over the network (VNet integration or private endpoint, as the App Service access rules allow), and holds the inbound API key it sends in `X-API-Key` |
+| Trusted-services exception | Event Grid may send to the queues (trusted-services exception of the storage firewall, plus its role on the queues) |
 
 ## Folders
 
@@ -105,6 +174,7 @@ symptom check is accepted and waits for it.
 | `src/patient360/config/` | Settings from environment variables, and safe logging |
 | `src/patient360/prompts/` | The system prompts (`.md`) and the answer schemas (`.json`) per source |
 | `migrations/` | The database schema (SQL) |
+| `catalogue/` | The hospital's test catalogue workbook (Excel), loaded at start-up |
 | `tools/` | The local simulation: a fake Backend wrapper and a script that plays AWS |
 | `tests/` | The automatic tests (a real PostgreSQL is used for the adapter tests) |
 
@@ -119,6 +189,20 @@ uv run python tools/simulate.py          # in a second terminal: plays the Backe
 
 Settings are environment variables: see `.env.example` (never commit a real `.env`). Start-up command:
 `uvicorn --factory patient360.main:create_app_from_env`. Create or update the database with `python -m patient360.migrate`.
+
+### Starting the image
+
+The image entrypoint (`docker-entrypoint.sh`) prepares the database and then starts the app. Unless `RUN_STARTUP_JOBS=0`
+it runs `python -m patient360.migrate` (the schema), then `python -m patient360.load_catalogue` (the Excel workbook in
+`catalogue/`, or the file named by `CATALOGUE_WORKBOOK`), then `exec`s the command (uvicorn). If a job fails the
+container stops, so App Service shows the failure instead of running on a half-made database.
+
+- **Why an entrypoint and not an init container:** App Service has no init container, and this works the same locally.
+- **Why it is safe:** both jobs are idempotent (migrations are recorded once each; the load only adds and updates rows,
+  never deletes) and both take a PostgreSQL advisory lock, so several instances starting together run one after the other.
+- **After editing the workbook:** rebuild and redeploy the image, or run
+  `docker compose run --rm app python -m patient360.load_catalogue` (`--dry-run` only checks the workbook).
+- One-off commands that reuse the image and need no database set `RUN_STARTUP_JOBS=0`.
 
 ## Function reference
 
@@ -177,6 +261,7 @@ Small helpers for reading numbers and cleaning text.
 |---|---|---|
 | `as_whole_number(value)` | Turns whole-number text ("19200", " 28 ") into a number; anything else is returned as it is. | A number, or the value unchanged. |
 | `parse_numeric(value)` | Removes spaces and reads the number at the start. Refuses "0,5" style commas, titres like "1:64", dates and ranges like "5-10". | A whole number or decimal, or None if it is not a plain number. |
+| `tidy_number(value)` | Removes spaces around the sign and the decimal point of a plain number ("2 .9" becomes "2.9", "- 8.6" becomes "-8.6"). Never joins digit groups ("1 2"), keeps trailing zeros. | The tidy text, or the value unchanged if it is not a plain number. |
 | `remove_empty_values(value)` | Goes through lists and dictionaries and removes None, empty text and empty containers. Keeps 0 and False. | The cleaned data, or None if nothing is left. |
 | `_TextOnly` | (helper) A reader for HTML that keeps only the visible text and adds line breaks for tags like `<br>` and `<p>`. | an object with the collected text `parts` |
 | `_TextOnly.__init__()` | (helper) Starts an empty list of text parts and a counter for hidden sections. | nothing returned |
@@ -241,12 +326,12 @@ A simple fixed stand-in for the search step: picks catalogue tests from the cate
 
 | Function | What it does | Output |
 |---|---|---|
-| `MAX_RETRIEVED_TESTS (constant)` | The most tests that can be picked in one go. | the number 50 |
+| `MAX_RETRIEVED_TESTS (constant)` | The most tests that can be picked in one go. | the number 70 |
 | `CatalogueTest` | A test in the catalogue: id, English name, description, categories, and whether it is active. | an object with those fields |
 | `CatalogueParameter` | A parameter in the catalogue: id, categories, and whether it is active. | an object with those fields |
 | `build_catalogue_maps(active_category_ids, tests, parameters)` | Builds the two lookups from database rows. Inactive tests, categories and parameters are ignored when picking. | A pair: parameter to its categories, and category to its tests. |
 | `_same(name)` | (helper) Tidies spaces and ignores capital letters so two test names can be compared. | A comparable text. |
-| `select_retrieved_tests(rows, parameter_categories, tests_by_category, performed_test_names, max_tests=50, include_normal=False)` | Picks tests from the categories of not-normal parameters (critical first), skipping tests already done, up to the limit. All normal gives nothing. | A list of dictionaries with `test_name` and `test_description`. |
+| `select_retrieved_tests(rows, parameter_categories, tests_by_category, performed_test_names, max_tests=70)` | Picks tests from the categories of not-normal parameters, one per category in turn (critical categories first in each round), skipping tests already done, up to the limit. All normal gives nothing. | A list of dictionaries with `test_name` and `test_description`. |
 | `select_retrieved_tests.categories_of(selected)` | (helper) Collects every category of the given rows. A parameter can be in several categories. | A set of category ids. |
 
 ### `domain/common/blob_paths.py`
@@ -267,17 +352,12 @@ The one place that builds every file path in Azure Blob and S3 (folders by sourc
 | `rejected_unknown_path(day, raw_sha256_hex)` | Path of a rejected payload with no usable source or visit; named by the first 16 characters of a hash. | A path text. |
 | `processed_path(source, lane, day, idempotency_key, batch_id=None)` | Path of the JSON prepared for the AI; a batch visit goes in its batch folder. | A path text. |
 | `batch_jsonl_path(lane, day, batch_id)` | Path of the batch file for AWS (one line per visit, up to 100). | A path text. |
-| `merged_output_path(source, lane, day, idempotency_key, batch_id=None)` | Path of the final merged result (English and Arabic) of one visit. | A path text. |
-| `merged_output_jsonl_path(lane, day, batch_id)` | Path of the merged results of a whole batch. | A path text. |
-| `MergedOutput` | Describes a merged result file read back from its path: kind, source, lane, day, key, batch id. | an object with those fields |
-| `parse_merged_output_path(path)` | Works out what a merged-result path is (visit, batch file, or batch visit). | A `MergedOutput`, or None if it is not ours or the date is fake. |
+| `OUTPUT_FILE (constant)` | The name of the phase file AWS writes last (English and Arabic together): `05-output-merged`. | a text |
+| `merged_output_path(lane, day, idempotency_key)` | Path of the answer of one visit inside the output container of its source: `<lane>/<yyyy>/<MM>/<dd>/<idempotency_key>/05-output-merged.json`. | A path text. |
+| `merged_output_jsonl_path(lane, day, batch_id)` | Path of the answers of a whole batch inside the batch output container: `<lane>-jsonls/<yyyy>/<MM>/<dd>/<batch_id>/05-output-merged.jsonl`. | A path text. |
+| `MergedOutput` | Describes an answer file read back from its path: kind (visit, batch_jsonl or batch_visit), source, lane, day, key, batch id. | an object with those fields |
+| `parse_output_path(source, path)` | Works out what a path inside the output container of `source` is. Any other file (other phase files, logs, failures) is not ours; in the batch container a visit file is a copy of a JSONL line (`batch_visit`). | A `MergedOutput`, or None for any other file or a fake date. |
 | `s3_processed_key(source, lane, day, idempotency_key, batch_id=None)` | Builds the file key inside the S3 bucket. A batch uses its batch file and has no idempotency key. | A key text. |
-
-### `domain/common/blob_events.py`
-
-| Name | What it does (simple) | What you get back |
-|---|---|---|
-| `blob_paths_from_events(events)` | Takes one Event Grid event or a list, keeps the "blob created" ones and returns the path inside the container. A body that is not an event raises an error. | A list of paths. |
 
 ### `domain/common/compat.py`
 Makes `frozendict` (a dictionary that cannot be changed) work on older Python versions.
@@ -291,7 +371,7 @@ Makes the visit's unique key and the batch names.
 
 | Function | What it does | Output |
 |---|---|---|
-| `make_idempotency_key(key, *, patient_id, visit_id)` | Signs "patient\|visit" with a secret key, so the same visit always gives the same key and it cannot be guessed. | A 32-character text. |
+| `make_idempotency_key(key, *, patient_id, visit_id, company_id)` | Signs "patient\|visit\|company" with a secret key, so the same visit always gives the same key and it cannot be guessed. | A 32-character text. |
 | `format_batch_id(lane, number)` | Builds a batch name from the lane and a number, such as `normal_000001`. Raises an error for a bad lane or number below 1. | A batch id text. |
 
 ### `domain/common/timing.py`
@@ -315,15 +395,17 @@ Turns a received visit into the JSON the AI reads, plus the rows the service kee
 | `SOURCE_NAMES (constant)` | Maps the source number (1 to 4) to its name: urgent, batch, symptom-checker, on-demand. | A name for each source number. |
 | `SEX_NAMES (constant)` | Maps the sex number (1 or 2) to the word Male or Female. | A word for each sex number. |
 | `_history(points, plain_text)` | (helper) Copies the past values of a result into the shape the AI gets; can strip HTML tags from text values. | A list of date and value pairs. |
-| `_result(test, raw)` | (helper) Works out the status, alert and critical direction of one result, then builds its AI entry and its row. | A pair: the entry for the AI JSON and the row with ids, status and alert. |
-| `build_ai_input(raw)` | Turns a received visit into the JSON for the AI and one row per result. | An object with the AI JSON, the result rows, the descriptive rows and the tests already done. |
+| `_result(test, raw)` | (helper) Tidies the value and history numbers, works out the status, alert and critical direction of one result, then builds its AI entry and its row. | A pair: the entry for the AI JSON and the row with ids, status, alert, unit, critical direction and history. |
+| `build_ai_input(raw)` | Turns a received visit into the JSON for the AI and one row per result. Blank text is null. A result with no value gets a row (for the Backend) but is left out of the AI JSON, and a test with only such results is dropped. | An object with the AI JSON, the result rows, the descriptive rows and the tests already done. |
 
 ### `domain/builders/backend_output.py`
 Builds the final result that is sent back to the Backend system.
 
 | Function | What it does | Output |
 |---|---|---|
-| `build_backend_output(patient_id, visit_id, source, rows, ai, ..., symptom_flag)` | Groups result rows by test, adds the AI answer, optional packages, the HTML page and the `symptom_flag`. | The result as a dictionary: ids, symptom_flag, tests with statuses and alerts (`alert` is `null` for a text value), the AI part and the html. No descriptive results. |
+| `build_backend_output(patient_id, visit_id, source, rows, ai, ..., symptom_flag, html_symptom)` | Groups result rows by test, adds the AI answer, optional packages, the HTML page and the `symptom_flag`. `html_symptom` = (the patient's symptom text, its date `yyyy-MM-dd`), given only for a symptom check: it goes into the html's static message. | The FULL result as saved: `success` (true), ids, `symptom_flag`, `tests` (per result: `parameter_id`, `value`, `status` = normal, high, low, abnormal, text or critical, `result_date`, `unit`, `critical` = `{"direction": "critical_low" | "critical_high" | null}` (always an object), `history` = `[{date, value, unit}]` with the result's own unit), the AI part and the html (built from the full answer). No `alert`, no descriptive results. |
+| `for_wrapper(output)` | Made right before each send (also each retry) from the saved result. | The body the Backend gets. A visit result (source 1, 2, 4): `ai` has `note`, `recommendations`, `packages` only (no `summary`, `simple_summary`, `critical_alerts`). A symptom check (source 3): `success`, ids, `source`, `symptom_flag` (always `true`), `ai` (`note`, `recommendations`, `packages` recomputed from that answer's kept and added tests; a removed test is not asked for) and `html`: no `tests`. A blocked result (visit or symptom): `ai` = `{note: the fixed message, recommendations: [], packages: []}`; a blocked visit keeps `tests` and has `symptom_flag` false. A failed result: unchanged (`symptom_flag` null). `visits.symptom_flag` in the database is set by the visit result only. The saved result keeps the full `ai` because the symptom check reads it. |
+| `build_failed_output(patient_id, visit_id, source)` | The message for a patient whose analysis failed. | `success` false, the three ids, and `symptom_flag`, `tests`, `ai`, `html` all `null`. |
 
 ### `domain/builders/blocked.py`
 Handles answers the safety filter (guardrail) blocked: the Backend gets one fixed message, never what the model wrote.
@@ -346,10 +428,13 @@ Builds the English and Arabic HTML that the Backend uses for the PDF report.
 | Function | What it does | Output |
 |---|---|---|
 | `LABELS (constant)` | The section headings in English and Arabic. | A dictionary of headings. |
+| `VISIT_MESSAGE (constant)` | The static message that ends the html of a visit result (urgent, batch, on-demand): the tests are AI recommendations, not a guarantee, to be discussed with the doctor. English and Arabic. | A dictionary of two texts. |
+| `SYMPTOM_MESSAGE (constant)` | The static message that ends the html of a symptom-check result: based on the symptoms the patient added on `{date}` (`{symptom}`), these tests are recommended; discuss with the doctor if other symptoms appear; AI recommendations are not a guarantee. English and Arabic. | A dictionary of two templates. |
 | `WRAPPER (constant)` | The outer div for each language; Arabic is set right-to-left. | A dictionary of HTML templates. |
 | `_text(node, lang)` | (helper) Takes the text of one language from a bilingual value and makes it safe for HTML. | A safe text, or an empty text. |
 | `_test_names(ai, lang, arabic_names, with_reasons)` | (helper) Lists the recommended test names, skipping removed ones, with the reason if asked. | A list of text lines, one per test. |
-| `build_html(ai, arabic_names, with_reasons)` | Builds the page: the summary, then one bullet per recommended test, for each language. | A dictionary with an "en" page and an "ar" page. |
+| `FOOTER (constant)` | The footer of every page, with or without tests: the summary was generated by an AI assistant, does not replace medical advice, discuss the results and any symptoms with your doctor. English and Arabic. | A dictionary of two texts. |
+| `build_html(ai, arabic_names, with_reasons, symptom)` | Builds the page: the summary, then one bullet per recommended test, for each language, then the footer (`FOOTER`, always). When at least one test is listed a static message comes before the footer (`VISIT_MESSAGE`, or `SYMPTOM_MESSAGE` with the patient's symptom and its date `yyyy-MM-dd` for a symptom check). | A dictionary with an "en" page and an "ar" page. |
 
 ### `domain/builders/model_input.py`
 Builds the request sent to the AI model (Bedrock) for one visit.
@@ -373,7 +458,7 @@ Reads all settings from environment variables and checks them in one go.
 
 | Function | What it does | Output |
 |---|---|---|
-| `REQUIRED (constant)` | The settings that must always be given: database, blob containers and the secret for idempotency keys. | A list of setting names. |
+| `REQUIRED (constant)` | The settings that must always be given: database, the input container and the secret for idempotency keys. | A list of setting names. |
 | `BLOB_ACCESS (constant)` | The two ways to reach blob storage; at least one must be given. | A list of two setting names. |
 | `BACKEND_SETTINGS (constant)` | The seven Backend settings; give all of them or none. | A list of setting names. |
 | `MIN_BATCH_SIZE, MAX_BATCH_SIZE (constants)` | The allowed batch size is 100 to 50000 visits. | Two numbers. |
@@ -405,7 +490,7 @@ Lists what the core flow needs from the outside world (storage, S3, Backend, dat
 | `BlobStore.put(path, data)` | Creates the file in blob storage. | False if the file already exists, else True. Raises `BlobUnavailable`. |
 | `BlobStore.get(path)` | Reads the file from blob storage. | The file bytes, or nothing if missing. Raises `BlobUnavailable`. |
 | `S3Unavailable` | The error for when S3 is unreachable or refuses the file; the sender tries again later. | An error. |
-| `S3Store.put(source, key, data)` | Uploads a file to the S3 bucket of that source, which starts the AWS work. | Nothing returned. Raises `S3Unavailable`. |
+| `S3Store.put(source, key, data)` | Uploads a file to the S3 bucket of that source, which starts the AWS work. This is all we do with S3: we never read from it. | Nothing returned. Raises `S3Unavailable`. |
 | `BackendUnavailable` | The error for a timeout, no connection, 429 or 5xx from the Backend; trying again may work. | An error. |
 | `BackendRejected` | The error for a 4xx answer (not 429); the same body would fail again, so no retry. | An error. |
 | `BackendClient.post_result(body)` | Sends one result to the Backend in one call. | Nothing returned. Raises `BackendUnavailable` or `BackendRejected`. |
@@ -442,7 +527,7 @@ Lists what the core flow needs from the outside world (storage, S3, Backend, dat
 | `VisitStore.symptoms_waiting_for_processing(received_before)` | Finds symptom checks stuck at "received_symptom", cut short or waiting for the visit result. | A list of visit ids, oldest first. |
 | `VisitStore.set_batch_status(batch_id, status)` | Sets a batch to completed, partially completed or failed. | Nothing returned. |
 | `VisitStore.claim_next_delivery(now)` | Takes the next result to send to the Backend, best source first, one worker per result. | A `DeliveryUnit`, or nothing. |
-| `VisitStore.public_output_of(unit)` | Loads the result exactly as the Backend should get it. | The saved public output as a dictionary. |
+| `VisitStore.public_output_of(unit)` | Loads the saved (full) public output; `for_wrapper` strips it when it is sent. | The saved public output as a dictionary. |
 | `VisitStore.mark_delivered(unit)` | Records that the result reached the Backend. | Nothing returned. |
 | `VisitStore.mark_delivery_failed_attempt(unit, error_type, retry_at)` | Counts a failed delivery and sets a retry time; no time means give up and mark failed. | Nothing returned. |
 | `VisitStore.set_batch_read_from(batch_id, read_from)` | Records where the batch's visits are read from (blob or PostgreSQL). | Nothing returned. |
@@ -503,7 +588,7 @@ Turns a received visit into the full request for the AI model, picks its urgency
 | `BATCH (constant)` | Source number 2 means a batch visit, sent to AWS together with others. | The number 2. |
 | `STUCK_AFTER (constant)` | A visit still "received" after 5 minutes is treated as cut short by a restart. | A 5-minute time span. |
 | `Processed` | Class: the result of processing one visit. | An object with visit_id, tier (urgency level), lane, and read_from. |
-| `write_model_input(blobs, path, model_input)` | Saves the AI request to Blob; if Blob is down the database copy is used instead. | The text "blob" or "postgresql". |
+| `write_model_input(blobs, path, record_id, model_input)` | Saves the file AWS reads to Blob, wrapped as `{recordId, modelInput}` like a batch line (the database keeps the bare request); if Blob is down the database copy is used instead. | The text "blob" or "postgresql". |
 | `Processor.__init__(store, catalogue, blobs, prompts)` | Keeps the database, test catalogue, file storage and the prompts for each source. | Nothing returned. |
 | `Processor.process(visit_id)` | Builds AI input, decides tier and lane, adds suggested tests, builds the AI request and saves it. | A Processed object; the request is saved in the database (and Blob, except for batch visits). |
 | `process_stuck_visits(store, processor, now)` | Every 5 minutes, processes visits that were accepted but never processed. Safe to run twice. | A list of Processed objects. |
@@ -535,18 +620,18 @@ Takes the next ready item (best source first) and uploads it to S3, which starts
 | `Dispatcher._rebuild(unit)` | (helper) Rebuilds a lost file from the database: a JSONL for a batch, or one AI request. | The file content as bytes. |
 
 ### `flow/results.py`
-Receives what AWS wrote to Blob 2, checks it, saves it and builds the result for the Backend.
+Receives the AWS answers the Function app posts (from the Blob 2 output containers), checks them, saves it and builds the result for the Backend.
 
 | Function | What it does | Output |
 |---|---|---|
-| `Received` | Class: what happened to one result record. | An object with record_id and outcome (saved, blocked, duplicate, unknown_visit, source_mismatch or invalid_output). |
+| `Received` | Class: what happened to one result record. | An object with record_id and outcome (saved, blocked, duplicate, unknown_visit, source_mismatch, invalid_output or ignored). |
 | `_loads(text)` | (helper) Reads JSON strictly; if that fails, tries once to repair it. Refuses anything that is not an object. | A dictionary, or an error is raised. |
-| `OutputReceiver.__init__(store, output_blobs, catalogue)` | Keeps the database, Blob 2 storage and test catalogue. | Nothing returned. |
-| `OutputReceiver.receive(path)` | Reads a new file in Blob 2, handles each record, and sets the batch status (completed or partially completed). | A list of Received objects (empty when the file is ignored). |
+| `OutputReceiver.__init__(store, catalogue)` | Keeps the database and the test catalogue. | Nothing returned. |
+| `OutputReceiver.receive_record(source, path, text)` | Handles one record the Function app posted: works out from the path what it is (`parse_output_path`) and handles the record. For a batch JSONL line it then sets the batch `completed` when every visit of the batch has its output saved, else `partially_completed`. Other files and the per-visit copies in the batch container are `ignored`. A database error is not caught, so the Function sends it again. | A list with one Received object. |
 | `OutputReceiver._handle_record(found, text)` | (helper) Checks one record: known visit, right source, not a duplicate, blocked or valid AI answer; then saves it. | A Received object. |
 | `OutputReceiver._save(found, text, stored, record, ai, analysis, blocked)` | (helper) Saves a batch record as its own file, and stores the result for the Backend in the database. | Nothing returned. |
 | `OutputReceiver._ignore(found, record_id, outcome)` | (helper) Writes a warning to the log for a record that is not ours or is broken. | A Received object with that outcome. |
-| `OutputReceiver._public_output(stored, ai, analysis, blocked)` | (helper) Builds the final result the Backend will get, with the `symptom_flag` (open unless the patient is fully normal or the result was blocked); a symptom check uses source 3, reasons in the html and a closed flag. | A dictionary (the Backend result). |
+| `OutputReceiver._public_output(stored, ai, analysis, blocked)` | (helper) Builds the final result the Backend will get, with the `symptom_flag` (open unless the patient is fully normal or the result was blocked); a symptom check uses source 3, reasons in the html and `symptom_flag` true (and its packages are recomputed from its answer). For a symptom check it reads the stored symptom text and its date and passes them as `html_symptom` to `build_backend_output`. | A dictionary (the Backend result). |
 
 ### `flow/send_result.py`
 Sends each finished result to the Backend, one call per result, and retries when the Backend is busy.
@@ -556,28 +641,21 @@ Sends each finished result to the Backend, one call per result, and retries when
 | `Delivered` | Class: one delivery attempt. | An object with the unit and outcome ("delivered", "retry" or "failed"). |
 | `ResultSender.__init__(store, backend, now)` | Keeps the database, the Backend client and the clock. | Nothing returned. |
 | `ResultSender.run()` | Sends every ready result one after another; failed ones wait for their retry time. | A list of Delivered objects. |
-| `ResultSender._send(unit)` | (helper) Posts one result; retries if the Backend is unreachable, stops if it refuses the content. | A Delivered object. |
+| `ResultSender._send(unit)` | (helper) Posts one result through `for_wrapper` (the summary keys never leave); retries if the Backend is unreachable, stops if it refuses the content. | A Delivered object. |
 | `ResultSender._retry_time(unit)` | (helper) Works out when the next try should happen, using the retry schedule. | A time, or None when no tries are left. |
 | `ResultSender._fail(unit, error, retry_at)` | (helper) Records the failed attempt in the database and writes a warning to the log. | A Delivered object with "retry" or "failed". |
-
-### `flow/blob_events.py`
-
-| Name | What it does (simple) | What you get back |
-|---|---|---|
-| `BlobEventConsumer(queue, receiver)` | Class: reads the "a file was created" events that Event Grid writes into the storage queue and hands each file to the `OutputReceiver`. | An object with `run_once` and `close`. |
-| `BlobEventConsumer.run_once()` | Takes the waiting messages (the queue waits a few seconds for some). A message is removed only after its files are saved; if saving fails it goes back to the queue; a message that is not an event is dead-lettered. | How many messages were handled. |
 
 ### `flow/symptom.py`
 Runs the symptom check: a second AI run for a visit that already has its result.
 
 | Function | What it does | Output |
 |---|---|---|
-| `SymptomProcessor.__init__(store, catalogue, blobs, prompts)` | Keeps the database, test catalogue, file storage and prompts. | Nothing returned. |
+| `SymptomProcessor.__init__(store, blobs, prompts)` | Keeps the database, file storage and prompts. | Nothing returned. |
 | `SymptomProcessor.process(visit_id)` | Builds the AI request from the visit, its earlier result and the symptoms; skips visits with no result or a blocked one. | A Processed object, or None when the visit has no usable result yet. |
 | `process_waiting_symptoms(store, processor, now)` | Every 5 minutes, processes symptom checks that were cut short or waited for their visit's result. | A list of Processed objects (only the ones done). |
 
 ### `http_app.py`
-The web application: receives visits, receives new-file events from Azure, and answers health checks.
+The web application: receives visits, receives the AI answers the Function app posts, and answers health checks.
 
 | Function | What it does | Output |
 |---|---|---|
@@ -589,10 +667,10 @@ The web application: receives visits, receives new-file events from Azure, and a
 | `stop(_, error)` | (helper) Turns a _Stop error into its answer. | The stored answer. |
 | `require_api_key(x_api_key)` | (helper) Checks the X-API-Key header against the secret key, if one is configured. | Nothing, or a 401 answer. |
 | `visit_body(request)` | (helper) Refuses a body whose declared size is over the limit before reading it, else reads it. | The body bytes, or a 413 answer. |
-| `event_body(request)` | (helper) Reads the request body as it is. | The body bytes. |
+| `result_body(request)` | (helper) Reads the body of an AI result; refuses one over `MAX_RESULT_BYTES` (2,000,000), also when it comes in chunks. | The body bytes, or a 413 answer. |
 | `POST /api/v1/patient360/visits` | Receives a visit (source 1, 2 or 4) from the Backend app service; a symptom check sent here is refused (422 `wrong_endpoint`). Numbers (`source`, ids, `sex`, `age_days`) may arrive as text ("1", "10.0"). The API key is checked only if `INBOUND_API_KEY` is set (leave it empty inside the private network). Processing continues in the background. | 202 Accepted, 200 Duplicate, 422 invalid, 413 too large, 401 bad key, 500 error. |
 | `POST /api/v1/patient360/visits-symptoms` | Receives a symptom check (source 3) from the wrapper; a visit sent here is refused (422 `wrong_endpoint`). | 202 Accepted, 200 Duplicate, 422 invalid, 404 VISIT_NOT_FOUND, 409 SYMPTOM_CHECKER_CLOSED, 413 too large, 401 bad key, 500 error. |
-| `POST /api/v1/patient360/blob-events` | For local testing only (in Azure, Event Grid writes to a storage queue that the app reads): takes the same "file created" events by HTTP, answers the setup handshake or saves each new result file. | 200 with count or validation code, 400 bad payload, 401 bad key, 500 error (so Event Grid retries). |
+| `POST /api/v1/patient360/ai-results` | From the Function app: one AI answer record per call (headers `X-Source`, `X-Blob-Path`, optional `Idempotency-Key`; the body is the file content, or one JSONL line). | 200 `{"outcome": ...}` (saved, blocked, duplicate, unknown_visit, source_mismatch, invalid_output or ignored), 400 bad headers, 401 bad key, 413 too large, 500 error (the Function retries). |
 | `GET /health` | Checks that the database answers a simple query. | 200 status "ok", or 503 "database_unavailable". |
 
 ### `runtime.py`
@@ -601,10 +679,10 @@ Builds the running service by connecting every flow class to the database, Blob,
 | Function | What it does | Output |
 |---|---|---|
 | `_now()` | (helper) Gives the current time in UTC. | A date and time. |
-| `build_services(settings, db, blob_stores, s3, backend)` | Creates every connection not passed in (so tests can replace them) and every flow class. Warns if no Backend is set. | A Services object holding all of them (sender is None without a Backend). |
+| `build_services(settings, db, blob, s3, backend)` | Creates every connection not passed in (so tests can replace them) and every flow class. `blob` is Blob 1 only. Warns if no Backend is set. | A Services object holding all of them (sender is None without a Backend). |
 
 ### `timers.py`
-The background loops: a job loop every 5 minutes, a work loop every 5 seconds, and (only if an event queue is set) an event loop that reads the queue all the time.
+The background loops: a job loop every 5 minutes and a work loop every 5 seconds.
 
 | Function | What it does | Output |
 |---|---|---|
@@ -612,8 +690,7 @@ The background loops: a job loop every 5 minutes, a work loop every 5 seconds, a
 | `run_job_cycle(services, now)` | One 5-minute round: process stuck visits, process waiting symptom checks, then make batches. | Nothing returned; work is saved in the database. |
 | `run_work_cycle(services, now)` | One 5-second round: upload to S3, then deliver to the Backend (if one is set). | Nothing returned. |
 | `_loop(cycle, services, interval_s)` | (helper) Runs a round in a thread, waits, repeats; the next round starts after the last one ends. | Never returns (runs until cancelled). |
-| `run_event_cycle(services, now)` | One pass over the storage queue of Event Grid events (does nothing if no queue is set). A failure is logged and never stops the loop. | Nothing returned. |
-| `lifespan(services)` | Gives the app a start and stop routine: starts the loops, and on stop cancels them, closes the queue and the database. | A function for FastAPI's lifespan setting. |
+| `lifespan(services)` | Gives the app a start and stop routine: starts the loops, and on stop cancels them and closes the database. | A function for FastAPI's lifespan setting. |
 | `lifespan.manager(app)` | (helper) The start and stop routine itself, described above. | Nothing returned. |
 
 ### `main.py`
@@ -655,7 +732,7 @@ Talks to the Backend (the hospital system) over HTTP: logs in, keeps the login t
 | `WrapperBackend._unavailable(status, error_type)` | (helper) Writes a warning to the log (never the error text) and raises "unavailable". | Always raises `BackendUnavailable`. |
 
 ### `adapters/blob.py`
-Azure Blob Storage: saves and reads raw files in two containers (input and output).
+Azure Blob Storage: saves and reads raw files in the input container (Blob 1).
 
 | Function | What it does | Output |
 |---|---|---|
@@ -663,18 +740,11 @@ Azure Blob Storage: saves and reads raw files in two containers (input and outpu
 | `AzureBlobStore.__init__(container)` | Keeps the container to work with. | Nothing returned. |
 | `AzureBlobStore.put(path, data)` | Creates the file only if it is not there yet. Never overwrites. Other Azure problems raise `BlobUnavailable`. | True if stored, False if it already existed. |
 | `AzureBlobStore.get(path)` | Downloads the file's bytes. A missing file is not an error. Other Azure problems raise `BlobUnavailable`. | The bytes, or None when the file is missing. |
-| `build_blob_stores(account_url, input_container, output_container, credential)` | Connects with the managed identity (or the developer's `az login`) unless a credential is given. Short timeouts, two retries. | A pair: (input store, output store). |
-| `build_blob_stores_from_connection_string(connection_string, input_container, output_container)` | Same, for the local Azurite test emulator. Makes either container if it is missing. | A pair: (input store, output store). |
-
-### `adapters/storage_queue.py`
-
-| Name | What it does (simple) | What you get back |
-|---|---|---|
-| `StorageQueueEventQueue` | Class: an Azure Storage queue behind the `EventQueue` port. A message that is read is hidden for 5 minutes; deleting it is "done", "try again" hides it for longer each time (2, 4, 8 ... minutes, at most an hour), and after 50 reads (or at once if unreadable) it goes to the `<queue>-poison` queue (`tools/replay_poison.py` moves them back). Plain JSON and base64 messages are both read. | An object with `receive`, `complete`, `abandon`, `dead_letter`, `close`. |
-| `build_event_queue(queue_name, connection_string=, account_url=)` | Connects to the queue from the Azurite connection string (local) or from the blob URL read as the queue URL, with the app's managed identity (Azure). | A `StorageQueueEventQueue`. |
+| `build_blob_stores(account_url, input_container, credential)` | Connects with the managed identity (or the developer's `az login`) unless a credential is given. Short timeouts, two retries. | The Blob 1 input store. |
+| `build_blob_stores_from_connection_string(connection_string, input_container)` | Same, for the local Azurite test emulator. Makes the container if it is missing. | The Blob 1 input store. |
 
 ### `adapters/s3.py`
-AWS S3: writes a file into the bucket of a source. Writing the file starts the AWS automation.
+AWS S3: writes a file into the bucket of a source. Writing the file starts the AWS automation. It only writes (the answers come back through the Function app).
 
 | Function | What it does | Output |
 |---|---|---|

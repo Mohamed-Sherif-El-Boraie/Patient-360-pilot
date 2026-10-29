@@ -60,13 +60,14 @@ def sha256_hex(data: bytes) -> str:
 def insert_payload(conn: psycopg.Connection[dict[str, Any]], visit_id: int, analysis: Analysis, kind: PayloadKind,
                    body: dict[str, Any], raw_bytes: bytes | None = None) -> int:
     """Add a new version of a JSON document of the visit (history is kept) and return its version number.
-    ``raw_bytes`` is for kind ``raw`` only: exactly what the Backend sent. The fingerprint is of those bytes, or of the
-    JSON text otherwise."""
+    Two copies are kept: ``body`` (jsonb, searchable, not byte-exact) and ``raw_bytes`` (the JSON text as it is: the
+    bytes received when given, else our own serialisation of ``body``). The fingerprint is of ``raw_bytes``."""
     version = conn.execute(
         "SELECT coalesce(max(version), 0) + 1 AS version FROM record_payloads "
         "WHERE visit_id = %s AND analysis = %s AND kind = %s", (visit_id, analysis, kind)).fetchone()["version"]
-    fingerprint = sha256_hex(raw_bytes if raw_bytes is not None else
-                             json.dumps(body, sort_keys=True, ensure_ascii=False).encode())
+    if raw_bytes is None:
+        raw_bytes = json.dumps(body, ensure_ascii=False).encode()
+    fingerprint = sha256_hex(raw_bytes)
     conn.execute(
         "INSERT INTO record_payloads (visit_id, analysis, kind, version, body, raw_bytes, sha256) "
         "VALUES (%s, %s, %s, %s, %s, %s, %s)",
@@ -76,10 +77,16 @@ def insert_payload(conn: psycopg.Connection[dict[str, Any]], visit_id: int, anal
 
 def current_payload(conn: psycopg.Connection[dict[str, Any]], visit_id: int, analysis: Analysis,
                     kind: PayloadKind) -> dict[str, Any] | None:
-    """The newest version of a JSON document of the visit, or ``None``."""
-    row = conn.execute("SELECT body FROM record_payloads_current WHERE visit_id = %s AND analysis = %s AND kind = %s",
-                       (visit_id, analysis, kind)).fetchone()
-    return row["body"] if row else None
+    """The newest version of a JSON document of the visit, or ``None``. Read from the text copy, so the keys keep the
+    order they were written in (jsonb sorts them by length, then alphabetically)."""
+    row = conn.execute("SELECT body, raw_bytes FROM record_payloads_current "
+                       "WHERE visit_id = %s AND analysis = %s AND kind = %s", (visit_id, analysis, kind)).fetchone()
+    if row is None:
+        return None
+    try:
+        return json.loads(bytes(row["raw_bytes"]))
+    except ValueError:          # a text that is not valid JSON (an AWS record we had to repair): the structured copy
+        return row["body"]
 
 
 def set_stage(conn: psycopg.Connection[dict[str, Any]], visit_id: int, stage: str) -> None:

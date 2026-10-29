@@ -103,6 +103,20 @@ def test_descriptive_results_use_plain_text_and_history(db, store, sample):
     assert (history["history_visit_id"], history["history_value"]) == (7, "Old text\nhere")
 
 
+def test_history_rows_carry_the_company_of_their_visit(db, store, sample):
+    payload = sample("descriptive_only")
+    payload["company_id"] = 77                      # unknown company: added first, then the history points to it
+    payload["descriptive_results"][0]["history"] = [
+        {"history_visit_id": 7, "history_date": "2026-01-02", "history_value": "old"}]
+    _save(store, payload)
+    assert {h["company_id"] for h in seed.fetch(db, "SELECT company_id FROM descriptive_result_history")} == {77}
+
+    lab = sample("urgent_mild")
+    lab["company_id"] = 15
+    _save(store, lab)
+    assert {h["company_id"] for h in seed.fetch(db, "SELECT company_id FROM lab_result_history")} == {15}
+
+
 def test_unknown_company_test_and_parameter_get_placeholders(db, store, sample):
     payload = sample("urgent_mild")
     payload["company_id"] = 77

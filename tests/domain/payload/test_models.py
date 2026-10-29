@@ -132,15 +132,56 @@ def test_blank_values_are_null_everywhere_and_are_then_removed_from_the_ai_input
     test["test_remark"], result["parameter_remark"], result["lab_flag"], result["unit"] = "", "  ", "", " "
     result["reference"] = {"low": "", "high": "", "range": ""}
     result["critical"] = {"low": "", "high": "", "range_text": ""}
-    result["value"], result["history"][:] = "", []
+    result["value"], result["history"][:] = "5", []
     valid = validate_payload(raw(body))
     assert isinstance(valid, Valid)
     ai_test = build_ai_input(valid.payload.model_dump()).ai_json["tests"][2]
     assert "test_remark" not in ai_test
     kept = set(ai_test["results"][0])
-    assert not kept & {"parameter_remark", "lab_flag", "unit", "reference", "value", "history"}
+    assert not kept & {"parameter_remark", "lab_flag", "unit", "reference", "history"}
     flat = json.dumps(ai_test)
     assert '""' not in flat and "null" not in flat and '" "' not in flat
+
+
+def _visit(value, unit="mmol/L", **extra):
+    result = {"parameter_id": 1, "parameter_name": "K+", "value": value, "unit": unit,
+              "reference": {"low": "3.5", "high": "5.1"}, **extra}
+    return {"source": 1, "patient": {"age_days": 9000, "sex": 1},
+            "tests": [{"test_id": 1, "test_name": "Electrolytes", "results": [result]}]}
+
+
+def test_a_valueless_result_is_not_sent_to_the_model_but_stays_in_the_rows():
+    for blank in (None, "", "  "):
+        built = build_ai_input(_visit(blank, unit=" "))
+        assert "tests" not in built.ai_json            # the only result is omitted, so its test is dropped
+        assert built.rows[0]["value"] is None and built.rows[0]["status"] == "text" and built.rows[0]["unit"] is None
+        assert built.rows[0]["history"] == []
+
+
+def test_a_valueless_result_keeps_its_valued_sibling():
+    body = _visit("4.0")
+    body["tests"][0]["results"].append({"parameter_id": 2, "parameter_name": "Na", "value": " "})
+    built = build_ai_input(body)
+    assert [r["parameter_name"] for r in built.ai_json["tests"][0]["results"]] == ["K+"]
+    assert len(built.rows) == 2
+
+
+def test_dirty_numbers_are_tidied_in_the_value_and_the_history_and_still_classified():
+    body = _visit("2 .9", history=[{"history_date": "d1", "history_value": "- 8.6"},
+                                   {"history_date": "d2", "history_value": "Positive"}],
+                  critical={"low": "2.9", "high": "9"})
+    built = build_ai_input(body)
+    result = built.ai_json["tests"][0]["results"][0]
+    assert result["value"] == "2.9" and [h["history_value"] for h in result["history"]] == ["-8.6", "Positive"]
+    assert built.rows[0]["value"] == "2.9" and built.rows[0]["history"][0]["history_value"] == "-8.6"
+    assert built.rows[0]["status"] == "critical" and built.rows[0]["critical_direction"] == "critical_low"
+
+
+def test_a_low_value_without_critical_limits_gets_medical_attention():
+    body = _visit("120")
+    body["tests"][0]["results"][0].update(parameter_name="Sodium", reference={"low": "135", "high": "145"})
+    result = build_ai_input(body).ai_json["tests"][0]["results"][0]
+    assert result["alert"] == "MEDICAL_ATTENTION"
 
 
 def test_a_blank_required_key_is_still_refused(sample):

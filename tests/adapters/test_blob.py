@@ -51,16 +51,31 @@ def test_the_emulator_stores_make_missing_containers_and_keep_existing_ones(monk
 
         def create_container(self):
             made.append(self.name)
-            if self.name == "out":
+            if exists:
                 raise ResourceExistsError("exists")
 
     class Service:
         def get_container_client(self, name):
             return Container(name)
 
+    exists = False
     monkeypatch.setattr(blob.BlobServiceClient, "from_connection_string", lambda *args, **kwargs: Service())
-    first, second = blob.build_blob_stores_from_connection_string("cs", "in", "out")
-    assert made == ["in", "out"] and isinstance(first, AzureBlobStore) and isinstance(second, AzureBlobStore)
+    assert isinstance(blob.build_blob_stores_from_connection_string("cs", "in"), AzureBlobStore)
+    exists = True       # an existing container is kept, not an error
+    assert isinstance(blob.build_blob_stores_from_connection_string("cs", "in"), AzureBlobStore)
+    assert made == ["in", "in"]
+
+
+def test_the_managed_identity_store_is_blob_1(monkeypatch):
+    class Service:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def get_container_client(self, name):
+            return name
+
+    monkeypatch.setattr(blob, "BlobServiceClient", Service)
+    assert blob.build_blob_stores("https://acct", "in", credential="c")._container == "in"
 
 
 def test_a_new_file_is_created_and_read_back():

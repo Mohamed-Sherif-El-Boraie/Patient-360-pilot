@@ -1,46 +1,54 @@
 import json
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
+from structlog.testing import capture_logs
 
+from patient360 import http_app
 from patient360.config.settings import load_settings
+from patient360.domain.builders.backend_output import build_failed_output
 from patient360.flow.dispatch import Dispatcher
 from patient360.flow.intake import Intake
 from patient360.flow.process import Processor
+from patient360.flow.results import OutputReceiver, Received
 from patient360.flow.symptom import SymptomProcessor
 from patient360.http_app import create_app
+from patient360.ports import BackendUnavailable
 from patient360.services import Services
-from tests.fakes import FakeBlobs, FakeCatalogue, FakeS3, FakeStore
+from tests.fakes import FakeBackend, FakeBlobs, FakeCatalogue, FakeS3, FakeStore
 
 NOW = datetime(2026, 10, 24, 9, 0, tzinfo=UTC)
 GOOD_ENV = {
     "PGHOST": "db.example", "PGDATABASE": "patient360", "PGUSER": "app", "PGPASSWORD": "pg-password-xyz",
     "AZURE_STORAGE_ACCOUNT_URL": "https://acct.blob.core.windows.net",
-    "BLOB_INPUT_CONTAINER": "ai-input", "BLOB_OUTPUT_CONTAINER": "ai-output",
-    "IDEMPOTENCY_KEY_SECRET": "a-long-test-secret-value",
+    "BLOB_INPUT_CONTAINER": "ai-input", "IDEMPOTENCY_KEY_SECRET": "a-long-test-secret-value",
 }
 VISITS = "/api/v1/patient360/visits"
 SYMPTOM_CHECKS = "/api/v1/patient360/visits-symptoms"
-EVENTS = "/api/v1/patient360/blob-events"
+AI_RESULTS = "/api/v1/patient360/ai-results"
+ANSWER_PATH = "normal/2026/10/24/k/05-output-merged.json"
+SOURCE_HEADERS = {"X-Source": "urgent", "X-Blob-Path": ANSWER_PATH}
 
 
 class Spy:
     """Records its calls; raises ``error`` if given."""
 
-    def __init__(self, error=None):
-        self.calls, self.error = [], error
+    def __init__(self, error=None, outcome="saved"):
+        self.calls, self.error, self.outcome = [], error, outcome
 
     def run(self):
         self.calls.append(())
         if self.error:
             raise self.error
 
-    def receive(self, path):
-        self.calls.append(path)
+    def receive_record(self, source, path, text):
+        self.calls.append((source, path, text))
         if self.error:
             raise self.error
+        return [Received(None, self.outcome)]
 
 
 class StubDb:
@@ -71,7 +79,7 @@ class Rig:
             intake=Intake(self.store, self.blobs, b"a-long-test-secret-value", lambda: NOW,
                           self.settings.max_request_bytes),
             processor=Processor(self.store, catalogue, self.blobs),
-            symptom_processor=SymptomProcessor(self.store, catalogue, self.blobs),
+            symptom_processor=SymptomProcessor(self.store, self.blobs),
             batch_trigger=self.batch_spy,
             dispatcher=Dispatcher(self.store, self.blobs, FakeS3(), lambda: NOW),
             receiver=self.spy_receiver, sender=None)
@@ -212,10 +220,12 @@ def test_the_api_key(sample, headers, status):
     assert "s3cret" not in response.text
 
 
-def test_the_api_key_also_guards_the_event_route_but_not_health(sample):
+@pytest.mark.parametrize("headers, status", [({}, 401), ({"X-Api-Key": "wrong"}, 401), ({"X-Api-Key": "s3cret"}, 200)])
+def test_the_api_key_also_guards_the_ai_results_route_but_not_health(sample, headers, status):
     rig = Rig(sample, INBOUND_API_KEY="s3cret")
-    assert rig.client.post(EVENTS, json=[]).status_code == 401
-    assert rig.client.post(EVENTS, json=[], headers={"X-Api-Key": "s3cret"}).status_code == 200
+    response = rig.client.post(AI_RESULTS, content=b"{}", headers=SOURCE_HEADERS | headers)
+    assert response.status_code == status
+    assert (rig.spy_receiver.calls == []) == (status == 401)
     assert rig.client.get("/health").status_code == 200
 
 
@@ -236,31 +246,109 @@ def test_a_background_failure_does_not_break_the_response(rig, sample):
     assert response.status_code == 202
 
 
-def test_the_event_grid_handshake(rig):
-    event = [{"eventType": "Microsoft.EventGrid.SubscriptionValidationEvent", "data": {"validationCode": "abc123"}}]
-    response = rig.client.post(EVENTS, json=event, headers={"aeg-event-type": "SubscriptionValidation"})
-    assert response.status_code == 200 and response.json() == {"validationResponse": "abc123"}
+def test_an_ai_result_goes_to_the_receiver_with_the_source_path_and_body_and_answers_its_outcome(rig):
+    response = rig.client.post(AI_RESULTS, content=b'{"recordId": "k"}', headers=SOURCE_HEADERS | {
+        "Idempotency-Key": "abc"})
+    assert response.status_code == 200 and response.json() == {"outcome": "saved"}
+    assert rig.spy_receiver.calls == [("urgent", ANSWER_PATH, '{"recordId": "k"}')]
 
 
-def blob_event(path, event_type="Microsoft.Storage.BlobCreated"):
-    return {"eventType": event_type, "subject": f"/blobServices/default/containers/ai-output/blobs/{path}"}
+@pytest.mark.parametrize("headers", [{}, {"X-Source": "urgent"}, {"X-Blob-Path": ANSWER_PATH},
+                                     {"X-Source": "weekly", "X-Blob-Path": ANSWER_PATH},
+                                     {"X-Source": "urgent", "X-Blob-Path": ""}])
+def test_an_ai_result_with_a_missing_or_unknown_source_or_path_is_400(rig, headers):
+    response = rig.client.post(AI_RESULTS, content=b"{}", headers=headers)
+    assert response.status_code == 400 and rig.spy_receiver.calls == []
 
 
-def test_a_blob_created_event_calls_the_receiver_with_the_path_and_other_events_do_not(rig):
-    events = [blob_event("aws-output-merged/urgent/normal/2026/10/24/k.json"),
-              blob_event("other/file.json", "Microsoft.Storage.BlobDeleted")]
-    response = rig.client.post(EVENTS, json=events, headers={"aeg-event-type": "Notification"})
-    assert response.status_code == 200 and response.json() == {"received": 2}
-    assert rig.spy_receiver.calls == ["aws-output-merged/urgent/normal/2026/10/24/k.json"]
+def test_an_oversized_ai_result_is_413_before_it_is_read_and_also_when_chunked(rig):
+    big = b"x" * (http_app.MAX_RESULT_BYTES + 1)
+    assert rig.client.post(AI_RESULTS, content=big, headers=SOURCE_HEADERS).status_code == 413
+    assert rig.client.post(AI_RESULTS, content=iter([big]), headers=SOURCE_HEADERS).status_code == 413
+    assert rig.spy_receiver.calls == []
 
 
-def test_a_receiver_failure_answers_500_so_event_grid_retries(rig):
-    rig.spy_receiver.error = RuntimeError("boom")
-    assert rig.client.post(EVENTS, json=[blob_event("a/b.json")]).status_code == 500
+def test_a_receiver_failure_answers_500_so_the_function_retries_and_logs_only_the_error_type(rig):
+    rig.spy_receiver.error = RuntimeError("boom with PATIENT-DATA")
+    with capture_logs() as logs:
+        response = rig.client.post(AI_RESULTS, content=b"{}", headers=SOURCE_HEADERS)
+    assert response.status_code == 500 and response.json() == {"response": {"code": 1, "message": "Internal error"}}
+    assert {"event": "request_failed", "error_type": "RuntimeError", "log_level": "error"} in logs
+    assert "PATIENT-DATA" not in str(logs)
 
 
-def test_a_malformed_event_body_is_400(rig):
-    assert rig.client.post(EVENTS, content=b"not json").status_code == 400
+@pytest.mark.parametrize("source, path", [
+    ("batch", "normal/2026/10/25/" + "a" * 32 + "/05-output-merged.json"),      # a batch visit copy
+    ("urgent", "normal/2026/10/24/" + "a" * 32 + "/04-output-en.json"),         # another file of AWS
+    ("urgent", "somewhere/else.json"),
+])
+def test_a_path_that_is_not_an_answer_is_answered_200_ignored(sample, source, path):
+    rig = Rig(sample)
+    rig.services = replace(rig.services, receiver=OutputReceiver(rig.store, FakeCatalogue()))
+    client = TestClient(create_app(rig.services))
+    response = client.post(AI_RESULTS, content=b"{}", headers={"X-Source": source, "X-Blob-Path": path})
+    assert response.status_code == 200 and response.json() == {"outcome": "ignored"}
+
+
+def test_a_visit_answer_is_saved_and_an_unknown_visit_is_200(sample):
+    rig = Rig(sample)
+    rig.services = replace(rig.services, receiver=OutputReceiver(rig.store, FakeCatalogue()))
+    client = TestClient(create_app(rig.services))
+    unknown = json.dumps({"recordId": "a" * 32}).encode()
+    response = client.post(AI_RESULTS, content=unknown, headers=SOURCE_HEADERS)
+    assert response.status_code == 200 and response.json() == {"outcome": "unknown_visit"}
+    assert client.post(AI_RESULTS, content=b"not json", headers=SOURCE_HEADERS).json() == {"outcome": "invalid_output"}
+
+
+def test_a_failed_file_is_answered_200_failed_recorded(sample):
+    rig = Rig(sample)
+    visit = sample("urgent_mild")
+    rig.post(visit)
+    key = rig.store.visits[visit["visit_id"]]["idempotency_key"]
+    rig.services = replace(rig.services, receiver=OutputReceiver(rig.store, FakeCatalogue()))
+    client = TestClient(create_app(rig.services))
+    headers = {"X-Source": "urgent", "X-Blob-Path": f"normal/2026/10/24/{key}/07-failed.json"}
+    response = client.post(AI_RESULTS, content=b"", headers=headers)
+    assert response.status_code == 200 and response.json() == {"outcome": "failed_recorded"}
+    assert rig.store.visits[visit["visit_id"]]["stage"] == "failed"
+
+
+def rejected_rig(sample, backend):
+    rig = Rig(sample)
+    rig.services = replace(rig.services, backend=backend)
+    rig.client = TestClient(create_app(rig.services))
+    visit = sample("urgent_mild")
+    visit["status"] = "high"            # fails validation, ids stay usable
+    return rig, visit
+
+
+def test_a_rejected_payload_with_usable_ids_tells_the_backend_the_patient_failed_once(sample):
+    backend = FakeBackend()
+    rig, visit = rejected_rig(sample, backend)
+    response = rig.post(visit)
+    assert response.status_code == 422 and response.json()["response"] == {"code": 1, "message": "Invalid payload"}
+    assert backend.posts == [build_failed_output(patient_id=visit["patient_id"], visit_id=visit["visit_id"], source=1)]
+
+
+def test_a_rejected_payload_without_usable_ids_or_without_a_backend_sends_nothing(sample):
+    backend = FakeBackend()
+    rig, visit = rejected_rig(sample, backend)
+    assert rig.post(visit | {"patient_id": "x"}).status_code == 422
+    assert rig.post(b"{not json").status_code == 422
+    assert backend.posts == []
+    rig_without, visit = rejected_rig(sample, None)
+    assert rig_without.post(visit).status_code == 422
+
+
+def test_a_backend_error_while_telling_about_a_rejected_payload_is_swallowed_and_logged(sample):
+    backend = FakeBackend()
+    backend.raises = BackendUnavailable
+    rig, visit = rejected_rig(sample, backend)
+    with capture_logs() as logs:
+        response = rig.post(visit)
+    assert response.status_code == 422
+    assert {"event": "rejected_failed_message_not_sent", "error_type": "BackendUnavailable",
+            "log_level": "warning"} in logs
 
 
 def test_health_ok_and_database_unavailable(sample):

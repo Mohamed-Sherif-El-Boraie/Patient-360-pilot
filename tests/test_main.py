@@ -7,7 +7,7 @@ from patient360.config.settings import SettingsError
 
 ENV = {"PGHOST": "127.0.0.1", "PGDATABASE": "patient360", "PGUSER": "app", "PGPASSWORD": "pg-password-xyz",
        "AZURE_STORAGE_ACCOUNT_URL": "https://acct.blob.core.windows.net", "BLOB_INPUT_CONTAINER": "ai-input",
-       "BLOB_OUTPUT_CONTAINER": "ai-output", "IDEMPOTENCY_KEY_SECRET": "super-secret-value-123"}
+       "IDEMPOTENCY_KEY_SECRET": "super-secret-value-123"}
 
 
 def test_the_app_is_built_from_the_environment(monkeypatch):

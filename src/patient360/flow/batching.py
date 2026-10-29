@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from patient360.config.settings import DEFAULT_BATCH_SIZE
+from patient360.domain.builders.model_input import aws_record
 from patient360.domain.common.blob_paths import batch_jsonl_path, blob_day, processed_path
 from patient360.ports import BatchVisit, BlobStore, BlobUnavailable, ClaimedBatch, VisitStore
 
@@ -27,7 +28,7 @@ def _dump(document: dict) -> str:
 def build_jsonl(visits: Sequence[BatchVisit]) -> str:
     """The file for AWS: one line per visit. Only Blob and S3 hold it; PostgreSQL holds the visits, so a lost one can
     be rebuilt."""
-    return "\n".join(_dump({"recordId": v.idempotency_key, "modelInput": v.model_input}) for v in visits)
+    return "\n".join(_dump(aws_record(v.idempotency_key, v.model_input)) for v in visits)
 
 
 class BatchTrigger:

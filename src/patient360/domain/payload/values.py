@@ -39,6 +39,19 @@ def blank_to_none(value: Any) -> Any:
     return value
 
 
+_SPACED_NUMBER = re.compile(r"\s*([-+])?\s*(\d+)\s*(?:\.\s*(\d+))?\s*")
+
+
+def tidy_number(value: Any) -> Any:
+    """A plain number typed with stray spaces around its sign or decimal point is tidied (``"2 .9"`` -> ``"2.9"``,
+    ``"- 8.6"`` -> ``"-8.6"``). Digit groups are never merged (``"1 2"``) and precision is kept (``"57 .0"`` ->
+    ``"57.0"``). Anything else (text, ranges, ``"<5"``) is returned unchanged."""
+    if isinstance(value, str) and (m := _SPACED_NUMBER.fullmatch(value)):
+        sign, whole, fraction = m.groups()
+        return f"{sign or ''}{whole}" + (f".{fraction}" if fraction is not None else "")
+    return value
+
+
 def parse_numeric(value: Any) -> int | float | None:
     """Port of v3 ``labValues.parseNumeric``: drop spaces, read the leading number.
 

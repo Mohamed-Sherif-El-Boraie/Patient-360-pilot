@@ -6,18 +6,20 @@ secret can not end up in an error message or a log.
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 REQUIRED = (
     "PGHOST", "PGDATABASE", "PGUSER", "PGPASSWORD",
-    "BLOB_INPUT_CONTAINER", "BLOB_OUTPUT_CONTAINER", "IDEMPOTENCY_KEY_SECRET",
+    "IDEMPOTENCY_KEY_SECRET",
 )
-BLOB_ACCESS = ("AZURE_STORAGE_ACCOUNT_URL", "AZURE_STORAGE_CONNECTION_STRING")   # one of the two is required
+BLOB_ACCESS = ("AZURE_STORAGE_ACCOUNT_URL", "AZURE_STORAGE_CONNECTION_STRING")   # with BLOB_INPUT_CONTAINER: one
+RAW_URL = "BLOB_OUTPUT_URL_RAW"      # or only this: the SAS URL of Blob 1 (read + write + create)
 OPTIONAL = (
     "APP_ENV", "TELEMETRY_ENABLED", "LOG_LEVEL", "LOG_FORMAT", "PGPORT", "PGSSLMODE", "AWS_REGION", "AWS_ROLE_ARN",
     "AWS_ENDPOINT_URL_S3", "BACKEND_CONNECT_TIMEOUT_S", "BACKEND_READ_TIMEOUT_S", "MAX_REQUEST_BYTES", "BATCH_SIZE",
-    "INBOUND_API_KEY", "JOB_INTERVAL_S", "WORK_INTERVAL_S", "EVENT_QUEUE_NAME",
+    "INBOUND_API_KEY", "JOB_INTERVAL_S", "WORK_INTERVAL_S", "PGSCHEMA",
 )
 BACKEND_SETTINGS = (          # the wrapper: all six or none
     "BACKEND_BASE_URL", "BACKEND_CALLER_SOURCE", "BACKEND_CALLER_SOURCE_KEY", "BACKEND_CALLER_USER_NAME",
@@ -60,7 +62,6 @@ class Settings:
     pg_user: str
     pg_ssl_mode: str
     blob_input_container: str
-    blob_output_container: str
     backend_connect_timeout_s: float
     backend_read_timeout_s: float
     pg_password: str = field(repr=False)
@@ -72,10 +73,12 @@ class Settings:
     s3_buckets: tuple[tuple[str, str], ...] = ()   # (source, bucket name), only the buckets that are set
     aws_role_arn: str | None = None
     backend: BackendSettings | None = None
-    event_queue_name: str | None = None             # the storage queue Event Grid writes to; None = no queue is read
     max_request_bytes: int | None = None            # None = no limit, until we know the real size of the Backend JSONs
     batch_size: int = DEFAULT_BATCH_SIZE            # visits per batch (per lane), 100 to 50000; change it in .env
     inbound_api_key: str | None = field(default=None, repr=False)   # callers must send it; None = not checked
+    output_container_urls: tuple[tuple[str, str], ...] = field(default=(), repr=False)   # (source, SAS URL): secret
+    blob_raw_url: str | None = field(default=None, repr=False)     # Blob 1 by SAS URL instead of account + container
+    pg_schema: str | None = None                    # the schema that holds our tables (p360); None = the default one
     job_interval_s: float = DEFAULT_JOB_INTERVAL_S
     work_interval_s: float = DEFAULT_WORK_INTERVAL_S
 
@@ -85,14 +88,23 @@ S3_SETTINGS = {
     "symptom-checker": "S3_BUCKET_SYMPTOM_CHECKER", "batch": "S3_BUCKET_BATCH",
 }
 
+OUTPUT_CONTAINER_SETTINGS = {       # SAS URL of each container (create + write)
+    "on-demand": "BLOB_OUTPUT_URL_ON_DEMAND", "urgent": "BLOB_OUTPUT_URL_URGENT",
+    "symptom-checker": "BLOB_OUTPUT_URL_SYMPTOM_CHECKER", "batch": "BLOB_OUTPUT_URL_BATCH",
+}
+
 
 def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     env = os.environ if env is None else env
-    names = (*REQUIRED, *BLOB_ACCESS, *OPTIONAL, *BACKEND_SETTINGS, *S3_SETTINGS.values())
+    names = (*REQUIRED, "BLOB_INPUT_CONTAINER", RAW_URL, *BLOB_ACCESS, *OPTIONAL, *BACKEND_SETTINGS,
+             *S3_SETTINGS.values(), *OUTPUT_CONTAINER_SETTINGS.values())
     values = {name: str(env.get(name, "")).strip() for name in names}
     problems = [f"{name} is missing" for name in REQUIRED if not values[name]]
-    if not any(values[name] for name in BLOB_ACCESS):
-        problems.append(f"{' or '.join(BLOB_ACCESS)} is missing")
+    if not values[RAW_URL]:
+        if not values["BLOB_INPUT_CONTAINER"]:
+            problems.append(f"BLOB_INPUT_CONTAINER is missing (or give {RAW_URL})")
+        if not any(values[name] for name in BLOB_ACCESS):
+            problems.append(f"{' or '.join(BLOB_ACCESS)} is missing (or {RAW_URL})")
 
     def choice(name: str, allowed: tuple[str, ...], default: str, upper: bool = False) -> str:
         value = values[name].upper() if upper else values[name].lower()
@@ -128,6 +140,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     batch_size = number("BATCH_SIZE", DEFAULT_BATCH_SIZE, int, low=MIN_BATCH_SIZE - 1, high=MAX_BATCH_SIZE)
     job_interval = number("JOB_INTERVAL_S", DEFAULT_JOB_INTERVAL_S)
     work_interval = number("WORK_INTERVAL_S", DEFAULT_WORK_INTERVAL_S)
+    if values["PGSCHEMA"] and not re.fullmatch(r"[a-z_][a-z0-9_]{0,62}", values["PGSCHEMA"]):
+        problems.append("PGSCHEMA must be a lower-case name of letters, digits and underscores")
     secret = values["IDEMPOTENCY_KEY_SECRET"]
     if secret and len(secret) < MIN_SECRET_LENGTH:
         problems.append(f"IDEMPOTENCY_KEY_SECRET is too short (at least {MIN_SECRET_LENGTH} characters)")
@@ -149,14 +163,15 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         pg_password=values["PGPASSWORD"], pg_ssl_mode=values["PGSSLMODE"] or "verify-full",
         azure_storage_account_url=values["AZURE_STORAGE_ACCOUNT_URL"] or None,
         azure_storage_connection_string=values["AZURE_STORAGE_CONNECTION_STRING"] or None,
-        blob_input_container=values["BLOB_INPUT_CONTAINER"], blob_output_container=values["BLOB_OUTPUT_CONTAINER"],
+        blob_input_container=values["BLOB_INPUT_CONTAINER"],
         idempotency_key_secret=secret,
         backend_connect_timeout_s=connect_timeout, backend_read_timeout_s=read_timeout,
         aws_region=values["AWS_REGION"] or None, aws_role_arn=values["AWS_ROLE_ARN"] or None,
         aws_endpoint_url=values["AWS_ENDPOINT_URL_S3"] or None,
         s3_buckets=tuple((source, values[name]) for source, name in S3_SETTINGS.items() if values[name]),
         backend=backend, max_request_bytes=max_request_bytes, batch_size=batch_size,
-        event_queue_name=values["EVENT_QUEUE_NAME"] or None,
         inbound_api_key=values["INBOUND_API_KEY"] or None,
+        blob_raw_url=values[RAW_URL] or None, pg_schema=values["PGSCHEMA"] or None,
+        output_container_urls=tuple((s, values[n]) for s, n in OUTPUT_CONTAINER_SETTINGS.items() if values[n]),
         job_interval_s=job_interval, work_interval_s=work_interval,
     )

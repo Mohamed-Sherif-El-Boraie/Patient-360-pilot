@@ -60,7 +60,8 @@ class VisitsMixin:
                 conn.execute("INSERT INTO visit_tests (visit_id, test_id, test_remark) VALUES (%s, %s, %s)",
                              (visit_id, test_id, test["test_remark"]))
                 for result in test["results"]:
-                    self._save_lab_result(conn, visit_id, test_id, result, statuses[(test_id, result["parameter_id"])])
+                    self._save_lab_result(conn, visit_id, number, test_id, result,
+                                          statuses[(test_id, result["parameter_id"])])
             for item in sent["descriptive_results"]:
                 test_id = item["test_id"]
                 conn.execute("INSERT INTO descriptive_results (visit_id, test_id, result_date, text_value, status) "
@@ -68,9 +69,9 @@ class VisitsMixin:
                                                                  descriptive_text[test_id]))
                 for point in item.get("history") or []:
                     conn.execute(
-                        "INSERT INTO descriptive_result_history (visit_id, test_id, history_visit_id, history_date, "
-                        "history_value) VALUES (%s, %s, %s, %s, %s)",
-                        (visit_id, test_id, point["history_visit_id"], point["history_date"],
+                        "INSERT INTO descriptive_result_history (visit_id, test_id, company_id, history_visit_id, "
+                        "history_date, history_value) VALUES (%s, %s, %s, %s, %s, %s)",
+                        (visit_id, test_id, number, point["history_visit_id"], point["history_date"],
                          _text(html_to_plain_text(point["history_value"]))))      # HTML in, plain text stored
             for answer in sent["visit_answer_list"]:
                 conn.execute("INSERT INTO visit_answers (visit_id, preparation_id, preparation_name, answer) "
@@ -79,7 +80,7 @@ class VisitsMixin:
             insert_payload(conn, visit_id, "visit", "raw", json.loads(raw), raw_bytes=raw)
 
     @staticmethod
-    def _save_lab_result(conn: Any, visit_id: int, test_id: int, result: dict[str, Any],
+    def _save_lab_result(conn: Any, visit_id: int, company_id: int, test_id: int, result: dict[str, Any],
                          judged: dict[str, Any]) -> None:
         reference, critical = result["reference"], result["critical"] or {}
         flag = lab_flag_status(result["lab_flag"])
@@ -94,10 +95,10 @@ class VisitsMixin:
              judged["critical_direction"], judged["status"], judged["alert"], result["parameter_remark"]))
         for point in result.get("history") or []:
             conn.execute(
-                "INSERT INTO lab_result_history (visit_id, test_id, parameter_id, history_visit_id, history_date, "
-                "history_value) VALUES (%s, %s, %s, %s, %s, %s)",
-                (visit_id, test_id, result["parameter_id"], point["history_visit_id"], point["history_date"],
-                 _text(point["history_value"])))
+                "INSERT INTO lab_result_history (visit_id, test_id, parameter_id, company_id, history_visit_id, "
+                "history_date, history_value) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (visit_id, test_id, result["parameter_id"], company_id, point["history_visit_id"],
+                 point["history_date"], _text(point["history_value"])))
 
     def _raw_of(self, conn: Any, visit_id: int, analysis: str) -> bytes | None:
         row = conn.execute("SELECT raw_bytes FROM record_payloads_current "

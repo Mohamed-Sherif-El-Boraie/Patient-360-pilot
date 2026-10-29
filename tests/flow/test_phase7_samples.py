@@ -15,7 +15,7 @@ from patient360.flow.batching import BatchTrigger
 from patient360.flow.intake import Accepted, Intake
 from patient360.flow.process import Processor
 from patient360.flow.results import OutputReceiver
-from tests.fakes import FakeBlobs, FakeCatalogue, FakeStore
+from tests.fakes import FakeBlobs, FakeCatalogue, FakeStore, FunctionApp
 
 SAMPLES = Path(__file__).parents[1] / "fixtures" / "samples"
 SECRET = b"a-long-test-secret-value"
@@ -50,7 +50,9 @@ def every_pair(node):
 @pytest.mark.parametrize("name", [*VISITS, "symptom_check"])
 def test_a_phase7_sample_is_a_valid_bilingual_answer_for_its_own_visit(sample, name):
     record, source = phase7(name), sample(name)
-    key = make_idempotency_key(SECRET, patient_id=source["patient_id"], visit_id=source["visit_id"])
+    company_id = source.get("company_id") or sample("urgent_mild")["company_id"]   # a symptom check: its visit's
+    key = make_idempotency_key(SECRET, patient_id=source["patient_id"], visit_id=source["visit_id"],
+                               company_id=company_id)
     assert record["recordId"] == key and record["role"] == "assistant" and record["model"].startswith("claude-")
     assert set(record["metadata"]) == {"en", "ar"}
     answer = AiAnswer.model_validate_json(record["content"][0]["text"])
@@ -75,8 +77,9 @@ def test_the_samples_tell_a_story_that_matches_their_results():
 
 class Rig:
     def __init__(self, sample):
-        self.sample, self.store, self.blobs, self.out = sample, FakeStore(), FakeBlobs(), FakeBlobs()
-        self.receiver = OutputReceiver(self.store, self.out, FakeCatalogue())
+        self.sample, self.store, self.blobs = sample, FakeStore(), FakeBlobs()
+        self.out = {s: FakeBlobs() for s in ("urgent", "symptom-checker", "on-demand", "batch")}
+        self.receiver = FunctionApp(OutputReceiver(self.store, FakeCatalogue()), self.out)
 
     def receive_visit(self, name):
         body = json.dumps(self.sample(name)).encode()
@@ -85,12 +88,12 @@ class Rig:
         done = Processor(self.store, FakeCatalogue(), self.blobs).process(visit_id)
         return self.store.visits[visit_id], done.lane
 
-    def deliver(self, name, path):
+    def deliver(self, name, source, path):
         record = (SAMPLES / f"{name}_phase7.json").read_text(encoding="utf-8")
         if path.endswith(".jsonl"):                     # a JSONL file has one record per line
             record = json.dumps(json.loads(record), ensure_ascii=False)
-        self.out.files[path] = record.encode()
-        return self.receiver.receive(path)
+        self.out[source].files[path] = record.encode()
+        return self.receiver.receive(source, path)
 
 
 @pytest.mark.parametrize("name", VISITS)
@@ -100,11 +103,11 @@ def test_a_phase7_sample_becomes_the_backend_result_with_the_right_symptom_flag(
     key = visit["idempotency_key"]
     if name.startswith("batch"):
         [batch] = BatchTrigger(rig.store, rig.blobs, 1).run()
-        path = f"aws-output-merged/batch/{batch.lane}-jsonls/2026/10/25/{batch.batch_id}.jsonl"
+        source, path = "batch", f"{batch.lane}-jsonls/2026/10/25/{batch.batch_id}/05-output-merged.jsonl"
     else:
-        folder = "urgent" if name == "urgent_mild" else "on-demand"
-        path = f"aws-output-merged/{folder}/{lane}/2026/10/24/{key}.json"
-    assert [r.outcome for r in rig.deliver(name, path)] == ["saved"]
+        source = "urgent" if name == "urgent_mild" else "on-demand"
+        path = f"{lane}/2026/10/24/{key}/05-output-merged.json"
+    assert [r.outcome for r in rig.deliver(name, source, path)] == ["saved"]
     public = visit["public_output"]
     assert public["symptom_flag"] is SYMPTOM_FLAG[name]
     assert public["ai"]["summary"] == answer_of(phase7(name))["summary"]
@@ -112,15 +115,15 @@ def test_a_phase7_sample_becomes_the_backend_result_with_the_right_symptom_flag(
     assert "claude-" not in json.dumps(public) and "usage" not in json.dumps(public)
 
 
-def test_the_symptom_sample_becomes_a_symptom_result_with_the_extra_keys_and_a_closed_flag(sample):
+def test_the_symptom_sample_becomes_a_symptom_result_with_the_extra_keys_and_the_flag_true(sample):
     rig = Rig(sample)
     visit, lane = rig.receive_visit("batch_critical")
     rig.store.save_symptom_check(sample("symptom_check"), b"{}", NOW, "blob")
     key = visit["idempotency_key"]
-    path = f"aws-output-merged/symptom-checker/{lane}/2026/10/24/{key}.json"
-    assert [r.outcome for r in rig.deliver("symptom_check", path)] == ["saved"]
+    path = f"{lane}/2026/10/24/{key}/05-output-merged.json"
+    assert [r.outcome for r in rig.deliver("symptom_check", "symptom-checker", path)] == ["saved"]
     public = rig.store.symptom_checks[visit["payload"]["visit_id"]]["public_output"]
-    assert public["source"] == 3 and public["symptom_flag"] is False
+    assert public["source"] == 3 and public["symptom_flag"] is True
     assert {r["change_type"]["en"] for r in public["ai"]["recommendations"]} == {"kept", "added", "removed"}
     assert "Uric acid" in public["html"]["en"] and "Parathyroid" in public["html"]["en"]
     assert "Haemoglobin A1C" not in public["html"]["en"]    # the removed test is not shown

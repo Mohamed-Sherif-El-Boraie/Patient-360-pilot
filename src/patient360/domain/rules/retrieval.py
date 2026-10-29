@@ -7,7 +7,7 @@ from typing import Any
 
 from patient360.domain.rules.classify import has_value
 
-MAX_RETRIEVED_TESTS = 50
+MAX_RETRIEVED_TESTS = 70
 
 
 @dataclass(frozen=True)
@@ -60,13 +60,11 @@ def select_retrieved_tests(
     tests_by_category: Mapping[int, Sequence[CatalogueTest]],     # category_id -> the tests in it
     performed_test_names: Iterable[str],
     max_tests: int = MAX_RETRIEVED_TESTS,
-    include_normal: bool = False,
 ) -> list[dict[str, Any]]:
     """All parameters normal -> nothing. Otherwise every catalogue test in the categories of the not-normal parameters,
-    minus the tests the patient already did, at most ``max_tests``. Categories of CRITICAL parameters come first, then
-    the other not-normal ones; inside a category the order is by test id.
-    ``include_normal`` (a symptom check of a NORMAL patient: the symptoms may call for a test) also takes the
-    categories of the normal parameters, after the others.
+    minus the tests the patient already did, at most ``max_tests``. One test per category in turn (round-robin), so no
+    category crowds out the others; in each round the categories of CRITICAL parameters come first, then the other
+    not-normal ones; inside a category the order is by test id.
     Output: ``retrieved_tests`` for the AI input JSON.
     """
     valued = [row for row in rows if has_value(row)]
@@ -77,17 +75,21 @@ def select_retrieved_tests(
 
     critical = categories_of(r for r in not_normal if r["status"] == "critical")
     others = categories_of(not_normal) - critical
-    normal = categories_of(valued) - critical - others
-    ordered = sorted(critical) + sorted(others) + (sorted(normal) if include_normal else [])
+    ordered = sorted(critical) + sorted(others)
     performed = {_same(name) for name in performed_test_names}
     seen: set[int] = set()
     retrieved: list[dict[str, Any]] = []
-    for category in ordered:
-        for test in sorted(tests_by_category.get(category, ()), key=lambda t: t.test_id):
-            if test.test_id in seen or _same(test.test_name_en) in performed:
-                continue
-            seen.add(test.test_id)
-            retrieved.append({"test_name": test.test_name_en, "test_description": test.test_description_en})
+    queues = [iter(sorted(tests_by_category.get(c, ()), key=lambda t: t.test_id)) for c in ordered]
+    while queues:   # round-robin: one test per category in turn, so one big category cannot fill the cap
+        for queue in list(queues):
+            for test in queue:
+                if test.test_id in seen or _same(test.test_name_en) in performed:
+                    continue
+                seen.add(test.test_id)
+                retrieved.append({"test_name": test.test_name_en, "test_description": test.test_description_en})
+                break
+            else:
+                queues.remove(queue)
             if len(retrieved) == max_tests:
                 return retrieved
     return retrieved

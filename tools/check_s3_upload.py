@@ -12,11 +12,13 @@ By default it writes one tiny text file into each of the four buckets, under ``c
 outside the ``processed/`` folder, so it never starts the AWS automation. (If the IAM policy only allows
 ``processed/*``, ask the AWS team to allow ``connectivity-test/*`` too, or use the second form.)
 
-To write ONE real file at an exact key, for the test the AWS team agrees to (this DOES start their
-automation):
+To send ONE real processed file, built exactly as the app does it, for the test the AWS team agrees to (this DOES
+start their automation). ``tools/sample_processed_urgent.json`` is a ready file with made-up patient data:
 
-    python tools/check_s3_upload.py --bucket p360-urgent --file sample.json ^
-        --key processed/normal/2026/10/26/00-input/test123.json
+    python tools/check_s3_upload.py --source urgent --lane normal --file tools/sample_processed_urgent.json
+
+The key is ``processed/<lane>/<today, UTC>/00-input/<id>.json``; the id is ``p360test-<time>`` unless you give ``--id``.
+(``--bucket`` and ``--key`` write to an exact place instead.)
 """
 import argparse
 import os
@@ -28,6 +30,8 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
+SOURCE_BUCKETS = {"urgent": "S3_BUCKET_URGENT", "on-demand": "S3_BUCKET_ON_DEMAND",
+                  "symptom-checker": "S3_BUCKET_SYMPTOM_CHECKER"}      # a batch has its own key: use --bucket and --key
 DEFAULT_BUCKETS = {
     "S3_BUCKET_URGENT": "p360-urgent", "S3_BUCKET_ON_DEMAND": "p360-on-demand",
     "S3_BUCKET_SYMPTOM_CHECKER": "p360-symptom-checker", "S3_BUCKET_BATCH": "p360-batch",
@@ -60,16 +64,27 @@ def main() -> int:
     parser.add_argument("--bucket")
     parser.add_argument("--key")
     parser.add_argument("--file")
+    parser.add_argument("--source", choices=sorted(SOURCE_BUCKETS))
+    parser.add_argument("--lane", choices=("normal", "critical"))
+    parser.add_argument("--id", help="the file name without .json (default: p360test-<time>)")
     args = parser.parse_args()
     print("endpoint:", os.environ.get("AWS_ENDPOINT_URL_S3") or "(the normal AWS address)",
           "| region:", os.environ.get("AWS_REGION") or "(not set)")
     s3 = client()
+    now = datetime.now(UTC)
+    if args.source or args.lane:
+        if not (args.source and args.lane and args.file):
+            print("Give --source, --lane and --file together.", file=sys.stderr)
+            return 2
+        bucket = os.environ.get(SOURCE_BUCKETS[args.source], DEFAULT_BUCKETS[SOURCE_BUCKETS[args.source]])
+        key = f"processed/{args.lane}/{now:%Y/%m/%d}/00-input/{args.id or now.strftime('p360test-%Y%m%dT%H%M%SZ')}.json"
+        return 0 if put(s3, bucket, key, Path(args.file).read_bytes()) else 1
     if args.bucket or args.key or args.file:
         if not (args.bucket and args.key and args.file):
             print("Give --bucket, --key and --file together.", file=sys.stderr)
             return 2
         return 0 if put(s3, args.bucket, args.key, Path(args.file).read_bytes()) else 1
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    stamp = now.strftime("%Y%m%dT%H%M%SZ")
     results = [put(s3, os.environ.get(name, default), f"connectivity-test/{stamp}.txt",
                    b"patient360 connectivity test, safe to delete\n")
                for name, default in DEFAULT_BUCKETS.items()]

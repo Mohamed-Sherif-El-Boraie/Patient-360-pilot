@@ -1,4 +1,15 @@
-from patient360.domain.payload.values import html_to_plain_text, parse_numeric, remove_empty_values
+import pytest
+
+from patient360.domain.payload.values import html_to_plain_text, parse_numeric, remove_empty_values, tidy_number
+
+
+@pytest.mark.parametrize(("given", "tidy"), [
+    ("2 .9", "2.9"), ("- 8.6", "-8.6"), ("57 .0", "57.0"), ("115 .34", "115.34"), ("7.330", "7.330"),
+    (" 4 . 5 ", "4.5"), ("+ 3", "+3"), ("12", "12"), ("1 2", "1 2"), ("Positive", "Positive"), ("<5", "<5"),
+    ("5 - 10", "5 - 10"), ("", ""), (" ", " "), (None, None), (7, 7),
+])
+def test_tidy_number_removes_spaces_around_the_sign_and_the_point_only(given, tidy):
+    assert tidy_number(given) == tidy
 
 
 def test_parse_numeric_reads_the_leading_number_like_v3():

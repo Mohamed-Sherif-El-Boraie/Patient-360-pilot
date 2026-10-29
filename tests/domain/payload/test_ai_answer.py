@@ -34,6 +34,17 @@ def test_a_symptom_answer_keeps_change_type_and_explanation():
     assert out["recommendations"][0]["change_type"] == both("kept")
 
 
+def test_a_symptom_answer_of_only_note_and_recommendations_is_built_without_summaries():
+    from patient360.domain.builders.backend_output import build_backend_output
+    rec = {"test_name": "T", "priority": both("p"), "reason": both("r"), "timing": both("t"), "guideline": both("g"),
+           "advisory": {"level": both("none"), "message": both("m")}}
+    data = {"note": both("n"), "recommendations": [rec]}
+    ai = AiAnswer.model_validate_json(json.dumps(data)).for_backend()
+    assert "summary" not in ai and "simple_summary" not in ai
+    out = build_backend_output(patient_id=1, visit_id=2, source=3, rows=[], ai=ai, html_reasons=True)
+    assert out["ai"]["note"] == both("n") and "r" in out["html"]["en"] and "AR-r" in out["html"]["ar"]
+
+
 @pytest.mark.parametrize("data", [
     {"summary": "just text"},
     answer(summary={"en": "no arabic"}),

@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from patient360.adapters.postgres.outputs import OutputsMixin
+from patient360.flow.send_result import ResultSender
 from patient360.ports import DeliveryUnit
 from tests.adapters.postgres import seed
 from tests.adapters.postgres.seed import fetch
@@ -102,6 +103,15 @@ def test_save_output_writes_every_row_of_a_visit_result(db, store, ready):
     assert stage_of(db) == "post_processing"
 
 
+def test_the_result_is_delivered_with_its_keys_in_the_order_they_were_written(db, store, ready):
+    seed.add_processing(db, 1, status="sent")
+    result = public_output(1)
+    store.save_output(1, internal_output(), result)
+    unit = store.claim_next_delivery(NOW)
+    sent = store.public_output_of(unit)
+    assert sent == result and list(sent) == list(result) and list(sent["ai"]) == list(result["ai"])
+
+
 def test_model_calls_with_and_without_the_arabic_metadata(db, store, ready):
     store.save_output(1, internal_output(), public_output(1))
     analysis, translation = fetch(db, "SELECT * FROM ai_model_calls ORDER BY purpose")
@@ -111,6 +121,9 @@ def test_model_calls_with_and_without_the_arabic_metadata(db, store, ready):
     assert (translation["purpose"], translation["stop_reason"], translation["cache_read_input_tokens"]) == (
         "translation", "max_tokens", None)
 
+
+
+def test_an_answer_without_the_arabic_metadata_has_no_translation_call(db, store, ready):
     store.save_output(1, internal_output(with_arabic=False), public_output(1))
     assert [c["purpose"] for c in fetch(db, "SELECT purpose FROM ai_model_calls")] == ["analysis"]
 
@@ -166,24 +179,37 @@ def test_the_visit_result_sets_the_symptom_flag_column_but_a_symptom_result_does
         return fetch(db, "SELECT symptom_flag FROM visits")[0]["symptom_flag"]
 
     assert flag() is None                                                   # no result yet
-    store.save_output(1, internal_output(), public_output(1) | {"symptom_flag": False})
-    assert flag() is False
     store.save_output(1, internal_output(), public_output(1) | {"symptom_flag": True})
-    assert flag() is True                                                   # a new visit result replaces it
-    symptom = public_output(1, source=3) | {"symptom_flag": False}
+    assert flag() is True
+    symptom = public_output(1, source=3) | {"symptom_flag": True}
     store.save_output(1, internal_output(), symptom, "symptom")
     assert flag() is True                                                   # a symptom result is ignored
+    store.save_output(1, internal_output(), public_output(1) | {"symptom_flag": False})   # a late duplicate: nothing
+    assert flag() is True
 
 
-def test_saving_twice_replaces_the_rows_and_keeps_the_payload_history(db, store, ready):
+def test_a_symptom_result_never_overwrites_a_closed_visit_flag(db, store, ready):
+    store.save_output(1, internal_output(), public_output(1) | {"symptom_flag": False})
+    store.save_output(1, internal_output(), public_output(1, source=3) | {"symptom_flag": True}, "symptom")
+    assert fetch(db, "SELECT symptom_flag FROM visits")[0]["symptom_flag"] is False
+
+
+def test_a_second_save_of_the_same_answer_changes_nothing_even_after_the_result_was_delivered(db, store, ready):
     store.save_output(1, internal_output(), public_output(1))
-    store.save_output(1, internal_output(), public_output(1, [recommendation("Old Test")]))
-    assert [r["test_id"] for r in fetch(db, "SELECT test_id FROM ai_recommendations")] == [11]
+    fetch(db, "UPDATE record_processing SET step = 'deliver', status = 'delivered' WHERE visit_id = 1 RETURNING 1")
+    store.save_output(1, internal_output(), public_output(1, [recommendation("Old Test")]))        # a late duplicate
+    assert [r["test_id"] for r in fetch(db, "SELECT test_id FROM ai_recommendations")] == [10]       # still the first
     assert len(fetch(db, "SELECT * FROM ai_critical_alerts")) == 2
     assert len(fetch(db, "SELECT * FROM ai_model_calls")) == 2
-    assert [p["version"] for p in fetch(db, "SELECT version FROM record_payloads WHERE kind = 'output_public' "
-                                            "ORDER BY version")] == [1, 2]
-    assert len(fetch(db, "SELECT * FROM record_processing")) == 1
+    assert [p["version"] for p in fetch(db, "SELECT version FROM record_payloads WHERE kind = 'output_public'")] == [1]
+    row = processing_row(db)
+    assert (row["step"], row["status"]) == ("deliver", "delivered")            # not put back to pending: no second post
+
+
+def test_a_symptom_answer_is_saved_next_to_the_visit_answer_not_instead_of_it(db, store, ready):
+    store.save_output(1, internal_output(), public_output(1))
+    store.save_output(1, internal_output(), public_output(1, source=3), "symptom")
+    assert {r["analysis"] for r in fetch(db, "SELECT analysis FROM ai_outputs")} == {"visit", "symptom"}
 
 
 def test_a_failing_save_leaves_nothing(db, store, ready):
@@ -312,12 +338,27 @@ def test_two_sessions_cannot_claim_the_same_unit(db, store):
 def test_public_output_of_returns_the_current_version_of_that_analysis(db, store, ready):
     visit = public_output(1)
     store.save_output(1, internal_output(), visit)
-    newer = public_output(1, [])
-    store.save_output(1, internal_output(), newer)
+    store.save_output(1, internal_output(), public_output(1, []))               # a late duplicate: the first stays
     symptom = public_output(1, [], source=3)
     store.save_output(1, internal_output(), symptom, "symptom")
-    assert store.public_output_of(DeliveryUnit(1, "urgent", 0)) == newer
+    assert store.public_output_of(DeliveryUnit(1, "urgent", 0)) == visit
     assert store.public_output_of(DeliveryUnit(1, "symptom-checker", 0, "symptom")) == symptom
+
+
+def test_the_delivery_strips_the_summary_keys_while_the_saved_answer_keeps_them(db, store, ready):
+    visit = public_output(1) | {"success": True, "symptom_flag": True}
+    store.save_output(1, internal_output(), visit)
+    posted = []
+
+    class Backend:
+        def post_result(self, body):
+            posted.append(body)
+
+    [done] = ResultSender(store, Backend(), lambda: NOW).run()
+    assert done.outcome == "delivered"
+    assert "summary" not in posted[0]["ai"] and "note" in posted[0]["ai"] and posted[0]["symptom_flag"] is True
+    assert {"summary", "simple_summary", "critical_alerts"} <= set(store.visit_ai_answer(1))      # symptom input
+    assert store.public_output_of(DeliveryUnit(1, "urgent", 0)) == visit
 
 
 def test_mark_delivered(db, store, ready):
@@ -359,3 +400,38 @@ def test_giving_up_a_delivery_fails_the_unit(db, store, ready):
     attempt = fetch(db, "SELECT * FROM record_processing_attempts")[0]
     assert (attempt["attempt"], attempt["outcome"]) == (5, "failed")
     assert store.claim_next_delivery(NOW + timedelta(days=1)) is None
+
+# ---- save_failed_output ------------------------------------------------------------------------
+def failed_message(visit_id=1):
+    return {"success": False, "patient_id": 1, "visit_id": visit_id, "source": 1,
+            "symptom_flag": None, "tests": None, "ai": None, "html": None}
+
+
+def test_a_failed_output_is_saved_delivered_and_stays_a_failed_visit(db, store, ready):
+    seed.add_processing(db, 1, status="sent")
+    store.save_failed_output(1, failed_message())
+    assert fetch(db, "SELECT status FROM ai_outputs")[0]["status"] == "error"
+    row = processing_row(db)
+    assert (row["step"], row["status"], row["attempts"]) == ("deliver", "pending", 0)
+    assert stage_of(db) == "failed"
+    unit = store.claim_next_delivery(NOW)
+    assert unit == DeliveryUnit(1, "urgent", 0, "visit")
+    assert store.public_output_of(unit) == failed_message()
+    store.mark_delivered(unit)
+    assert processing_row(db)["status"] == "delivered" and stage_of(db) == "failed"
+    assert store.claim_next_delivery(NOW) is None
+    assert store.has_output(1)
+
+
+def test_a_second_failed_output_changes_nothing(db, store, ready):
+    store.save_failed_output(1, failed_message())
+    store.save_failed_output(1, failed_message() | {"patient_id": 99})
+    assert len(fetch(db, "SELECT * FROM record_payloads WHERE kind = 'output_public'")) == 1
+    assert store.public_output_of(DeliveryUnit(1, "urgent", 0)) == failed_message()
+
+
+def test_a_failed_output_does_not_replace_a_saved_answer(db, store, ready):
+    store.save_output(1, internal_output(), public_output(1))
+    store.save_failed_output(1, failed_message())
+    assert fetch(db, "SELECT status FROM ai_outputs")[0]["status"] == "success"
+    assert store.public_output_of(DeliveryUnit(1, "urgent", 0))["ai"] is not None

@@ -12,11 +12,9 @@ def test_every_source_has_a_prompt_and_a_schema():
         assert prompt.strip() and schema["type"] == "object" and schema["properties"]
 
 
-def test_urgent_and_on_demand_are_separate_and_name_their_own_source():
-    urgent, _ = PROMPT_AND_SCHEMA_BY_SOURCE["urgent"]
-    on_demand, _ = PROMPT_AND_SCHEMA_BY_SOURCE["on-demand"]
-    assert "- source: urgent\n" in urgent and "- source: on-demand\n" in on_demand
-    assert urgent.replace("- source: urgent", "") == on_demand.replace("- source: on-demand", "")
+def test_urgent_and_on_demand_each_have_their_own_prompt():
+    """The owner made the two texts the same; the source reaches the model in the input JSON (``source`` key)."""
+    assert PROMPT_AND_SCHEMA_BY_SOURCE["urgent"][0].strip() and PROMPT_AND_SCHEMA_BY_SOURCE["on-demand"][0].strip()
 
 
 @pytest.mark.parametrize("source", SOURCES)

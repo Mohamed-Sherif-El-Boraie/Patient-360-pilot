@@ -35,6 +35,8 @@ class S3Uploader:
 
 def build_s3_client(region: str | None = None, endpoint_url: str | None = None) -> Any:
     """A boto3 S3 client with the default credential chain (environment, profile or role). Short timeouts and one
-    retry: the dispatcher has its own retry schedule. ``endpoint_url`` points at a local MinIO server."""
-    config = Config(connect_timeout=5, read_timeout=30, retries={"max_attempts": 2, "mode": "standard"})
+    retry: the dispatcher has its own retry schedule. ``endpoint_url`` is the AWS VPC endpoint
+    (or a local fake S3): requests then name the bucket in the path."""
+    config = Config(connect_timeout=5, read_timeout=30, retries={"max_attempts": 2, "mode": "standard"},
+                    s3={"addressing_style": "path"} if endpoint_url else {})      # the endpoint is not a bucket name
     return boto3.client("s3", region_name=region, endpoint_url=endpoint_url, config=config)

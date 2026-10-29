@@ -1,17 +1,8 @@
-"""tools/load_catalogue.py: the workbook rows become clean records, and loading them is safe to repeat."""
-import importlib.util
-import sys
-from pathlib import Path
-
+"""patient360.load_catalogue: the workbook rows become clean records, and loading them is safe to repeat."""
 import pytest
 
+from patient360 import load_catalogue as loader
 from tests.adapters.postgres.seed import fetch
-
-_spec = importlib.util.spec_from_file_location(
-    "load_catalogue", Path(__file__).parents[3] / "tools" / "load_catalogue.py")
-loader = importlib.util.module_from_spec(_spec)
-sys.modules["load_catalogue"] = loader          # a dataclass looks its own module up here
-_spec.loader.exec_module(loader)
 
 PACKAGE_HEADER = ("package_id", "package_name_en", "package_name_ar", "package_type", "package_description_en",
                   "package_description_ar", "sex_id", "age_min", "age_max", "active")
@@ -83,6 +74,23 @@ def test_loading_fills_the_tables_and_can_be_repeated(db):
         {"test_name_en": "Fasting glucose (new name)", "active": True, "category_id": [15]}]   # sheet says TRUE
     assert fetch(db, "SELECT active FROM packages WHERE package_id = 10597") == [{"active": False}]   # empty cell: kept
     assert fetch(db, "SELECT sex_id, age_min FROM packages WHERE package_id = 10597") == [{"sex_id": 1, "age_min": 18}]
+
+
+def test_the_real_catalogue_workbook_loads_and_a_second_run_changes_nothing(db, capsys):
+    assert loader.DEFAULT_WORKBOOK.is_file()
+    assert loader.main([str(loader.DEFAULT_WORKBOOK), "--dry-run"]) == 0
+    assert "dry run" in capsys.readouterr().out
+    records = loader.build_records(loader.read_sheets(loader.DEFAULT_WORKBOOK))
+    assert records.tests and records.packages and records.links
+    with db.transaction() as conn:
+        first = loader.load(conn, records)
+    snapshot = fetch(db, "SELECT (SELECT json_agg(t ORDER BY test_id) FROM tests t) AS tests, "
+                         "(SELECT json_agg(p ORDER BY package_id) FROM packages p) AS packages")
+    with db.transaction() as conn:
+        assert loader.load(conn, records) == first
+    assert fetch(db, "SELECT (SELECT json_agg(t ORDER BY test_id) FROM tests t) AS tests, "
+                     "(SELECT json_agg(p ORDER BY package_id) FROM packages p) AS packages") == snapshot
+    assert first["tests"] == len(records.tests) and first["packages"] == len(records.packages)
 
 
 def test_a_workbook_without_the_expected_sheet_stops_with_a_clear_message():

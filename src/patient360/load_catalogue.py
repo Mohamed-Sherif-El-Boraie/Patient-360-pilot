@@ -1,22 +1,32 @@
 """Loads the catalogue (categories, tests, parameters, packages and the tests inside each package) from the Excel
-workbook into PostgreSQL. Run it ONCE after the schema exists, and again whenever the workbook changes:
+workbook into PostgreSQL: ``python -m patient360.load_catalogue [workbook.xlsx] [--dry-run]``. The image runs it at
+start-up (after the migrations); run it again whenever the workbook changes.
 
-    uv run --with openpyxl python tools/load_catalogue.py [workbook.xlsx] [--dry-run]
-
-It reads the same PG* variables as the app (PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD, PGSSLMODE). It adds new rows
-and updates the rows that exist. It never deletes. The ``active`` column of a sheet is applied when the sheet has one;
-without it, new rows are active and existing rows keep their ``active``.
-openpyxl is not a project dependency: it is only needed here. ``--dry-run`` checks the workbook and prints the counts.
+The workbook is the argument, else the environment variable CATALOGUE_WORKBOOK, else ``catalogue/`` next to
+``migrations/``. It reads the same PG* variables as ``patient360.migrate``. It adds new rows and updates the rows that
+exist. It never deletes. The ``active`` column of a sheet is applied when the sheet has one; without it, new rows are
+active and existing rows keep their ``active``. An advisory lock makes two instances starting together load one after
+the other. ``--dry-run`` checks the workbook and prints the counts, without a database.
 """
 from __future__ import annotations
 
+import os
 import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-DEFAULT_WORKBOOK = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "Packages_tests_paramters.xlsx"
+import openpyxl
+import psycopg
+from psycopg.conninfo import make_conninfo
+from psycopg.rows import tuple_row
+
+from patient360.migrate import schema_from_env, use_schema
+
+LOCK_ID = 360_001_002                         # migrate.py uses 360_001_001
+DEFAULT_WORKBOOK = Path(__file__).resolve().parents[2] / "catalogue" / "Packages_tests_paramters.xlsx"
+REQUIRED = ("PGHOST", "PGDATABASE", "PGUSER", "PGPASSWORD")
 PACKAGE_TYPES = ("WELLNESS", "GENERAL")
 NULL_WORDS = {"", "null", "none", "nan"}      # the workbook writes the text NULL for an empty cell
 
@@ -34,7 +44,6 @@ class Records:
 
 def read_sheets(path: Path) -> dict[str, list[tuple]]:
     """Every sheet as its rows (the header row first)."""
-    import openpyxl
     book = openpyxl.load_workbook(path, data_only=True, read_only=True)
     return {sheet.title: list(sheet.iter_rows(values_only=True)) for sheet in book.worksheets}
 
@@ -160,7 +169,6 @@ def build_records(sheets: dict[str, list[tuple]]) -> Records:
 
 def load(conn, records: Records) -> dict[str, int]:
     """Upsert everything in the caller's transaction; returns the row count of each table afterwards."""
-    from psycopg.rows import tuple_row
     with conn.cursor(row_factory=tuple_row) as cursor:      # whatever row type the connection uses, here it is a tuple
         cursor.executemany(
             "INSERT INTO categories (category_id, category_name, active) VALUES (%s, %s, COALESCE(%s, true)) "
@@ -205,18 +213,33 @@ def load(conn, records: Records) -> dict[str, int]:
 def main(argv: list[str]) -> int:
     dry_run = "--dry-run" in argv
     paths = [a for a in argv if not a.startswith("--")]
-    workbook = Path(paths[0]) if paths else DEFAULT_WORKBOOK
-    records = build_records(read_sheets(workbook))
-    for warning in records.warnings:
-        print("warning:", warning)
-    print(f"workbook: {len(records.categories)} categories, {len(records.tests)} tests, "
-          f"{len(records.parameters)} parameters, {len(records.packages)} packages, {len(records.links)} package links")
-    if dry_run:
-        print("dry run: nothing was written")
-        return 0
-    import psycopg
-    with psycopg.connect(connect_timeout=10) as conn:       # the PG* variables, as for the app
-        counts = load(conn, records)
+    workbook = Path(paths[0] if paths else os.environ.get("CATALOGUE_WORKBOOK") or DEFAULT_WORKBOOK)
+    if not dry_run and (missing := [name for name in REQUIRED if not os.environ.get(name)]):
+        print(f"missing environment variables: {', '.join(missing)}", file=sys.stderr)
+        return 2
+    try:
+        records = build_records(read_sheets(workbook))
+        for warning in records.warnings:
+            print("warning:", warning)
+        print(f"workbook {workbook.name}: {len(records.categories)} categories, {len(records.tests)} tests, "
+              f"{len(records.parameters)} parameters, {len(records.packages)} packages, "
+              f"{len(records.links)} package links")
+        if dry_run:
+            print("dry run: nothing was written")
+            return 0
+        dsn = make_conninfo(host=os.environ["PGHOST"], port=os.environ.get("PGPORT", "5432"),
+                            dbname=os.environ["PGDATABASE"], user=os.environ["PGUSER"],
+                            password=os.environ["PGPASSWORD"], sslmode=os.environ.get("PGSSLMODE", "prefer"))
+        with psycopg.connect(dsn, connect_timeout=10) as conn:
+            use_schema(conn, schema_from_env())
+            conn.execute("SELECT pg_advisory_xact_lock(%s)", (LOCK_ID,))     # released at the commit below
+            counts = load(conn, records)
+    except SystemExit as error:                 # a workbook without the expected sheet or column
+        print(f"catalogue load failed: {error}", file=sys.stderr)
+        return 1
+    except (OSError, ValueError, psycopg.Error) as error:
+        print(f"catalogue load failed: {type(error).__name__}: {error}", file=sys.stderr)
+        return 1
     print("database now holds:", ", ".join(f"{count} {table}" for table, count in counts.items()))
     return 0
 

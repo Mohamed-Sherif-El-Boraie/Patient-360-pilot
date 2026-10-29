@@ -54,6 +54,7 @@ def test_a_full_batch_writes_one_file_per_visit_and_the_jsonl(sample, parts):
     lines = [json.loads(line) for line in blobs.files[jsonl_path].decode().splitlines()]
     assert sorted(line["recordId"] for line in lines) == sorted(keys)
     assert all(set(line) == {"recordId", "modelInput"} for line in lines)
+    assert all("recordId" not in line["modelInput"] for line in lines)      # never wrapped twice
     batch_prompt, _ = PROMPT_AND_SCHEMA_BY_SOURCE["batch"]
     assert all(line["modelInput"]["system"][0]["text"] == batch_prompt for line in lines)
     assert all(v["stage"] == "queued" and v["batch_id"] == batch.batch_id for v in store.visits.values())

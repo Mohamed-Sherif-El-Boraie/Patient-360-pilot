@@ -3,7 +3,7 @@
 Only the outside world is pretended: Blob and S3 are in memory, and the Backend wrapper is an ``httpx.MockTransport``.
 """
 import json
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import httpx
 import pytest
@@ -11,8 +11,8 @@ from fastapi.testclient import TestClient
 
 from patient360.adapters.backend import WrapperBackend
 from patient360.config.settings import load_settings
+from patient360.domain.common.blob_paths import merged_output_path
 from patient360.http_app import create_app
-from patient360.ports import EventMessage
 from patient360.runtime import build_services
 from patient360.timers import run_job_cycle, run_work_cycle
 from tests.adapters.postgres import seed
@@ -23,11 +23,13 @@ KEY = {"X-Api-Key": "dev-inbound-key"}
 ENV = {
     "PGHOST": "127.0.0.1", "PGDATABASE": "patient360", "PGUSER": "app", "PGPASSWORD": "pg-password-xyz",
     "AZURE_STORAGE_CONNECTION_STRING": "UseDevelopmentStorage=true", "BLOB_INPUT_CONTAINER": "ai-input",
-    "BLOB_OUTPUT_CONTAINER": "ai-output", "IDEMPOTENCY_KEY_SECRET": "a-long-test-secret-value",
+    "IDEMPOTENCY_KEY_SECRET": "a-long-test-secret-value",
     "INBOUND_API_KEY": "dev-inbound-key",
     "BACKEND_BASE_URL": "https://wrapper.example", "BACKEND_CALLER_SOURCE": "Patient360",
     "BACKEND_CALLER_SOURCE_KEY": "fake-caller-key", "BACKEND_CALLER_USER_NAME": "Patient360",
     "BACKEND_USERNAME": "fake-user", "BACKEND_PASSWORD": "fake-password",
+    "S3_BUCKET_URGENT": "p360-urgent", "S3_BUCKET_ON_DEMAND": "p360-on-demand",
+    "S3_BUCKET_SYMPTOM_CHECKER": "p360-symptom-checker", "S3_BUCKET_BATCH": "p360-batch",
 }
 
 
@@ -62,40 +64,15 @@ class PretendWrapper:
                                          "data": {"Patient360Loader": {"ID": len(self.results), "Action": "Insert"}}})
 
 
-class PretendQueue:
-    """The storage queue Event Grid writes to: messages wait in a list and are settled by the consumer."""
-
-    def __init__(self):
-        self.waiting, self.settled = [], []
-
-    def receive(self):
-        messages, self.waiting = self.waiting, []
-        return messages
-
-    def complete(self, message):
-        self.settled.append("complete")
-
-    def abandon(self, message):
-        self.settled.append("abandon")
-
-    def dead_letter(self, message, reason):
-        self.settled.append("dead_letter")
-
-    def close(self):
-        pass
-
-
 class Rig:
     def __init__(self, db, sample):
         self.db, self.sample = db, sample
-        self.blob_1, self.blob_2, self.s3, self.wrapper = FakeBlobs(), FakeBlobs(), FakeS3(), PretendWrapper()
-        settings = load_settings(ENV)
+        self.blob_1, self.s3, self.wrapper = FakeBlobs(), FakeS3(), PretendWrapper()
+        self.settings = settings = load_settings(ENV)
         seed.add_category(db, 1, "Kidney")
         seed.add_test(db, 900, "Extra test", name_ar="AR-Extra test", description="why", categories=(1,))
         backend = WrapperBackend(settings.backend, 5, 30, transport=httpx.MockTransport(self.wrapper))
-        self.queue = PretendQueue()
-        self.services = build_services(settings, db=db, blob_stores=(self.blob_1, self.blob_2), s3=self.s3,
-                                       backend=backend, event_queue=self.queue)
+        self.services = build_services(settings, db=db, blob=self.blob_1, s3=self.s3, backend=backend)
         self.client = TestClient(create_app(self.services))
 
     def post(self, document):
@@ -105,24 +82,19 @@ class Rig:
     def work(self):
         run_work_cycle(self.services, datetime.now(UTC))
 
-    def aws_answers(self, source, text, via_queue=False, **extra):
-        """Play AWS and Event Grid: write the answer of the last uploaded file to Blob 2 and tell the app (by the HTTP
-        route, or as a message in the storage queue that the app reads)."""
+    def aws_answers(self, source, text, **extra):
+        """Play AWS and the Function app: post the answer of the last uploaded file to the app, as the Function does
+        with the file it pulled from the output container of that source."""
         uploaded_source, s3_key = self.s3.uploads[-1]
         assert uploaded_source == source
         # processed/<lane>/<y>/<M>/<d>/00-input/<key>.json
         _, lane, year, month, day, _input, name = s3_key.split("/")
         key = name.removesuffix(".json")
-        path = f"aws-output-merged/{source}/{lane}/{year}/{month}/{day}/{name}"
+        path = merged_output_path(lane, date(int(year), int(month), int(day)), key)
         record = {"recordId": key, "model": "model-x", "content": [{"type": "text", "text": text}],
                   "metadata": {"en": {"usage": {"input_tokens": 1, "output_tokens": 2}}}, **extra}
-        self.blob_2.files[path] = json.dumps(record).encode()
-        event = [{"eventType": "Microsoft.Storage.BlobCreated",
-                  "subject": f"/blobServices/default/containers/ai-output/blobs/{path}", "data": {}}]
-        if via_queue:
-            self.queue.waiting.append(EventMessage(body=json.dumps(event[0]).encode(), handle=path))
-            return self.services.event_consumer.run_once()
-        return self.client.post("/api/v1/patient360/blob-events", json=event, headers=KEY)
+        return self.client.post("/api/v1/patient360/ai-results", content=json.dumps(record).encode(),
+                                headers=KEY | {"X-Source": source, "X-Blob-Path": path, "Idempotency-Key": "msg-1"})
 
 
 @pytest.fixture
@@ -139,11 +111,12 @@ def test_the_whole_service_from_an_incoming_visit_to_the_delivered_symptom_resul
     rig.work()
     assert [source for source, _ in rig.s3.uploads] == ["urgent"]
 
-    assert rig.aws_answers("urgent", answer()).json() == {"received": 1}
+    assert rig.aws_answers("urgent", answer()).json() == {"outcome": "saved"}
     rig.work()
     [posted] = rig.wrapper.results
     assert (posted["patient_id"], posted["visit_id"], posted["source"]) == (PATIENT_ID, VISIT_ID, 1)
-    assert posted["ai"]["summary"] == both("summary") and "AR-Extra test" in posted["html"]["ar"]
+    assert posted["ai"]["note"] == both("note") and "AR-Extra test" in posted["html"]["ar"]
+    assert not {"summary", "simple_summary", "critical_alerts"} & set(posted["ai"])      # only the html shows them
     assert "model-x" not in json.dumps(posted) and rig.wrapper.logins == 1
 
     symptom = rig.sample("symptom_check")
@@ -154,6 +127,8 @@ def test_the_whole_service_from_an_incoming_visit_to_the_delivered_symptom_resul
     rig.work()
     assert [r["source"] for r in rig.wrapper.results] == [1, 3]
     assert rig.wrapper.results[1]["ai"]["recommendations"][0]["change_type"] == both("kept")
+    assert set(rig.wrapper.results[1]) == {"success", "patient_id", "visit_id", "source", "symptom_flag", "ai", "html"}
+    assert rig.wrapper.results[1]["symptom_flag"] is True and "packages" in rig.wrapper.results[1]["ai"]
     assert rig.wrapper.logins == 1                                  # one login for everything: the token is reused
 
     [visit_row] = seed.fetch(rig.db, "SELECT stage, tier FROM visits")
@@ -162,19 +137,30 @@ def test_the_whole_service_from_an_incoming_visit_to_the_delivered_symptom_resul
     assert [(r["analysis"], r["status"]) for r in statuses] == [("symptom", "delivered"), ("visit", "delivered")]
 
 
-def test_the_answer_file_can_arrive_through_the_storage_queue_instead_of_http(rig):
+def test_the_function_sending_the_same_answer_again_is_a_200_duplicate_and_the_result_is_sent_once(rig):
     visit = rig.sample("urgent_mild") | {"visit_id": VISIT_ID, "patient_id": PATIENT_ID}
     assert rig.post(visit).status_code == 202
     rig.work()
 
-    assert rig.aws_answers("urgent", answer(), via_queue=True) == 1            # one message read
-    assert rig.queue.settled == ["complete"]
+    assert rig.aws_answers("urgent", answer()).json() == {"outcome": "saved"}
+    assert rig.aws_answers("urgent", answer()).json() == {"outcome": "duplicate"}      # the Function retried
     rig.work()
     [posted] = rig.wrapper.results
-    assert (posted["visit_id"], posted["source"]) == (VISIT_ID, 1) and posted["ai"]["summary"] == both("summary")
+    assert (posted["visit_id"], posted["source"]) == (VISIT_ID, 1) and posted["ai"]["note"] == both("note")
 
-    rig.queue.waiting.append(EventMessage(body=b"garbage", handle="bad"))        # a message that is not an event
-    assert rig.services.event_consumer.run_once() == 1 and rig.queue.settled == ["complete", "dead_letter"]
+
+def test_the_database_down_while_saving_an_answer_is_a_500_so_the_function_retries(rig, monkeypatch):
+    visit = rig.sample("urgent_mild") | {"visit_id": VISIT_ID, "patient_id": PATIENT_ID}
+    assert rig.post(visit).status_code == 202
+    rig.work()
+
+    def down(*args, **kwargs):
+        raise RuntimeError("database down")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(rig.services.store, "find_visit", down)
+        assert rig.aws_answers("urgent", answer()).status_code == 500
+    assert rig.aws_answers("urgent", answer()).json() == {"outcome": "saved"}           # the retry works
 
 
 def test_a_symptom_check_is_refused_with_409_when_the_visit_result_closed_the_checker(rig):

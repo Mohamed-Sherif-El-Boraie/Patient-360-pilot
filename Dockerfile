@@ -12,15 +12,21 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY src ./src
 RUN uv sync --frozen --no-dev --no-editable
 
-# Run stage: only the virtual environment and the SQL migrations, as a non-root user.
+# Run stage: the virtual environment, the SQL migrations, the catalogue workbook and the entrypoint script, as a
+# non-root user (files are root-owned and world-readable, which uid 10001 can read).
 FROM python:3.13-slim
 RUN useradd --system --create-home --uid 10001 app
 WORKDIR /app
 COPY --from=build /app/.venv /app/.venv
 COPY migrations ./migrations
-ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 MIGRATIONS_DIR=/app/migrations
+COPY catalogue ./catalogue
+COPY docker-entrypoint.sh ./docker-entrypoint.sh
+ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 MIGRATIONS_DIR=/app/migrations \
+    CATALOGUE_WORKBOOK=/app/catalogue/Packages_tests_paramters.xlsx
 USER app
 EXPOSE 8000
+# Migrates and loads the catalogue (unless RUN_STARTUP_JOBS=0), then runs CMD. The sh form needs no exec bit.
+ENTRYPOINT ["sh", "/app/docker-entrypoint.sh"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD ["python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=4)"]
 CMD ["uvicorn", "--factory", "patient360.main:create_app_from_env", "--host", "0.0.0.0", "--port", "8000"]

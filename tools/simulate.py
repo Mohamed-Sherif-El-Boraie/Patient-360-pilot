@@ -9,15 +9,10 @@ from pathlib import Path
 
 import boto3
 import httpx
-from azure.storage.blob import BlobServiceClient
-from azure.storage.queue import QueueClient
 
 APP, WRAPPER, FAKE_S3 = "http://127.0.0.1:8000", "http://127.0.0.1:8081", "http://127.0.0.1:9000"
 API_KEY = {"X-Api-Key": "dev-inbound-key"}
-# The public Azurite emulator account and key (documented by Microsoft, not a secret).
-AZURITE = ("DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT"
-           "50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
-           "QueueEndpoint=http://127.0.0.1:10001/devstoreaccount1;")
+SOURCE = "urgent"                       # the sample visit is urgent
 SAMPLE = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "samples" / "urgent_mild.json"
 
 
@@ -40,10 +35,6 @@ def both(text):
 
 
 def main():
-    blobs = BlobServiceClient.from_connection_string(AZURITE)
-    for name in ("ai-input", "ai-output"):      # the app does not create them
-        if not blobs.get_container_client(name).exists():
-            blobs.create_container(name)
     run = int(time.time()) * 10      # new ids on every run, so a repeat is not answered "duplicate"
     visit = json.loads(SAMPLE.read_text(encoding="utf-8")) | {"visit_id": run + 1, "patient_id": run + 1}
     wrapper_before = len(httpx.get(f"{WRAPPER}/received").json())
@@ -73,21 +64,20 @@ def main():
     record_id = name.removesuffix(".json")
     print(f"   found, lane={lane}")
 
-    print("3. Playing AWS: writing the answer to Azurite ai-output")
+    print("3. Playing AWS and the Function app: posting the answer file to the app")
     text = json.dumps({"summary": both("summary"), "simple_summary": both("simple"), "critical_alerts": [],
                        "note": both("note"), "recommendations": []})
     record = {"recordId": record_id, "type": "message", "role": "assistant", "model": "simulated-model",
               "content": [{"type": "text", "text": text}], "metadata": {}}
-    path = f"aws-output-merged/urgent/{lane}/{year}/{month}/{day}/{name}"
-    blobs.get_blob_client("ai-output", path).upload_blob(json.dumps(record).encode(), overwrite=True)
+    # <lane>/<yyyy>/<MM>/<dd>/<idempotency_key>/05-output-merged.json (the key is the recordId)
+    answer_path = f"{lane}/{year}/{month}/{day}/{record_id}/05-output-merged.json"
+    sent = httpx.post(f"{APP}/api/v1/patient360/ai-results", content=json.dumps(record).encode(), timeout=30,
+                      headers=API_KEY | {"X-Source": SOURCE, "X-Blob-Path": answer_path})
+    if sent.status_code != 200 or sent.json().get("outcome") != "saved":
+        fail(f"expected 200 saved, got {sent.status_code}: {sent.text[:200]}")
+    print(f"   posted: {answer_path} -> saved")
 
-    print("4. Playing Event Grid: writing the \"file created\" event into the storage queue the app reads")
-    event = {"eventType": "Microsoft.Storage.BlobCreated", "data": {},
-             "subject": f"/blobServices/default/containers/ai-output/blobs/{path}"}
-    QueueClient.from_connection_string(AZURITE, "blob-events").send_message(json.dumps(event))
-    print("   event queued; the app reads the queue every few seconds")
-
-    print("5. Waiting for the result at the mock Backend wrapper")
+    print("4. Waiting for the result at the mock Backend wrapper")
     def new_results():
         results = httpx.get(f"{WRAPPER}/received").json()
         return results if len(results) > wrapper_before else None

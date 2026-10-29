@@ -66,6 +66,25 @@ class FakeBlobs:
         return self.files.get(path)
 
 
+class FunctionApp:
+    """Plays the Function app: reads a file from the fake output container of ``source`` and hands each record (the
+    whole file, or one line of a JSONL) to the receiver, as the POST to ``ai-results`` does."""
+
+    def __init__(self, receiver, out) -> None:
+        self._receiver, self._out = receiver, out
+
+    def __getattr__(self, name):       # the receiver's other methods (a test may call one directly)
+        return getattr(self._receiver, name)
+
+    def receive(self, source, path):
+        data = self._out[source].get(path)
+        if data is None:
+            return []
+        text = data.decode(errors="replace")
+        lines = text.splitlines() if path.endswith(".jsonl") else [text]
+        return [r for line in lines if line.strip() for r in self._receiver.receive_record(source, path, line)]
+
+
 class FakeS3:
     def __init__(self, down: bool = False) -> None:
         self.files: dict[tuple[str, str], bytes] = {}      # (source, key) -> bytes
@@ -227,19 +246,26 @@ class FakeStore:
 
     def has_output(self, visit_id, analysis="visit"):
         record = self.symptom_checks[visit_id] if analysis == "symptom" else self.visits[visit_id]
-        return "internal_output" in record or str(record.get("stage")).startswith("failed")
+        return "internal_output" in record or "failed_output" in record or str(record.get("stage")).startswith("failed")
 
     def _analysis_record(self, visit_id, analysis):
         return self.symptom_checks[visit_id] if analysis == "symptom" else self.visits[visit_id]
 
-    def save_output(self, visit_id, internal_output, public_output, analysis="visit"):
+    def save_output(self, visit_id, internal_output, public_output, analysis="visit", internal_raw=None):
         self._analysis_record(visit_id, analysis).update(
-            internal_output=internal_output, public_output=public_output,
+            internal_output=internal_output, public_output=public_output, internal_raw=internal_raw,
             stage="post_processing_symptom" if analysis == "symptom" else "post_processing")
 
     def mark_output_failed(self, visit_id, error_type, analysis="visit"):
         self._analysis_record(visit_id, analysis).update(
             stage="failed_symptom" if analysis == "symptom" else "failed", output_error=error_type)
+
+    def save_failed_output(self, visit_id, public_output, analysis="visit"):
+        record = self._analysis_record(visit_id, analysis)
+        if "internal_output" in record or "failed_output" in record:
+            return
+        record.update(failed_output=True, public_output=public_output,
+                      stage="failed_symptom" if analysis == "symptom" else "failed")
 
     def stored_symptom_check(self, visit_id):
         symptom = self.symptom_checks[visit_id]
@@ -249,6 +275,9 @@ class FakeStore:
         output = self.visits[visit_id].get("public_output")
         return output["ai"] if output else None
 
+    def visit_model_input(self, visit_id):
+        return self.visits[visit_id]["model_input"]
+
     def save_symptom_processed(self, visit_id, model_input, read_from):
         self.symptom_checks[visit_id].update(model_input=model_input, stage="processed_symptom",
                                              processed_read_from=read_from)
@@ -257,6 +286,9 @@ class FakeStore:
         waiting = [(s["received_at"], visit_id) for visit_id, s in self.symptom_checks.items()
                    if s.get("stage") == "received_symptom" and s["received_at"] < received_before]
         return [visit_id for _, visit_id in sorted(waiting)]
+
+    def batch_fully_answered(self, batch_id):
+        return all("internal_output" in self.visits[i] for i in self.batches[batch_id]["visit_ids"])
 
     def set_batch_status(self, batch_id, status):
         self.batches[batch_id]["status"] = status
@@ -270,12 +302,12 @@ class FakeStore:
 
     def _deliveries(self):
         for visit_id, v in self.visits.items():
-            if v.get("stage") == "post_processing":
+            if v.get("stage") == "post_processing" or v.get("failed_output") and not v.get("delivered"):
                 name = SOURCE_NAMES[v["payload"]["source"]]
                 yield SOURCE_PRIORITY[name], v["received_at"], v, DeliveryUnit(
                     visit_id, name, v.get("delivery_attempts", 0))
         for visit_id, s in self.symptom_checks.items():
-            if s.get("stage") == "post_processing_symptom":
+            if s.get("stage") == "post_processing_symptom" or s.get("failed_output") and not s.get("delivered"):
                 yield SOURCE_PRIORITY["symptom-checker"], s["received_at"], s, DeliveryUnit(
                     visit_id, "symptom-checker", s.get("delivery_attempts", 0), "symptom")
 
@@ -296,7 +328,9 @@ class FakeStore:
 
     def mark_delivered(self, unit):
         record = self._delivery_record(unit)
-        record.update(delivery_claimed=False, stage="delivered_symptom" if unit.analysis == "symptom" else "delivered")
+        record.update(delivery_claimed=False, delivered=True)
+        if "failed_output" not in record:       # a failed visit stays failed
+            record["stage"] = "delivered_symptom" if unit.analysis == "symptom" else "delivered"
 
     def mark_delivery_failed_attempt(self, unit, error_type, retry_at):
         record = self._delivery_record(unit)
@@ -304,6 +338,7 @@ class FakeStore:
                       delivery_error=error_type, delivery_retry_at=retry_at)
         if retry_at is None:
             record["stage"] = "failed_symptom" if unit.analysis == "symptom" else "failed"
+            record["delivered"] = True      # given up: no more tries
 
     # ---- the symptom check and the rejected payloads ------------------------------------------
     def symptom_check_state(self, visit_id, patient_id):

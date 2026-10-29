@@ -9,6 +9,11 @@ ANTHROPIC_VERSION = "bedrock-2023-05-31"
 MAX_TOKENS = 2048
 
 
+def aws_record(record_id: str, model_input: Mapping[str, Any]) -> dict:
+    """The one shape AWS reads, in a batch line and in a single-visit file: ``recordId`` comes back in the answer."""
+    return {"recordId": record_id, "modelInput": model_input}
+
+
 def build_model_input(*, system_prompt: str, output_schema: Mapping[str, Any], processed: Mapping[str, Any]) -> dict:
     """What AWS sends to the model. Refuses an empty prompt or schema, so a missing prompt can never reach AWS."""
     if not system_prompt.strip() or not output_schema:

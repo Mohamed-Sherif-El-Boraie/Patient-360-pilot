@@ -64,3 +64,9 @@ def test_a_local_endpoint_can_be_given():
 def test_the_real_client_is_built_with_short_timeouts():
     client = build_s3_client("eu-west-1")
     assert client.meta.region_name == "eu-west-1" and client.meta.config.connect_timeout == 5
+
+
+def test_an_endpoint_name_means_the_bucket_goes_in_the_path_and_the_normal_address_keeps_the_default():
+    assert build_s3_client("eu-central-1", "https://bucket.vpce-x.s3.eu-central-1.vpce.amazonaws.com") \
+        .meta.config.s3 == {"addressing_style": "path"}
+    assert not build_s3_client("eu-central-1").meta.config.s3

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from patient360.domain.builders.ai_input import build_ai_input
@@ -12,18 +12,17 @@ from patient360.domain.builders.model_input import build_model_input
 from patient360.domain.builders.symptom_ai_input import build_symptom_ai_input
 from patient360.domain.common.blob_paths import blob_day, processed_path
 from patient360.domain.rules.classify import decide_tier, lane_for_tier
-from patient360.domain.rules.retrieval import select_retrieved_tests
 from patient360.flow.process import STUCK_AFTER, Processed, write_model_input
-from patient360.ports import BlobStore, Catalogue, VisitStore
+from patient360.ports import BlobStore, VisitStore
 from patient360.prompts import PROMPT_AND_SCHEMA_BY_SOURCE
 
 SOURCE = "symptom-checker"
 
 
 class SymptomProcessor:
-    def __init__(self, store: VisitStore, catalogue: Catalogue, blobs: BlobStore,
+    def __init__(self, store: VisitStore, blobs: BlobStore,
                  prompts: Mapping[str, tuple[str, dict[str, Any]]] = PROMPT_AND_SCHEMA_BY_SOURCE) -> None:
-        self._store, self._catalogue, self._blobs, self._prompts = store, catalogue, blobs, prompts
+        self._store, self._blobs, self._prompts = store, blobs, prompts
 
     def process(self, visit_id: int) -> Processed | None:
         """``None`` while the visit has no usable result: the symptom check needs it ("previous_ai_analysis"). A visit
@@ -37,17 +36,17 @@ class SymptomProcessor:
         built = build_ai_input(json.loads(visit.raw))
         tier = decide_tier(built.rows, len(built.descriptive_rows))
         lane = lane_for_tier(tier)
-        patient_data = build_symptom_ai_input(json.loads(symptom.raw), built.ai_json, visit_ai)
-        retrieved = select_retrieved_tests(built.rows, self._catalogue.parameter_categories(),
-                                           self._catalogue.tests_by_category(), built.performed_test_names,
-                                           include_normal=tier == "NORMAL")   # the symptoms may call for a test
-        if retrieved:
+        patient_data = build_symptom_ai_input(json.loads(symptom.raw), built.ai_json, visit_ai,
+                                              symptom.received_at.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"))
+        # The tests were already picked when the visit was processed: reuse them, do not pick again.
+        visit_data = json.loads(self._store.visit_model_input(visit_id)["messages"][0]["content"][0]["text"])
+        if retrieved := visit_data.get("retrieved_tests"):
             patient_data["retrieved_tests"] = retrieved
         system_prompt, output_schema = self._prompts[SOURCE]
         model_input = build_model_input(system_prompt=system_prompt, output_schema=output_schema,
                                         processed=patient_data)
         path = processed_path(SOURCE, lane, blob_day(symptom.received_at), visit.idempotency_key)
-        read_from = write_model_input(self._blobs, path, model_input)
+        read_from = write_model_input(self._blobs, path, visit.idempotency_key, model_input)
         self._store.save_symptom_processed(visit_id, model_input, read_from)
         return Processed(visit_id, tier, lane, read_from)
 

@@ -6,7 +6,7 @@ SECRET = "super-secret-value-123"
 GOOD = {
     "PGHOST": "db.example", "PGDATABASE": "patient360", "PGUSER": "app", "PGPASSWORD": "pg-password-xyz",
     "AZURE_STORAGE_ACCOUNT_URL": "https://acct.blob.core.windows.net",
-    "BLOB_INPUT_CONTAINER": "ai-input", "BLOB_OUTPUT_CONTAINER": "ai-output", "IDEMPOTENCY_KEY_SECRET": SECRET,
+    "BLOB_INPUT_CONTAINER": "ai-input", "IDEMPOTENCY_KEY_SECRET": SECRET,
 }
 
 
@@ -21,6 +21,23 @@ def test_all_required_settings_give_a_settings_object():
     assert settings.blob_input_container == "ai-input"
     assert settings.pg_port == 5432 and settings.pg_ssl_mode == "verify-full"
     assert settings.backend_connect_timeout_s == 5.0 and settings.backend_read_timeout_s == 30.0
+
+
+def test_the_raw_sas_url_replaces_the_account_and_the_container_and_is_never_shown():
+    url = "https://acct.blob.core.windows.net/p360-raw?sig=TOKEN-VALUE"
+    settings = load_settings(env(AZURE_STORAGE_ACCOUNT_URL=None, BLOB_INPUT_CONTAINER=None, BLOB_OUTPUT_URL_RAW=url,
+                                 BLOB_OUTPUT_URL_URGENT=url))
+    assert settings.blob_raw_url == url and settings.output_container_urls == (("urgent", url),)
+    assert "TOKEN-VALUE" not in repr(settings)
+    with pytest.raises(SettingsError, match="BLOB_INPUT_CONTAINER"):
+        load_settings(env(BLOB_INPUT_CONTAINER=None))
+
+
+def test_the_schema_is_optional_and_must_be_a_plain_lower_case_name():
+    assert load_settings(env()).pg_schema is None
+    assert load_settings(env(PGSCHEMA="p360")).pg_schema == "p360"
+    with pytest.raises(SettingsError, match="PGSCHEMA"):
+        load_settings(env(PGSCHEMA='p360"; DROP TABLE visits; --'))
 
 
 def test_production_is_the_default_and_logs_info_as_json():
@@ -134,8 +151,3 @@ def test_the_inbound_key_and_the_two_intervals():
         with pytest.raises(SettingsError, match=name):
             load_settings(env(**{name: "0"}))
 
-
-def test_the_event_queue_is_off_unless_its_name_is_given():
-    assert load_settings(env()).event_queue_name is None
-    assert load_settings(env(EVENT_QUEUE_NAME=" blob-events ")).event_queue_name == "blob-events"
-    assert load_settings(env(EVENT_QUEUE_NAME="  ")).event_queue_name is None

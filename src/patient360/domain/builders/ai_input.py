@@ -6,7 +6,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from patient360.domain.common.compat import frozendict
-from patient360.domain.payload.values import as_whole_number, html_to_plain_text, remove_empty_values
+from patient360.domain.payload.values import (
+    as_whole_number,
+    blank_to_none,
+    html_to_plain_text,
+    remove_empty_values,
+    tidy_number,
+)
 from patient360.domain.rules.logic import (
     alert_level_for,
     classify_qualitative,
@@ -33,13 +39,14 @@ class AiInput:
 def _history(points: Any, *, plain_text: bool = False) -> list[dict[str, Any]]:
     """History as the AI model gets it. ``plain_text``: the values are texts that may contain HTML tags."""
     return [{"history_date": p.get("history_date"),
-             "history_value": html_to_plain_text(p.get("history_value")) if plain_text else p.get("history_value")}
+             "history_value": html_to_plain_text(p.get("history_value")) if plain_text
+             else tidy_number(p.get("history_value"))}
             for p in points or []]
 
 
 def _result(test: Mapping[str, Any], raw: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     ref = raw.get("reference") or {}
-    value = raw.get("value")
+    value = tidy_number(raw.get("value"))
     low, high = reference_bounds(ref.get("low"), ref.get("high"))
     # The JSON shows the Backend's own low/high; a LIMS "not set" pair (0/0, -1/9999) is dropped.
     shown_low, shown_high = (ref.get("low"), ref.get("high")) if (low, high) != (None, None) else (None, None)
@@ -59,8 +66,8 @@ def _result(test: Mapping[str, Any], raw: Mapping[str, Any]) -> tuple[dict[str, 
         shown_critical = {
             "low": critical.get("low") if has_limits else None,
             "high": critical.get("high") if has_limits else None,
-            "range_text": critical.get("range_text"),
-        }
+            "range_text": None if str(critical.get("range_text")).strip() == "-" else critical.get("range_text"),
+        }   # a bare " - " is the Backend's empty placeholder; "6 - " (a low limit only) is kept
         direction = critical_breach(
             value, {"low": crit_low, "high": crit_high}, status=status, ref_low=low, ref_high=high
         )
@@ -85,8 +92,10 @@ def _result(test: Mapping[str, Any], raw: Mapping[str, Any]) -> tuple[dict[str, 
     row = {
         "test_id": test.get("test_id"), "test_name": test.get("test_name"),
         "parameter_id": raw.get("parameter_id"), "parameter_name": raw.get("parameter_name"),
-        "value": value, "status": status, "alert": alert,
+        "value": value, "status": status, "alert": alert, "unit": raw.get("unit"),
+        "result_date": raw.get("result_date"),
         "critical_direction": f"critical_{direction}" if direction else None,
+        "history": _history(raw.get("history")),
     }
     return out, row
 
@@ -94,14 +103,18 @@ def _result(test: Mapping[str, Any], raw: Mapping[str, Any]) -> tuple[dict[str, 
 def build_ai_input(raw: Mapping[str, Any]) -> AiInput:
     """Build the JSON for the AI model from a validated visit: remove keys (ids, company), add keys (alert, direction,
     mapped flag, age in days), keep every value as sent."""
+    raw = blank_to_none(raw)   # the database keeps the text as received: a blank is "no value" here too
     rows: list[dict[str, Any]] = []
     tests = []
     for test in raw.get("tests") or []:
         results = []
         for item in test.get("results") or []:
             out, row = _result(test, item)
-            results.append(out)
+            if out["value"] is not None:   # a result with no value stays in the Backend rows, not in the AI input
+                results.append(out)
             rows.append(row)
+        if not results and test.get("results"):
+            continue
         tests.append({"test_name": test.get("test_name"), "test_remark": test.get("test_remark"), "results": results})
     descriptive = [
         {"test_name": d.get("test_name"), "result_date": d.get("result_date"),

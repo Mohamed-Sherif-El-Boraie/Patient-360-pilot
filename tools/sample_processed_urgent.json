@@ -1,0 +1,201 @@
+{
+  "anthropic_version": "bedrock-2023-05-31",
+  "max_tokens": 2048,
+  "system": [
+    {
+      "type": "text",
+      "text": "# ROLE\nClinical decision-support assistant for IDH Laboratory.\n\n# TASK\nUsing one patient's lab results: \n(1) write a clinical summary and a patient-friendly summary;\n(2) recommend follow-up tests from `retrieved_tests` only when clinically justified.\n\n# INPUT (absent key = no value)\n- source: urgent\n- patient: {age_days, sex}. age_days is the age in whole days.\n- tests[]: {test_name, test_remark, results[]}\n  - results[] :\n    - parameter_name, result_date, unit, parameter_remark\n    - value: number if whole, else text as stored\n    - reference: {low, high, range}. Official lab ranges. range is the printed form (may include extra wording; for qualitative tests it is the expected result, e.g. \"Negative\")\n    - lab_flag: analyser flag (e.g. H/L), cross-check only\n    - alert: MEDICAL_ATTENTION | CRITICAL. MEDICAL_ATTENTION = outside the reference range (high, low or abnormal) without reaching a critical limit; CRITICAL = reached a critical limit. Absent = within range or not judged\n    - critical: {low, high, range_text, direction}. direction (critical_high | critical_low) is present only if the limit is crossed\n    - history[]: {history_date, history_value}. Earlier results within 1 year, oldest first, excluding the current one\n- visit_answer_list[]: {preparation_name (question), answer}. Registration answers. Use them to interpret results.\n- descriptive_results[]: {test_name, result_date, text, history[]}. Narrative results; include them in the interpretation.\n- retrieved_tests[]: {test_name, test_description}. The only tests you may recommend.\n\n# RULES: summary ANALYSIS\n- Precedence when fields disagree: alert > lab_flag.\n- Reference ranges are official: never generate, estimate or question them.\n- alert is authoritative: you may explain it, never change, upgrade, downgrade or invent one.\n- If No reference range: say the result was recorded without a reference range and cannot be classified. Do not call it normal or infer a range.\n- Explain the clinical significance of abnormal findings. Compare current vs previous/history values and describe the trend only when earlier values exist.\n- Use test_remark, parameter_remark and descriptive_results when relevant.\n- A negative antibody/antigen screen does not exclude infection or exposure. Write \"this screen did not detect antibodies to X\", never \"no evidence of past or current X infection\".\n- Do not diagnose or advise treatment or medication changes. Use cautious wording (\"may suggest\").\n\n# RULES: critical_alerts\n- Include only parameters with alert CRITICAL or a critical.direction.\n- If none, return [].\n\n# RULES: simple_summary\n- 1-2 short sentences in everyday words a 10-year-old understands; much simpler than summary.\n- Calm tone. Mention abnormal/critical findings only as needed; do not exaggerate risk or hide necessary urgency.\n- Add or change no facts, diagnoses, values, ranges, warnings or advice.\n\n# RULES: RECOMMENDATIONS\n- Choose only from `retrieved_tests`; test_name must be the exact catalogue name.\n- Base choices on age, sex, visit answers, result patterns and comorbidities.\n- Max 5, ordered by clinical importance. Never recommend a test already done (same test or same parameter in `tests`/`descriptive_results`).\n- If none qualifies return [].\n- priority: \"urgent\" if linked to a CRITICAL value or needs prompt action; otherwise \"important\".\n- reason: 1-2 sentences tied to the findings.\n- timing: concrete (e.g. \"within 1-2 weeks\").\n- guideline: name a well-established guideline only if confident (e.g. ADA, KDIGO); otherwise \"General clinical practice\". Never invent citations.\n- advisory.level: \"seek_care_promptly\" for critical/urgent situations; \"discuss_with_doctor\" for abnormal findings needing clinician review; \"none\" otherwise. message: one short sentence.\n- note: one sentence on the recommendations overall; if recommendations is [], say no additional tests are recommended.\n"
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"source\": \"urgent\", \"patient\": {\"age_days\": 19200, \"sex\": \"Male\"}, \"tests\": [{\"test_name\": \"Fasting Blood Glucose\", \"results\": [{\"parameter_name\": \"Fasting Blood Glucose\", \"result_date\": \"2026-09-29\", \"value\": \"95\", \"unit\": \"mg/dL\", \"reference\": {\"low\": \"70\", \"high\": \"110\", \"range\": \"70 - 110\"}}]}, {\"test_name\": \"Glucose After 2 Hours\", \"results\": [{\"parameter_name\": \"Glucose After 2 Hours\", \"result_date\": \"2026-09-29\", \"value\": \"168\", \"unit\": \"mg/dL\", \"reference\": {\"low\": \"70\", \"high\": \"139\", \"range\": \"Normal: 70 - 139\\r\\nPrediabetes: 140 - 199\\r\\nDiabetes: More than 200\"}, \"alert\": \"MEDICAL_ATTENTION\", \"lab_flag\": \"High\", \"parameter_remark\": \"Fructosamine and HBA1c are recommended.\", \"history\": [{\"history_date\": \"2026-02-11\", \"history_value\": \"149\"}]}]}], \"visit_answer_list\": [{\"preparation_name\": \"عدد ساعات الصيام 6-8 ساعات\", \"answer\": \"10\"}, {\"preparation_name\": \"مريض سكر - علاج سكر -  اعراض سكر\", \"answer\": \"No\"}], \"retrieved_tests\": [{\"test_name\": \"Haemoglobin A1C\", \"test_description\": \"Shows the average blood sugar of the last 2 to 3 months\"}, {\"test_name\": \"C-Peptide (Fasting)\", \"test_description\": \"Shows how much insulin the body makes\"}]}"
+        }
+      ]
+    }
+  ],
+  "output_config": {
+    "format": {
+      "type": "json_schema",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en"
+            ],
+            "additionalProperties": false
+          },
+          "simple_summary": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en"
+            ],
+            "additionalProperties": false
+          },
+          "critical_alerts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "en": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "en"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "note": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en"
+            ],
+            "additionalProperties": false
+          },
+          "recommendations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "test_name": {
+                  "type": "string"
+                },
+                "priority": {
+                  "type": "object",
+                  "properties": {
+                    "en": {
+                      "type": "string",
+                      "enum": [
+                        "important",
+                        "urgent"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "en"
+                  ],
+                  "additionalProperties": false
+                },
+                "reason": {
+                  "type": "object",
+                  "properties": {
+                    "en": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "en"
+                  ],
+                  "additionalProperties": false
+                },
+                "timing": {
+                  "type": "object",
+                  "properties": {
+                    "en": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "en"
+                  ],
+                  "additionalProperties": false
+                },
+                "guideline": {
+                  "type": "object",
+                  "properties": {
+                    "en": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "en"
+                  ],
+                  "additionalProperties": false
+                },
+                "advisory": {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string",
+                          "enum": [
+                            "none",
+                            "discuss_with_doctor",
+                            "seek_care_promptly"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "en"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "message": {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "level",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "test_name",
+                "priority",
+                "reason",
+                "timing",
+                "guideline",
+                "advisory"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "summary",
+          "simple_summary",
+          "critical_alerts",
+          "note",
+          "recommendations"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}

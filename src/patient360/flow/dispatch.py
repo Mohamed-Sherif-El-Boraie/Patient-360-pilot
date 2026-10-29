@@ -9,6 +9,7 @@ from typing import Literal
 
 import structlog
 
+from patient360.domain.builders.model_input import aws_record
 from patient360.domain.common.blob_paths import batch_jsonl_path, blob_day, processed_path, s3_processed_key
 from patient360.domain.rules.dispatch import retry_after
 from patient360.flow.batching import build_jsonl
@@ -75,4 +76,5 @@ class Dispatcher:
     def _rebuild(self, unit: WorkUnit) -> bytes:
         if unit.batch_id:
             return build_jsonl(self._store.batch_model_inputs(unit.batch_id)).encode()
-        return json.dumps(self._store.model_input_of(unit), ensure_ascii=False).encode()
+        record = aws_record(unit.idempotency_key, self._store.model_input_of(unit))   # PostgreSQL holds it bare
+        return json.dumps(record, ensure_ascii=False).encode()

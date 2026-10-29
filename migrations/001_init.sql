@@ -103,7 +103,7 @@ CREATE TABLE batches (                                   -- one batch of 100 vis
 CREATE TABLE visits (                                    -- ONE row per visit; the JSON is in record_payloads
   visit_id            bigint PRIMARY KEY,
   patient_id          bigint NOT NULL,
-  idempotency_key     text NOT NULL UNIQUE,              -- HMAC(patient|visit): our own key (blob names, internal dedupe)
+  idempotency_key     text NOT NULL UNIQUE,              -- HMAC(patient|visit|company): our own key (blob names, internal dedupe)
   source_id           int NOT NULL REFERENCES sources (source_id) CHECK (source_id IN (1, 2, 4)),   -- the visit's own source
   company_id          int REFERENCES companies (company_id),
   age_days            int,                                 -- age at the visit, in days
@@ -139,11 +139,10 @@ CREATE TABLE record_payloads (
   kind       text NOT NULL CHECK (kind IN ('raw','processed','output_internal','output_public')),
   version    int  NOT NULL DEFAULT 1,                    -- +1 when the same kind is produced again (re-run), history is kept
   body       jsonb NOT NULL CHECK (jsonb_typeof(body) = 'object'),   -- searchable, NOT byte-exact
-  raw_bytes  bytea,                                      -- exactly what the Backend sent (kind raw only)
+  raw_bytes  bytea NOT NULL,                             -- the JSON text as it is: what the Backend sent (raw), what AWS sent (output_internal), what we built or send (the others)
   sha256     text NOT NULL,                              -- fingerprint of the stored JSON, to compare with the Blob copy
   created_at timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (visit_id, analysis, kind, version),
-  CHECK ((kind = 'raw') = (raw_bytes IS NOT NULL))
+  PRIMARY KEY (visit_id, analysis, kind, version)
 );
 CREATE VIEW record_payloads_current AS
   SELECT DISTINCT ON (visit_id, analysis, kind) *
@@ -204,6 +203,7 @@ CREATE TABLE lab_result_history (                        -- earlier values of th
   visit_id         bigint NOT NULL,
   test_id          int    NOT NULL,
   parameter_id     int    NOT NULL,
+  company_id       int    NOT NULL REFERENCES companies (company_id),   -- the company this history belongs to (the visit's)
   history_visit_id bigint NOT NULL,                      -- the earlier visit (it may not be in our database)
   history_date     text,
   history_value    text,
@@ -223,6 +223,7 @@ CREATE TABLE descriptive_results (                       -- tests that are text,
 CREATE TABLE descriptive_result_history (
   visit_id         bigint NOT NULL,
   test_id          int    NOT NULL,
+  company_id       int    NOT NULL REFERENCES companies (company_id),   -- the company this history belongs to (the visit's)
   history_visit_id bigint NOT NULL,
   history_date     text,
   history_value    text,
