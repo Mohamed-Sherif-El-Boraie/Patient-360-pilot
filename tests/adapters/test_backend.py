@@ -72,7 +72,7 @@ def test_exact_requests():
     make(fake).post_result(BODY)
     login, post = fake.requests
     assert str(login.url) == "https://wrapper.test/API/v2/Auth/Callerlogin" and login.method == "POST"
-    assert json.loads(login.content) == {"username": "user1", "password": "PASSWORD-SECRET-456"}
+    assert json.loads(login.content) == {"username": "user1", "password": "PASSWORD-SECRET-456", "companyid": "10"}
     callers = {"CallerSource": "SRC", "CallerSourceKey": "KEY-SECRET-123", "CallerUserName": "CALLER"}
     for request in (login, post):
         assert {k: request.headers[k] for k in callers} == callers

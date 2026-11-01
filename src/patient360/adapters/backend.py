@@ -16,6 +16,7 @@ log = structlog.get_logger()
 
 LOGIN_PATH = "/API/v2/Auth/Callerlogin"
 RESULT_PATH = "/API/v2/Patient360/Patient360011"
+LOGIN_COMPANY_ID = "10"           # the login always names company 10, also for company 15 (text, as the wrapper wants)
 SUCCESS_CODE = -1                 # the Backend's own success marker in ``response.code``
 DEFAULT_TOKEN_MINUTES = 480       # used only if the login reply does not say
 RENEW_BEFORE_S = 10 * 60          # log in again when less than this is left of the token's life
@@ -69,7 +70,8 @@ class WrapperBackend:
         self._token = None
         try:
             response = self._client.post(LOGIN_PATH, headers=self._caller_headers(),
-                                         json={"username": s.username, "password": s.password})
+                                         json={"username": s.username, "password": s.password,
+                                               "companyid": LOGIN_COMPANY_ID})
         except httpx.HTTPError as error:
             self._login_failed(f"could not reach the wrapper ({type(error).__name__})")
         status = response.status_code
