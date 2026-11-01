@@ -1,0 +1,946 @@
+{
+  "source": 4,
+  "patient_id": 2141929864,
+  "visit_id": 2075148944,
+  "company_id": 10,
+  "patient": {
+    "age_days": "21452",
+    "sex": 2
+  },
+  "tests": [
+    {
+      "test_id": 35,
+      "test_name": "K+",
+      "test_remark": null,
+      "results": [
+        {
+          "parameter_id": 59,
+          "parameter_name": "K+",
+          "result_date": "2026-09-25",
+          "value": "3.5",
+          "unit": "mmol/L",
+          "reference": {
+            "low": "3.5",
+            "high": "5.5",
+            "range": "3.5 - 5.5"
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075116362,
+              "history_date": "2026-09-24",
+              "history_value": "3 .1"
+            },
+            {
+              "history_visit_id": 2075058314,
+              "history_date": "2026-09-22",
+              "history_value": "3.8"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "test_id": 38,
+      "test_name": "Na",
+      "test_remark": null,
+      "results": [
+        {
+          "parameter_id": 58,
+          "parameter_name": "Na+",
+          "result_date": "2026-09-25",
+          "value": "135.12",
+          "unit": "mmol/L",
+          "reference": {
+            "low": "136",
+            "high": "145",
+            "range": "136 - 145"
+          },
+          "lab_flag": "L",
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075116362,
+              "history_date": "2026-09-24",
+              "history_value": "135.88"
+            },
+            {
+              "history_visit_id": 2075058314,
+              "history_date": "2026-09-22",
+              "history_value": "131"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "test_id": 231,
+      "test_name": "Complete Blood Picture (CBC)",
+      "test_remark": null,
+      "results": [
+        {
+          "parameter_id": 285,
+          "parameter_name": "Haemoglobin",
+          "result_date": "2026-09-25",
+          "value": "7.6",
+          "unit": "g/dL",
+          "reference": {
+            "low": "11.5",
+            "high": "15.5",
+            "range": "11.5 - 15.5"
+          },
+          "lab_flag": "L",
+          "critical": {
+            "low": "6",
+            "high": null,
+            "range_text": "< 6"
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075116362,
+              "history_date": "2026-09-24",
+              "history_value": "6.6"
+            },
+            {
+              "history_visit_id": 2075058314,
+              "history_date": "2026-09-22",
+              "history_value": "5.8"
+            }
+          ]
+        },
+        {
+          "parameter_id": 287,
+          "parameter_name": "Haematocrit (PCV)",
+          "result_date": "2026-09-25",
+          "value": "21.8",
+          "unit": "%",
+          "reference": {
+            "low": "36",
+            "high": "45",
+            "range": "36 - 45"
+          },
+          "lab_flag": "L",
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075116362,
+              "history_date": "2026-09-24",
+              "history_value": "19.6"
+            },
+            {
+              "history_visit_id": 2075058314,
+              "history_date": "2026-09-22",
+              "history_value": "16.8"
+            }
+          ]
+        },
+        {
+          "parameter_id": 286,
+          "parameter_name": "RBCs Count",
+          "result_date": "2026-09-25",
+          "value": "2.65",
+          "unit": "Millions / cmm",
+          "reference": {
+            "low": "4",
+            "high": "5.2",
+            "range": "4 - 5.2"
+          },
+          "lab_flag": "L",
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075116362,
+              "history_date": "2026-09-24",
+              "history_value": "2.34"
+            },
+            {
+              "history_visit_id": 2075058314,
+              "history_date": "2026-09-22",
+              "history_value": "2.07"
+            }
+          ]
+        },
+        {
+          "parameter_id": 288,
+          "parameter_name": "Mean Cell Volume (MCV)",
+          "result_date": "2026-09-25",
+          "value": "82.4",
+          "unit": "fl",
+          "reference": {
+            "low": "80",
+            "high": "100",
+            "range": "80 - 100"
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075116362,
+              "history_date": "2026-09-24",
+              "history_value": "83.8"
+            },
+            {
+              "history_visit_id": 2075058314,
+              "history_date": "2026-09-22",
+              "history_value": "81.0"
+            }
+          ]
+        },
+        {
+          "parameter_id": 289,
+          "parameter_name": "Mean Cell Haemoglobin (MCH)",
+          "result_date": "2026-09-25",
+          "value": "28.6",
+          "unit": "pg",
+          "reference": {
+            "low": "27",
+            "high": "33",
+            "range": "27 - 33"
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075116362,
+              "history_date": "2026-09-24",
+              "history_value": "28.3"
+            },
+            {
+              "history_visit_id": 2075058314,
+              "history_date": "2026-09-22",
+              "history_value": "27.7"
+            }
+          ]
+        },
+        {
+          "parameter_id": 290,
+          "parameter_name": "Mean Cell Haemoglobin Concentration (MCHC)",
+          "result_date": "2026-09-25",
+          "value": "34.7",
+          "unit": "g/dL",
+          "reference": {
+            "low": "31",
+            "high": "37",
+            "range": "31 - 37"
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075116362,
+              "history_date": "2026-09-24",
+              "history_value": "33.8"
+            },
+            {
+              "history_visit_id": 2075058314,
+              "history_date": "2026-09-22",
+              "history_value": "34.3"
+            }
+          ]
+        },
+        {
+          "parameter_id": 291,
+          "parameter_name": "Red Cell Distribution Width (RDW)",
+          "result_date": "2026-09-25",
+          "value": "13.7",
+          "unit": "%",
+          "reference": {
+            "low": "11.5",
+            "high": "15",
+            "range": "11.5 - 15"
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075116362,
+              "history_date": "2026-09-24",
+              "history_value": "14.0"
+            },
+            {
+              "history_visit_id": 2075058314,
+              "history_date": "2026-09-22",
+              "history_value": "13.7"
+            }
+          ]
+        },
+        {
+          "parameter_id": 299,
+          "parameter_name": "Platelet Count",
+          "result_date": "2026-09-25",
+          "value": "24",
+          "unit": "Thousands / cmm",
+          "reference": {
+            "low": "150",
+            "high": "450",
+            "range": "150 - 450"
+          },
+          "lab_flag": "L",
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075116362,
+              "history_date": "2026-09-24",
+              "history_value": "9"
+            },
+            {
+              "history_visit_id": 2075058314,
+              "history_date": "2026-09-22",
+              "history_value": "4"
+            }
+          ]
+        },
+        {
+          "parameter_id": 292,
+          "parameter_name": "Total Leucocytic Count",
+          "result_date": "2026-09-25",
+          "value": "0.3",
+          "unit": "Thousands / cmm",
+          "reference": {
+            "low": "4",
+            "high": "11",
+            "range": "4 - 11"
+          },
+          "lab_flag": "L",
+          "critical": {
+            "low": "1",
+            "high": null,
+            "range_text": "< 1"
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075116362,
+              "history_date": "2026-09-24",
+              "history_value": "0.30"
+            },
+            {
+              "history_visit_id": 2075058314,
+              "history_date": "2026-09-22",
+              "history_value": "0.70"
+            }
+          ]
+        },
+        {
+          "parameter_id": 1562,
+          "parameter_name": "Neutrophils %",
+          "result_date": "2026-09-25",
+          "value": "48.6",
+          "unit": "%",
+          "reference": {
+            "low": "40",
+            "high": "75",
+            "range": "40 - 75"
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075116362,
+              "history_date": "2026-09-24",
+              "history_value": "29.1"
+            },
+            {
+              "history_visit_id": 2075058314,
+              "history_date": "2026-09-22",
+              "history_value": "20.2"
+            }
+          ]
+        },
+        {
+          "parameter_id": 1563,
+          "parameter_name": "Staff %",
+          "result_date": "2026-09-25",
+          "value": null,
+          "unit": "%",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        },
+        {
+          "parameter_id": 1564,
+          "parameter_name": "Segmented %",
+          "result_date": "2026-09-25",
+          "value": null,
+          "unit": "%",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        },
+        {
+          "parameter_id": 1561,
+          "parameter_name": "Lymphocytes %",
+          "result_date": "2026-09-25",
+          "value": "34.5",
+          "unit": "%",
+          "reference": {
+            "low": "20",
+            "high": "45",
+            "range": "20 - 45"
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075116362,
+              "history_date": "2026-09-24",
+              "history_value": "51.2"
+            },
+            {
+              "history_visit_id": 2075058314,
+              "history_date": "2026-09-22",
+              "history_value": "68.9"
+            }
+          ]
+        },
+        {
+          "parameter_id": 1565,
+          "parameter_name": "Monocytes %",
+          "result_date": "2026-09-25",
+          "value": "10.0",
+          "unit": "%",
+          "reference": {
+            "low": "1",
+            "high": "10",
+            "range": "1 - 10"
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075116362,
+              "history_date": "2026-09-24",
+              "history_value": "10.0"
+            },
+            {
+              "history_visit_id": 2075058314,
+              "history_date": "2026-09-22",
+              "history_value": "9.5"
+            }
+          ]
+        },
+        {
+          "parameter_id": 1566,
+          "parameter_name": "Eosinophils %",
+          "result_date": "2026-09-25",
+          "value": "6.5",
+          "unit": "%",
+          "reference": {
+            "low": "1",
+            "high": "6",
+            "range": "1 - 6"
+          },
+          "lab_flag": "H",
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075116362,
+              "history_date": "2026-09-24",
+              "history_value": "9.0"
+            },
+            {
+              "history_visit_id": 2075058314,
+              "history_date": "2026-09-22",
+              "history_value": "1.0"
+            }
+          ]
+        },
+        {
+          "parameter_id": 1567,
+          "parameter_name": "Basophils %",
+          "result_date": "2026-09-25",
+          "value": "0.40",
+          "unit": "%",
+          "reference": {
+            "low": "0",
+            "high": "1",
+            "range": "0 - 1"
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075116362,
+              "history_date": "2026-09-24",
+              "history_value": "0.70"
+            },
+            {
+              "history_visit_id": 2075058314,
+              "history_date": "2026-09-22",
+              "history_value": "0.40"
+            }
+          ]
+        },
+        {
+          "parameter_id": 295,
+          "parameter_name": "Neutrophils (Absolute Count)",
+          "result_date": "2026-09-25",
+          "value": "0.15",
+          "unit": "x10^9/L",
+          "reference": {
+            "low": "2",
+            "high": "7",
+            "range": "2 - 7"
+          },
+          "lab_flag": "L",
+          "critical": {
+            "low": "0.5",
+            "high": null,
+            "range_text": "< 0.5"
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075116362,
+              "history_date": "2026-09-24",
+              "history_value": "0.09"
+            },
+            {
+              "history_visit_id": 2075058314,
+              "history_date": "2026-09-22",
+              "history_value": "0.14"
+            }
+          ]
+        },
+        {
+          "parameter_id": 1559,
+          "parameter_name": "Staff (Absolute Count)",
+          "result_date": "2026-09-25",
+          "value": null,
+          "unit": "x10^9",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        },
+        {
+          "parameter_id": 1560,
+          "parameter_name": "Segmented (Absolute Count)",
+          "result_date": "2026-09-25",
+          "value": null,
+          "unit": "x10^9",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        },
+        {
+          "parameter_id": 293,
+          "parameter_name": "Lymphocytes (Absolute Count)",
+          "result_date": "2026-09-25",
+          "value": "0.1",
+          "unit": "x10^9/L",
+          "reference": {
+            "low": "1",
+            "high": "4.8",
+            "range": "1 - 4.8"
+          },
+          "lab_flag": "L",
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075116362,
+              "history_date": "2026-09-24",
+              "history_value": "0.15"
+            },
+            {
+              "history_visit_id": 2075058314,
+              "history_date": "2026-09-22",
+              "history_value": "0.48"
+            }
+          ]
+        },
+        {
+          "parameter_id": 294,
+          "parameter_name": "Monocytes (Absolute Count)",
+          "result_date": "2026-09-25",
+          "value": "0.03",
+          "unit": "x10^9/L",
+          "reference": {
+            "low": "0.2",
+            "high": "1",
+            "range": "0.2 - 1"
+          },
+          "lab_flag": "L",
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075116362,
+              "history_date": "2026-09-24",
+              "history_value": "0.03"
+            },
+            {
+              "history_visit_id": 2075058314,
+              "history_date": "2026-09-22",
+              "history_value": "0.07"
+            }
+          ]
+        },
+        {
+          "parameter_id": 296,
+          "parameter_name": "Eosinophils (Absolute Count)",
+          "result_date": "2026-09-25",
+          "value": "0.02",
+          "unit": "x10^9/L",
+          "reference": {
+            "low": "0.1",
+            "high": "0.45",
+            "range": "0.1 - 0.45"
+          },
+          "lab_flag": "L",
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075116362,
+              "history_date": "2026-09-24",
+              "history_value": "0.03"
+            },
+            {
+              "history_visit_id": 2075058314,
+              "history_date": "2026-09-22",
+              "history_value": "0.01"
+            }
+          ]
+        },
+        {
+          "parameter_id": 297,
+          "parameter_name": "Basophils (Absolute Count)",
+          "result_date": "2026-09-25",
+          "value": "0",
+          "unit": "x10^9/L",
+          "reference": {
+            "low": "0",
+            "high": "0.1",
+            "range": "0 - 0.1"
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075116362,
+              "history_date": "2026-09-24",
+              "history_value": "0"
+            },
+            {
+              "history_visit_id": 2075058314,
+              "history_date": "2026-09-22",
+              "history_value": "0"
+            }
+          ]
+        },
+        {
+          "parameter_id": 1575,
+          "parameter_name": "Blast Cells %",
+          "result_date": "2026-09-25",
+          "value": null,
+          "unit": "%",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        },
+        {
+          "parameter_id": 1576,
+          "parameter_name": "Promyelocytes %",
+          "result_date": "2026-09-25",
+          "value": null,
+          "unit": "%",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        },
+        {
+          "parameter_id": 1577,
+          "parameter_name": "Myelocytes %",
+          "result_date": "2026-09-25",
+          "value": null,
+          "unit": "%",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        },
+        {
+          "parameter_id": 1578,
+          "parameter_name": "Metamyelocytes %",
+          "result_date": "2026-09-25",
+          "value": null,
+          "unit": "%",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        },
+        {
+          "parameter_id": 1579,
+          "parameter_name": "Variant Immature Cells %",
+          "result_date": "2026-09-25",
+          "value": null,
+          "unit": "%",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        },
+        {
+          "parameter_id": 1580,
+          "parameter_name": "Variant Lymphoid Cells %",
+          "result_date": "2026-09-25",
+          "value": null,
+          "unit": "%",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        },
+        {
+          "parameter_id": 1582,
+          "parameter_name": "Prolymphocytes %",
+          "result_date": "2026-09-25",
+          "value": null,
+          "unit": "%",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        },
+        {
+          "parameter_id": 1581,
+          "parameter_name": "Normoblasts %",
+          "result_date": "2026-09-25",
+          "value": null,
+          "unit": "/ 100 WBCs",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        },
+        {
+          "parameter_id": 1484,
+          "parameter_name": "Comment (C.B.C.) :",
+          "result_date": "2026-09-25",
+          "value": null,
+          "unit": null,
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        }
+      ]
+    }
+  ],
+  "descriptive_results": [],
+  "visit_answer_list": []
+}

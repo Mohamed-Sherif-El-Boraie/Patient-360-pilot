@@ -57,7 +57,7 @@ def _batch_rules(source: str, batch_id: str | None) -> None:
 def raw_path(source: str, day: date, idempotency_key: str) -> str:
     """Azure Blob 1: the JSON exactly as the Backend sent it."""
     _check(source)
-    return f"raw/{source}/{_day(day)}/{_key(idempotency_key)}.json"
+    return f"{source}/{_day(day)}/{_key(idempotency_key)}.json"
 
 
 def rejected_path(source: str, day: date, visit_id: int) -> str:
@@ -65,12 +65,12 @@ def rejected_path(source: str, day: date, visit_id: int) -> str:
     _check(source)
     if not isinstance(visit_id, int) or isinstance(visit_id, bool) or visit_id < 1:
         raise ValueError("visit_id must be a positive whole number")
-    return f"raw/_rejected/{source}/{_day(day)}/{visit_id}.json"
+    return f"_rejected/{source}/{_day(day)}/{visit_id}.json"
 
 
 def rejected_unknown_path(day: date, raw_sha256_hex: str) -> str:
     """Azure Blob 1: a rejected payload with no usable source or visit id; named by a hash of its bytes."""
-    return f"raw/_rejected/unknown/{_day(day)}/unknown_{_name(raw_sha256_hex[:16], 'hash')}.json"
+    return f"_rejected/unknown/{_day(day)}/unknown_{_name(raw_sha256_hex[:16], 'hash')}.json"
 
 
 def processed_path(source: str, lane: str, day: date, idempotency_key: str, batch_id: str | None = None) -> str:
@@ -154,13 +154,12 @@ def parse_output_path(source: str, path: str) -> MergedOutput | None:
 def s3_processed_key(
     source: str, lane: str, day: date, idempotency_key: str | None, batch_id: str | None = None,
 ) -> str:
-    """The key inside the S3 bucket of this source (one bucket per source), the layout the AWS team gave:
-    ``processed/<lane>/<yyyy>/<MM>/<dd>/00-input/<idempotency_key>.json`` for a visit, and
-    ``processed/<lane>/<yyyy>/<MM>/<dd>/<batch_id>/00-input/<batch_id>.jsonl`` for a batch (it has a folder of its own).
-    AWS adds its own folders next to ``00-input``."""
+    """The key inside the S3 bucket of this source (one bucket per source), the layout of Buckets-Structure.md:
+    ``<lane>/<yyyy>/<MM>/<dd>/<idempotency_key>/01-input.json`` for a visit, and
+    ``<lane>/<yyyy>/<MM>/<dd>/<batch_id>/01-input.jsonl`` for a batch. The only file we ever upload is ``01-input``
+    (the IAM policy allows nothing else); AWS writes its own phase files next to it."""
     _check(source, lane)
     _batch_rules(source, batch_id)
     if batch_id is not None:
-        name = _name(batch_id, "batch_id")
-        return f"processed/{lane}/{_day(day)}/{name}/00-input/{name}.jsonl"
-    return f"processed/{lane}/{_day(day)}/00-input/{_key(idempotency_key)}.json"
+        return f"{lane}/{_day(day)}/{_name(batch_id, 'batch_id')}/01-input.jsonl"
+    return f"{lane}/{_day(day)}/{_key(idempotency_key)}/01-input.json"

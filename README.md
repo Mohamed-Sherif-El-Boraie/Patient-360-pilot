@@ -28,7 +28,7 @@ flowchart TD
     G --> H["Process the visit<br/>status and alert per result<br/>tier and lane<br/>retrieved tests<br/>Bedrock request"]
     H --> I[("Blob 1 processed file<br/>+ PostgreSQL")]
     H --> J{"Source is batch?"}
-    J -- "yes" --> K["Batch trigger<br/>100 visits of one lane = one batch<br/>one file per visit + one JSONL"]
+    J -- "yes" --> K["Batch trigger<br/>120 visits of one lane = one batch<br/>one file per visit + one JSONL"]
     J -- "no" --> L
     K --> L["Dispatcher, every 5 seconds<br/>order: urgent, symptom-checker,<br/>on-demand, batch"]
     L --> M[("S3 bucket of the source")]
@@ -93,7 +93,7 @@ symptom check is accepted and waits for it.
 
 | Place | What is in it |
 |---|---|
-| Blob 1 (`BLOB_INPUT_CONTAINER`) | `raw/` the JSON as received, `raw/_rejected/` JSON that failed the checks, `processed/` the Bedrock request per visit, batch folders and their JSONL files |
+| Blob 1 (`BLOB_INPUT_CONTAINER`) | `<source>/<yyyy>/<MM>/<dd>/` the JSON as received, `_rejected/` JSON that failed the checks, `processed/` the Bedrock request per visit, batch folders and their JSONL files |
 | S3 (one bucket per source) | The file AWS starts from: one JSON per visit, or the JSONL of a batch |
 | Blob 2 (four output containers, owned by the AWS side and the Function app) | The final English and Arabic answers written by AWS, one container per source. This app does not read them: the Function app does |
 | PostgreSQL | Everything as rows: visits, results, the raw and processed JSON versions, AI answers, work queue, batches (see `migrations/001_init.sql`) |
@@ -104,7 +104,7 @@ AWS writes every final answer into one of four Azure Blob output containers (one
 file and writes a `Microsoft.Storage.BlobCreated` event into a storage queue per container. The Function app reads the
 queues, pulls the file and posts each record to this app. This app never reads the queues, the output containers or S3.
 
-`POST /api/v1/patient360/ai-results` (header `X-API-Key`, like the other routes):
+`POST /api/v1/patient360/ai-results` (header `X-API-Key`; this is the only route that checks it, the two visit routes rely on the network):
 
 | Header | Meaning |
 |---|---|
@@ -357,7 +357,7 @@ The one place that builds every file path in Azure Blob and S3 (folders by sourc
 | `merged_output_jsonl_path(lane, day, batch_id)` | Path of the answers of a whole batch inside the batch output container: `<lane>-jsonls/<yyyy>/<MM>/<dd>/<batch_id>/05-output-merged.jsonl`. | A path text. |
 | `MergedOutput` | Describes an answer file read back from its path: kind (visit, batch_jsonl or batch_visit), source, lane, day, key, batch id. | an object with those fields |
 | `parse_output_path(source, path)` | Works out what a path inside the output container of `source` is. Any other file (other phase files, logs, failures) is not ours; in the batch container a visit file is a copy of a JSONL line (`batch_visit`). | A `MergedOutput`, or None for any other file or a fake date. |
-| `s3_processed_key(source, lane, day, idempotency_key, batch_id=None)` | Builds the file key inside the S3 bucket. A batch uses its batch file and has no idempotency key. | A key text. |
+| `s3_processed_key(source, lane, day, idempotency_key, batch_id=None)` | Builds the file key inside the S3 bucket: `<lane>/<yyyy>/<MM>/<dd>/<idempotency_key>/01-input.json`, and for a batch `<lane>/<yyyy>/<MM>/<dd>/<batch_id>/01-input.jsonl`. `01-input` is the only file we upload (the IAM policy allows nothing else). A batch has no idempotency key. | A key text. |
 
 ### `domain/common/compat.py`
 Makes `frozendict` (a dictionary that cannot be changed) work on older Python versions.
@@ -594,7 +594,7 @@ Turns a received visit into the full request for the AI model, picks its urgency
 | `process_stuck_visits(store, processor, now)` | Every 5 minutes, processes visits that were accepted but never processed. Safe to run twice. | A list of Processed objects. |
 
 ### `flow/batching.py`
-Groups waiting visits into full batches (100 by default) per lane and writes the batch files.
+Groups waiting visits into full batches (120 by default) per lane and writes the batch files.
 
 | Function | What it does | Output |
 |---|---|---|
@@ -665,10 +665,10 @@ The web application: receives visits, receives the AI answers the Function app p
 | `_process(services, accepted)` | (helper) Runs after the 202: processes the visit (or symptom check), and starts batching for batch visits. Never crashes. | Nothing returned. |
 | `create_app(services, lifespan)` | Builds the web app and its routes from the services. | A FastAPI app. |
 | `stop(_, error)` | (helper) Turns a _Stop error into its answer. | The stored answer. |
-| `require_api_key(x_api_key)` | (helper) Checks the X-API-Key header against the secret key, if one is configured. | Nothing, or a 401 answer. |
+| `require_api_key(x_api_key)` | (helper) Checks the X-API-Key header against the secret key, if one is configured. Used only by `ai-results`. | Nothing, or a 401 answer. |
 | `visit_body(request)` | (helper) Refuses a body whose declared size is over the limit before reading it, else reads it. | The body bytes, or a 413 answer. |
 | `result_body(request)` | (helper) Reads the body of an AI result; refuses one over `MAX_RESULT_BYTES` (2,000,000), also when it comes in chunks. | The body bytes, or a 413 answer. |
-| `POST /api/v1/patient360/visits` | Receives a visit (source 1, 2 or 4) from the Backend app service; a symptom check sent here is refused (422 `wrong_endpoint`). Numbers (`source`, ids, `sex`, `age_days`) may arrive as text ("1", "10.0"). The API key is checked only if `INBOUND_API_KEY` is set (leave it empty inside the private network). Processing continues in the background. | 202 Accepted, 200 Duplicate, 422 invalid, 413 too large, 401 bad key, 500 error. |
+| `POST /api/v1/patient360/visits` | Receives a visit (source 1, 2 or 4) from the Backend app service; a symptom check sent here is refused (422 `wrong_endpoint`). Numbers (`source`, ids, `sex`, `age_days`) may arrive as text ("1", "10.0"). No API key is checked on this route (the network protects it). Processing continues in the background. | 202 Accepted, 200 Duplicate, 422 invalid, 413 too large, 401 bad key, 500 error. |
 | `POST /api/v1/patient360/visits-symptoms` | Receives a symptom check (source 3) from the wrapper; a visit sent here is refused (422 `wrong_endpoint`). | 202 Accepted, 200 Duplicate, 422 invalid, 404 VISIT_NOT_FOUND, 409 SYMPTOM_CHECKER_CLOSED, 413 too large, 401 bad key, 500 error. |
 | `POST /api/v1/patient360/ai-results` | From the Function app: one AI answer record per call (headers `X-Source`, `X-Blob-Path`, optional `Idempotency-Key`; the body is the file content, or one JSONL line). | 200 `{"outcome": ...}` (saved, blocked, duplicate, unknown_visit, source_mismatch, invalid_output or ignored), 400 bad headers, 401 bad key, 413 too large, 500 error (the Function retries). |
 | `GET /health` | Checks that the database answers a simple query. | 200 status "ok", or 503 "database_unavailable". |

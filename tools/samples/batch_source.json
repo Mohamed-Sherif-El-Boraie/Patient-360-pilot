@@ -1,0 +1,761 @@
+{
+  "source": 2,
+  "patient_id": 2114707321,
+  "visit_id": 2075164927,
+  "company_id": 15,
+  "patient": {
+    "age_days": "11591",
+    "sex": 1
+  },
+  "tests": [
+    {
+      "test_id": 22,
+      "test_name": "Blood Urea",
+      "test_remark": null,
+      "results": [
+        {
+          "parameter_id": 61,
+          "parameter_name": "Blood Urea",
+          "result_date": "2026-09-26",
+          "value": "54.8",
+          "unit": "mg/dL",
+          "reference": {
+            "low": "13",
+            "high": "43",
+            "range": "13 - 43"
+          },
+          "lab_flag": "H",
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075146270,
+              "history_date": "2026-09-25",
+              "history_value": "57.75"
+            },
+            {
+              "history_visit_id": 2075115210,
+              "history_date": "2026-09-24",
+              "history_value": "55.5"
+            },
+            {
+              "history_visit_id": 2075070684,
+              "history_date": "2026-09-22",
+              "history_value": "57 .0"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "test_id": 30,
+      "test_name": "Creatinine, serum",
+      "test_remark": null,
+      "results": [
+        {
+          "parameter_id": 54,
+          "parameter_name": "CREATININE (serum)",
+          "result_date": "2026-09-26",
+          "value": "5.39",
+          "unit": "mg/dL",
+          "reference": {
+            "low": "0.7",
+            "high": "1.3",
+            "range": "0.7 - 1.3"
+          },
+          "lab_flag": "H",
+          "critical": {
+            "low": null,
+            "high": "6",
+            "range_text": "> 6"
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075146270,
+              "history_date": "2026-09-25",
+              "history_value": "5.79"
+            },
+            {
+              "history_visit_id": 2075115210,
+              "history_date": "2026-09-24",
+              "history_value": "5.95"
+            },
+            {
+              "history_visit_id": 2075070684,
+              "history_date": "2026-09-22",
+              "history_value": "6.83"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "test_id": 35,
+      "test_name": "K+",
+      "test_remark": null,
+      "results": [
+        {
+          "parameter_id": 59,
+          "parameter_name": "K+",
+          "result_date": "2026-09-26",
+          "value": "2 .9",
+          "unit": "mmol/L",
+          "reference": {
+            "low": "3.5",
+            "high": "5.5",
+            "range": "3.5 - 5.5"
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": "2.9",
+            "high": "6.1",
+            "range_text": "2.9 - 6.1"
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075146270,
+              "history_date": "2026-09-25",
+              "history_value": "3 .0"
+            },
+            {
+              "history_visit_id": 2075115210,
+              "history_date": "2026-09-24",
+              "history_value": "2 .6"
+            },
+            {
+              "history_visit_id": 2075070684,
+              "history_date": "2026-09-22",
+              "history_value": "3 .0"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "test_id": 38,
+      "test_name": "Na",
+      "test_remark": null,
+      "results": [
+        {
+          "parameter_id": 58,
+          "parameter_name": "Na+",
+          "result_date": "2026-09-26",
+          "value": "125.94",
+          "unit": "mmol/L",
+          "reference": {
+            "low": "136",
+            "high": "145",
+            "range": "136 - 145"
+          },
+          "lab_flag": "L",
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075146270,
+              "history_date": "2026-09-25",
+              "history_value": "125"
+            },
+            {
+              "history_visit_id": 2075115210,
+              "history_date": "2026-09-24",
+              "history_value": "120 .0"
+            },
+            {
+              "history_visit_id": 2075070684,
+              "history_date": "2026-09-22",
+              "history_value": "115 .34"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "test_id": 1869,
+      "test_name": "Blood Gases ( Acid Base )",
+      "test_remark": null,
+      "results": [
+        {
+          "parameter_id": 2217,
+          "parameter_name": "*Blood pH",
+          "result_date": "2026-09-26",
+          "value": "7.330",
+          "unit": null,
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": "Arterial: 7.35 - 7.45\nVenous: 7.31 - 7.41"
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075146270,
+              "history_date": "2026-09-25",
+              "history_value": "7.310"
+            },
+            {
+              "history_visit_id": 2075115210,
+              "history_date": "2026-09-24",
+              "history_value": "7.320"
+            },
+            {
+              "history_visit_id": 2075070684,
+              "history_date": "2026-09-22",
+              "history_value": "7.230"
+            }
+          ]
+        },
+        {
+          "parameter_id": 2202,
+          "parameter_name": "*PCO2",
+          "result_date": "2026-09-26",
+          "value": "31",
+          "unit": "mmHg",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": "Arterial: 35 - 45\nVenous: 40 – 50"
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075146270,
+              "history_date": "2026-09-25",
+              "history_value": "36"
+            },
+            {
+              "history_visit_id": 2075115210,
+              "history_date": "2026-09-24",
+              "history_value": "29"
+            },
+            {
+              "history_visit_id": 2075070684,
+              "history_date": "2026-09-22",
+              "history_value": "33"
+            }
+          ]
+        },
+        {
+          "parameter_id": 2218,
+          "parameter_name": "*PO2",
+          "result_date": "2026-09-26",
+          "value": "35",
+          "unit": "mmHg",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": "Arterial : 85 - 105 Venous 29 – 49"
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075146270,
+              "history_date": "2026-09-25",
+              "history_value": "20"
+            },
+            {
+              "history_visit_id": 2075115210,
+              "history_date": "2026-09-24",
+              "history_value": "17"
+            },
+            {
+              "history_visit_id": 2075070684,
+              "history_date": "2026-09-22",
+              "history_value": "16"
+            }
+          ]
+        },
+        {
+          "parameter_id": 3408,
+          "parameter_name": "HCO3-act",
+          "result_date": "2026-09-26",
+          "value": "16.3",
+          "unit": "mmol/L",
+          "reference": {
+            "low": "22",
+            "high": "29",
+            "range": "22 - 29"
+          },
+          "lab_flag": "L",
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075146270,
+              "history_date": "2026-09-25",
+              "history_value": "18.1"
+            },
+            {
+              "history_visit_id": 2075115210,
+              "history_date": "2026-09-24",
+              "history_value": "14.9"
+            },
+            {
+              "history_visit_id": 2075070684,
+              "history_date": "2026-09-22",
+              "history_value": "13.8"
+            }
+          ]
+        },
+        {
+          "parameter_id": 3409,
+          "parameter_name": "HCO3-std",
+          "result_date": "2026-09-26",
+          "value": "17.5",
+          "unit": "mmol/L",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075146270,
+              "history_date": "2026-09-25",
+              "history_value": "17.4"
+            },
+            {
+              "history_visit_id": 2075115210,
+              "history_date": "2026-09-24",
+              "history_value": "15.5"
+            },
+            {
+              "history_visit_id": 2075070684,
+              "history_date": "2026-09-22",
+              "history_value": "12.9"
+            }
+          ]
+        },
+        {
+          "parameter_id": 2216,
+          "parameter_name": "*BE",
+          "result_date": "2026-09-26",
+          "value": "- 8.6",
+          "unit": "mmol/L",
+          "reference": {
+            "low": "-2",
+            "high": "3",
+            "range": "-2 - 3"
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075146270,
+              "history_date": "2026-09-25",
+              "history_value": "- 7.4"
+            },
+            {
+              "history_visit_id": 2075115210,
+              "history_date": "2026-09-24",
+              "history_value": "- 10.0"
+            },
+            {
+              "history_visit_id": 2075070684,
+              "history_date": "2026-09-22",
+              "history_value": "- 12.7"
+            }
+          ]
+        },
+        {
+          "parameter_id": 2210,
+          "parameter_name": "*BEecf",
+          "result_date": "2026-09-26",
+          "value": null,
+          "unit": "mmol/L",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        },
+        {
+          "parameter_id": 3410,
+          "parameter_name": "*ctCO2",
+          "result_date": "2026-09-26",
+          "value": "17.300",
+          "unit": "mmol/L",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075146270,
+              "history_date": "2026-09-25",
+              "history_value": "19.200"
+            },
+            {
+              "history_visit_id": 2075115210,
+              "history_date": "2026-09-24",
+              "history_value": "15.800"
+            },
+            {
+              "history_visit_id": 2075070684,
+              "history_date": "2026-09-22",
+              "history_value": "14.800"
+            }
+          ]
+        },
+        {
+          "parameter_id": 3411,
+          "parameter_name": "BO2",
+          "result_date": "2026-09-26",
+          "value": null,
+          "unit": "ml/dL",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        },
+        {
+          "parameter_id": 3412,
+          "parameter_name": "P50",
+          "result_date": "2026-09-26",
+          "value": null,
+          "unit": "mmHg",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        },
+        {
+          "parameter_id": 3373,
+          "parameter_name": "pO2 /FiO2",
+          "result_date": "2026-09-26",
+          "value": null,
+          "unit": null,
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        },
+        {
+          "parameter_id": 2203,
+          "parameter_name": "*ctO2",
+          "result_date": "2026-09-26",
+          "value": null,
+          "unit": "Vol%",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        },
+        {
+          "parameter_id": 3413,
+          "parameter_name": "ph(T)",
+          "result_date": "2026-09-26",
+          "value": null,
+          "unit": "mmHg",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        },
+        {
+          "parameter_id": 3414,
+          "parameter_name": "pCO2(T)",
+          "result_date": "2026-09-26",
+          "value": null,
+          "unit": "mmHg",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        },
+        {
+          "parameter_id": 3415,
+          "parameter_name": "pO2(T)",
+          "result_date": "2026-09-26",
+          "value": null,
+          "unit": "mmHg",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        },
+        {
+          "parameter_id": 3371,
+          "parameter_name": "pO2 (A-a) (T)",
+          "result_date": "2026-09-26",
+          "value": null,
+          "unit": null,
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        },
+        {
+          "parameter_id": 3372,
+          "parameter_name": "pO2 (A/a) (T)",
+          "result_date": "2026-09-26",
+          "value": null,
+          "unit": null,
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        },
+        {
+          "parameter_id": 2587,
+          "parameter_name": "RI",
+          "result_date": "2026-09-26",
+          "value": null,
+          "unit": "%",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        },
+        {
+          "parameter_id": 3416,
+          "parameter_name": "Qsp/Qt(est)(T)",
+          "result_date": "2026-09-26",
+          "value": null,
+          "unit": "%",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        },
+        {
+          "parameter_id": 3417,
+          "parameter_name": "FiO2",
+          "result_date": "2026-09-26",
+          "value": null,
+          "unit": "%",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        },
+        {
+          "parameter_id": 3418,
+          "parameter_name": "pAtm",
+          "result_date": "2026-09-26",
+          "value": null,
+          "unit": null,
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": null
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        },
+        {
+          "parameter_id": 2212,
+          "parameter_name": "*SO2",
+          "result_date": "2026-09-26",
+          "value": "62",
+          "unit": "%",
+          "reference": {
+            "low": null,
+            "high": null,
+            "range": "Arterial: >95 \nVenous: 60 - 85"
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075146270,
+              "history_date": "2026-09-25",
+              "history_value": "26"
+            },
+            {
+              "history_visit_id": 2075115210,
+              "history_date": "2026-09-24",
+              "history_value": "20"
+            },
+            {
+              "history_visit_id": 2075070684,
+              "history_date": "2026-09-22",
+              "history_value": "15"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "descriptive_results": [],
+  "visit_answer_list": []
+}

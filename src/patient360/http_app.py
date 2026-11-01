@@ -122,11 +122,13 @@ def create_app(services: Services, lifespan=None) -> FastAPI:
         assert isinstance(outcome, TooLarge)
         return reply(413, "Payload too large")
 
-    @app.post("/api/v1/patient360/visits", dependencies=[Depends(require_api_key)])      # from the Backend app service
+    # The two visit routes carry no key: the Backend and the wrapper are protected by the network (App Service access
+    # restrictions). Only the Function app, which we own, sends the key (see /ai-results).
+    @app.post("/api/v1/patient360/visits")      # from the Backend app service
     def receive_visit(background: BackgroundTasks, raw: bytes = Depends(visit_body)) -> JSONResponse:
         return accept(background, raw, symptom_check=False)
 
-    @app.post("/api/v1/patient360/visits-symptoms", dependencies=[Depends(require_api_key)])      # from the wrapper
+    @app.post("/api/v1/patient360/visits-symptoms")      # from the wrapper
     def receive_symptom_check(background: BackgroundTasks, raw: bytes = Depends(visit_body)) -> JSONResponse:
         return accept(background, raw, symptom_check=True)
 

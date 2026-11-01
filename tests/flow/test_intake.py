@@ -41,7 +41,7 @@ def test_a_valid_visit_is_saved_raw_in_blob_and_in_the_database_and_accepted(par
     outcome = intake.receive(body)
     key = key_of(visit)
     assert outcome == Accepted(visit["visit_id"], key, visit["source"])
-    assert blobs.files[f"raw/urgent/2026/10/24/{key}.json"] == body
+    assert blobs.files[f"urgent/2026/10/24/{key}.json"] == body
     saved = store.visits[visit["visit_id"]]
     assert saved["raw"] == body and saved["idempotency_key"] == key and saved["read_from"] == "blob"
     assert saved["received_at"] == NOW and saved["payload"]["tests"][0]["test_id"] == visit["tests"][0]["test_id"]
@@ -60,7 +60,7 @@ def test_a_batch_visit_goes_to_the_batch_raw_folder(parts, sample):
     intake, _, blobs = parts
     visit = sample("batch_normal")
     intake.receive(raw(visit))
-    assert f"raw/batch/2026/10/24/{key_of(visit)}.json" in blobs.files
+    assert f"batch/2026/10/24/{key_of(visit)}.json" in blobs.files
 
 
 def test_an_invalid_payload_is_rejected_saved_in_blob_and_database_and_never_becomes_a_visit(parts, sample):
@@ -70,7 +70,7 @@ def test_an_invalid_payload_is_rejected_saved_in_blob_and_database_and_never_bec
     body = raw(visit)
     outcome = intake.receive(body)
     assert isinstance(outcome, Rejected) and outcome.errors[0]["loc"] == ["status"]
-    path = f"raw/_rejected/urgent/2026/10/24/{visit['visit_id']}.json"
+    path = f"_rejected/urgent/2026/10/24/{visit['visit_id']}.json"
     assert blobs.files[path] == body
     assert store.rejected == [{"source_id": 1, "raw": body, "errors": outcome.errors, "blob_path": path}]
     assert store.visits == {}
@@ -89,7 +89,7 @@ def test_a_payload_that_is_not_json_is_rejected_under_unknown(parts):
     outcome = intake.receive(b"{not json")
     assert isinstance(outcome, Rejected) and outcome.errors[0]["type"] == "json_invalid"
     (path,) = blobs.files
-    assert path.startswith("raw/_rejected/unknown/2026/10/24/unknown_") and store.rejected[0]["source_id"] is None
+    assert path.startswith("_rejected/unknown/2026/10/24/unknown_") and store.rejected[0]["source_id"] is None
 
 
 def test_an_unknown_source_or_a_bad_visit_id_is_rejected_under_unknown(parts, sample):
@@ -133,7 +133,7 @@ def test_when_blob_is_down_a_rejection_is_still_saved_in_the_database_without_a_
 def test_a_file_that_is_already_in_blob_does_not_stop_the_visit(parts, sample):
     intake, store, blobs = parts
     visit = sample("urgent_mild")
-    blobs.files[f"raw/urgent/2026/10/24/{key_of(visit)}.json"] = b"an earlier attempt"
+    blobs.files[f"urgent/2026/10/24/{key_of(visit)}.json"] = b"an earlier attempt"
     assert isinstance(intake.receive(raw(visit)), Accepted)
     assert store.visits[visit["visit_id"]]["read_from"] == "blob"
 
@@ -191,7 +191,7 @@ def test_a_symptom_check_for_a_stored_visit_is_accepted_once(parts, sample):
     symptom = symptom_for(visit, sample)
     body = raw(symptom)
     assert intake.receive(body) == Accepted(visit["visit_id"], key_of(visit), 3)      # source 3: the symptom checker
-    assert blobs.files[f"raw/symptom-checker/2026/10/24/{key_of(visit)}.json"] == body
+    assert blobs.files[f"symptom-checker/2026/10/24/{key_of(visit)}.json"] == body
     assert store.symptom_checks[visit["visit_id"]]["read_from"] == "blob"
     assert isinstance(intake.receive(body), Duplicate)
 

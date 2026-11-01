@@ -87,9 +87,8 @@ class Rig:
         with the file it pulled from the output container of that source."""
         uploaded_source, s3_key = self.s3.uploads[-1]
         assert uploaded_source == source
-        # processed/<lane>/<y>/<M>/<d>/00-input/<key>.json
-        _, lane, year, month, day, _input, name = s3_key.split("/")
-        key = name.removesuffix(".json")
+        # <lane>/<y>/<M>/<d>/<key>/01-input.json
+        lane, year, month, day, key, _input = s3_key.split("/")
         path = merged_output_path(lane, date(int(year), int(month), int(day)), key)
         record = {"recordId": key, "model": "model-x", "content": [{"type": "text", "text": text}],
                   "metadata": {"en": {"usage": {"input_tokens": 1, "output_tokens": 2}}}, **extra}
@@ -178,12 +177,12 @@ def test_a_symptom_check_is_refused_with_409_when_the_visit_result_closed_the_ch
     assert [source for source, _ in rig.s3.uploads] == ["urgent"]            # nothing was processed or uploaded
 
 
-def test_a_wrong_or_missing_api_key_is_refused_and_nothing_is_saved(rig):
-    visit = rig.sample("urgent_mild")
-    body = json.dumps(visit).encode()
-    assert rig.client.post("/api/v1/patient360/visits", content=body).status_code == 401
-    assert rig.client.post("/api/v1/patient360/visits", content=body, headers={"X-Api-Key": "wrong"}).status_code == 401
-    assert seed.fetch(rig.db, "SELECT count(*) AS n FROM visits")[0]["n"] == 0
+def test_a_wrong_or_missing_api_key_is_refused_on_the_ai_results_route_and_nothing_is_saved(rig):
+    headers = {"X-Source": "urgent", "X-Blob-Path": "normal/2026/10/24/x/05-output-merged.json"}
+    assert rig.client.post("/api/v1/patient360/ai-results", content=b"{}", headers=headers).status_code == 401
+    assert rig.client.post("/api/v1/patient360/ai-results", content=b"{}",
+                           headers=headers | {"X-Api-Key": "wrong"}).status_code == 401
+    assert seed.fetch(rig.db, "SELECT count(*) AS n FROM ai_outputs")[0]["n"] == 0
 
 
 def test_an_invalid_visit_is_refused_with_422_and_kept_in_the_rejected_table(rig):

@@ -8,19 +8,26 @@ Needs only boto3 (``pip install boto3``), so it can run on any machine inside th
     set AWS_SECRET_ACCESS_KEY=...
     python tools/check_s3_upload.py
 
-By default it writes one tiny text file into each of the four buckets, under ``connectivity-test/``, which is
-outside the ``processed/`` folder, so it never starts the AWS automation. (If the IAM policy only allows
-``processed/*``, ask the AWS team to allow ``connectivity-test/*`` too, or use the second form.)
+By default it writes one tiny text file into each of the four buckets, under ``connectivity-test/``, a name that is
+never ``01-input.json``, so it never starts the AWS automation. The IAM policy lets urgent, on-demand and
+symptom-checker accept only ``*/01-input.json``, so for those three buckets this test is ANSWERED WITH AccessDenied
+by design, and only p360-batch (which allows any key) passes. That still proves the network and the keys work.
+To prove the permission for a real file, use the second form.
 
 To send ONE real processed file, built exactly as the app does it, for the test the AWS team agrees to (this DOES
 start their automation). ``tools/sample_processed_urgent.json`` is a ready file with made-up patient data:
 
     python tools/check_s3_upload.py --source urgent --lane normal --file tools/sample_processed_urgent.json
 
-The key is ``processed/<lane>/<today, UTC>/00-input/<id>.json``; the id is ``p360test-<time>`` unless you give ``--id``.
+To send the whole check at once, 4 correct and 4 wrong files (one pair per bucket; this DOES start their automation):
+
+    python tools/check_s3_upload.py --suite
+
+The key is ``<lane>/<today, UTC>/<id>/01-input.json``; the id is ``p360test-<time>`` unless you give ``--id``.
 (``--bucket`` and ``--key`` write to an exact place instead.)
 """
 import argparse
+import json
 import os
 import sys
 from datetime import UTC, datetime
@@ -59,25 +66,54 @@ def put(s3, bucket: str, key: str, body: bytes) -> bool:
     return False
 
 
+def suite(s3, now: datetime) -> int:
+    """8 uploads: in each of the 4 buckets one correct file and one with a mistake (``messages`` empty), so AWS
+    must answer 4 with 05-output-merged and 4 with a failed file. The batch ones hold 3 lines each. The lane
+    alternates, so normal and critical each get both kinds in different buckets."""
+    sample = json.loads((Path(__file__).parent / "sample_processed_urgent.json").read_text(encoding="utf-8"))
+    stamp = now.strftime("%Y%m%dT%H%M%SZ")
+    day = now.strftime("%Y/%m/%d")
+    bad = sample | {"messages": []}
+    passed = []
+    lanes = ("normal", "critical")
+    for i, env_name in enumerate([*SOURCE_BUCKETS.values(), "S3_BUCKET_BATCH"]):
+        bucket = os.environ.get(env_name, DEFAULT_BUCKETS[env_name])
+        for j, (tag, model_input) in enumerate((("ok", sample), ("bad", bad))):
+            lane = lanes[(i + j) % 2]      # both lanes get correct and wrong files
+            name = f"p360t-{stamp}-{tag}"
+            if env_name == "S3_BUCKET_BATCH":
+                lines = [json.dumps({"recordId": f"{name}-{n}", "modelInput": model_input}) for n in range(3)]
+                passed.append(put(s3, bucket, f"{lane}/{day}/{name}/01-input.jsonl", "\n".join(lines).encode()))
+            else:
+                body = json.dumps({"recordId": name, "modelInput": model_input}).encode()
+                passed.append(put(s3, bucket, f"{lane}/{day}/{name}/01-input.json", body))
+    print(f"\nid stamp: {stamp}  (ok = expect 05-output-merged, bad = expect a failed file)")
+    print("ALL UPLOADED" if all(passed) else "SOME FAILED")
+    return 0 if all(passed) else 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--suite", action="store_true", help="4 correct + 4 wrong uploads, one pair per bucket")
     parser.add_argument("--bucket")
     parser.add_argument("--key")
     parser.add_argument("--file")
     parser.add_argument("--source", choices=sorted(SOURCE_BUCKETS))
     parser.add_argument("--lane", choices=("normal", "critical"))
-    parser.add_argument("--id", help="the file name without .json (default: p360test-<time>)")
+    parser.add_argument("--id", help="the visit folder name (default: p360test-<time>)")
     args = parser.parse_args()
     print("endpoint:", os.environ.get("AWS_ENDPOINT_URL_S3") or "(the normal AWS address)",
           "| region:", os.environ.get("AWS_REGION") or "(not set)")
     s3 = client()
     now = datetime.now(UTC)
+    if args.suite:
+        return suite(s3, now)
     if args.source or args.lane:
         if not (args.source and args.lane and args.file):
             print("Give --source, --lane and --file together.", file=sys.stderr)
             return 2
         bucket = os.environ.get(SOURCE_BUCKETS[args.source], DEFAULT_BUCKETS[SOURCE_BUCKETS[args.source]])
-        key = f"processed/{args.lane}/{now:%Y/%m/%d}/00-input/{args.id or now.strftime('p360test-%Y%m%dT%H%M%SZ')}.json"
+        key = f"{args.lane}/{now:%Y/%m/%d}/{args.id or now.strftime('p360test-%Y%m%dT%H%M%SZ')}/01-input.json"
         return 0 if put(s3, bucket, key, Path(args.file).read_bytes()) else 1
     if args.bucket or args.key or args.file:
         if not (args.bucket and args.key and args.file):

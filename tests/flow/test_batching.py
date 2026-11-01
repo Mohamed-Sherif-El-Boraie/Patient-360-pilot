@@ -60,14 +60,14 @@ def test_a_full_batch_writes_one_file_per_visit_and_the_jsonl(sample, parts):
     assert all(v["stage"] == "queued" and v["batch_id"] == batch.batch_id for v in store.visits.values())
 
 
-def test_the_default_batch_is_100_visits(sample, parts):
+def test_the_default_batch_is_120_visits(sample, parts):
     store, blobs = parts
-    add_visits(sample, store, blobs, "batch_normal", 1000, 99)
+    add_visits(sample, store, blobs, "batch_normal", 1000, 119)
     assert BatchTrigger(store, blobs).run() == []
     add_visits(sample, store, blobs, "batch_normal", 2000, 1)
     [batch] = BatchTrigger(store, blobs).run()
     jsonl = blobs.files[f"processed/batch/{batch.lane}-jsonls/2026/10/25/{batch.batch_id}.jsonl"]
-    assert len(jsonl.decode().splitlines()) == 100
+    assert len(jsonl.decode().splitlines()) == 120
 
 
 def test_a_visit_is_never_batched_twice_and_the_rest_wait(sample, parts):

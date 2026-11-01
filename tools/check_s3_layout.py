@@ -22,11 +22,11 @@ RUN = int(time.time()) * 10                # new ids on every run, so nothing is
 
 # bucket -> the key every file in it must match (the bucket is the source, so the key has no source name)
 EXPECTED = {
-    "p360-urgent": rf"processed/normal/{DAY}/00-input/[0-9a-f]{{32}}\.json",
-    "p360-on-demand": rf"processed/critical/{DAY}/00-input/[0-9a-f]{{32}}\.json",
-    "p360-symptom-checker": rf"processed/critical/{DAY}/00-input/[0-9a-f]{{32}}\.json",
+    "p360-urgent": rf"normal/{DAY}/[0-9a-f]{{32}}/01-input\.json",
+    "p360-on-demand": rf"critical/{DAY}/[0-9a-f]{{32}}/01-input\.json",
+    "p360-symptom-checker": rf"critical/{DAY}/[0-9a-f]{{32}}/01-input\.json",
 }
-BATCH = {lane: rf"processed/{lane}/{DAY}/({lane}_\d+)/00-input/\1\.jsonl" for lane in ("normal", "critical")}
+BATCH = {lane: rf"{lane}/{DAY}/{lane}_\d+/01-input\.jsonl" for lane in ("normal", "critical")}
 BATCH_SIZE = 100            # the compose stack's BATCH_SIZE: one batch is sent when this many visits of a lane wait
 
 s3 = boto3.client("s3", endpoint_url=FAKE_S3, region_name="eu-west-1",
@@ -46,7 +46,7 @@ def post(url, body, want=202):
 
 
 def keys_in(bucket):
-    return [o["Key"] for o in s3.list_objects_v2(Bucket=bucket, Prefix="processed/").get("Contents", [])]
+    return [o["Key"] for o in s3.list_objects_v2(Bucket=bucket).get("Contents", [])]
 
 
 def wait_for_new_keys(bucket, count=1, seconds=90):
@@ -78,9 +78,9 @@ def main():
     on_demand_key = wait_for_new_keys("p360-on-demand")[0]
     answer = {"summary": {"en": "s", "ar": "AR-s"}, "simple_summary": {"en": "s", "ar": "AR-s"}, "critical_alerts": [],
               "note": {"en": "n", "ar": "AR-n"}, "recommendations": []}
-    # processed/<lane>/<y>/<M>/<d>/00-input/<key>.json
-    _, lane, year, month, day, _input, file_name = on_demand_key.split("/")
-    record = {"recordId": file_name.removesuffix(".json"), "type": "message", "role": "assistant",
+    # <lane>/<y>/<M>/<d>/<key>/01-input.json
+    lane, year, month, day, record_id, _input = on_demand_key.split("/")
+    record = {"recordId": record_id, "type": "message", "role": "assistant",
               "model": "simulated-model", "content": [{"type": "text", "text": json.dumps(answer)}], "metadata": {}}
     path = f"{lane}/{year}/{month}/{day}/{record['recordId']}/05-output-merged.json"
     reply = httpx.post(RESULTS, content=json.dumps(record).encode(), timeout=30,
@@ -97,7 +97,7 @@ def main():
                                 patient_id=RUN + 1000 + (0 if lane == "normal" else 500) + number))
     found = wait_for_new_keys("p360-batch", count=2, seconds=120)
     for lane, pattern in BATCH.items():
-        check(f"p360-batch ({lane})", pattern, [k for k in found if k.startswith(f"processed/{lane}/")])
+        check(f"p360-batch ({lane})", pattern, [k for k in found if k.startswith(f"{lane}/")])
 
     print("ALL PASS" if not failed else f"FAILED: {', '.join(failed)}")
     sys.exit(1 if failed else 0)

@@ -42,7 +42,7 @@ def main():
                       aws_access_key_id="dev-fake-key", aws_secret_access_key="dev-fake-secret")
 
     def urgent_keys():
-        listing = s3.list_objects_v2(Bucket="p360-urgent", Prefix="processed/")
+        listing = s3.list_objects_v2(Bucket="p360-urgent")
         return {o["Key"] for o in listing.get("Contents", [])}
 
     old_keys = urgent_keys()      # files of earlier runs stay in the bucket
@@ -59,9 +59,8 @@ def main():
         return next(iter(urgent_keys() - old_keys), None)
 
     key = wait_for("the file in the fake S3", find_key)
-    # processed/<lane>/<yyyy>/<MM>/<dd>/00-input/<key>.json
-    _, lane, year, month, day, _input, name = key.split("/")
-    record_id = name.removesuffix(".json")
+    # <lane>/<yyyy>/<MM>/<dd>/<key>/01-input.json
+    lane, year, month, day, record_id, _input = key.split("/")
     print(f"   found, lane={lane}")
 
     print("3. Playing AWS and the Function app: posting the answer file to the app")

@@ -23,20 +23,20 @@ FILE = f"{KEY}.json"
 
 def test_the_file_is_named_by_the_full_32_character_key():
     assert len(KEY) == 32
-    assert raw_path("urgent", DAY, KEY) == f"raw/urgent/2026/10/24/{FILE}"
+    assert raw_path("urgent", DAY, KEY) == f"urgent/2026/10/24/{FILE}"
 
 
 def test_raw_files_are_grouped_by_source_and_day():
-    assert raw_path("symptom-checker", DAY, KEY) == f"raw/symptom-checker/2026/10/24/{FILE}"
-    assert raw_path("batch", DAY, KEY) == f"raw/batch/2026/10/24/{FILE}"
+    assert raw_path("symptom-checker", DAY, KEY) == f"symptom-checker/2026/10/24/{FILE}"
+    assert raw_path("batch", DAY, KEY) == f"batch/2026/10/24/{FILE}"
 
 
 def test_months_and_days_have_two_digits():
-    assert raw_path("on-demand", date(2026, 1, 5), KEY) == f"raw/on-demand/2026/01/05/{FILE}"
+    assert raw_path("on-demand", date(2026, 1, 5), KEY) == f"on-demand/2026/01/05/{FILE}"
 
 
 def test_a_rejected_payload_is_named_by_its_visit_id():
-    assert rejected_path("urgent", DAY, 2070000003) == "raw/_rejected/urgent/2026/10/24/2070000003.json"
+    assert rejected_path("urgent", DAY, 2070000003) == "_rejected/urgent/2026/10/24/2070000003.json"
 
 
 def test_processed_files_go_to_the_lane_folder():
@@ -61,11 +61,18 @@ def test_the_merged_output_lives_in_the_output_container_of_its_source():
 
 
 def test_the_s3_key_is_inside_the_bucket_of_the_source():
-    assert s3_processed_key("urgent", "critical", DAY, KEY) == f"processed/critical/2026/10/24/00-input/{FILE}"
-    assert s3_processed_key("symptom-checker", "normal", DAY, KEY) == f"processed/normal/2026/10/24/00-input/{FILE}"
-    assert s3_processed_key("on-demand", "normal", DAY, KEY) == f"processed/normal/2026/10/24/00-input/{FILE}"
+    assert s3_processed_key("urgent", "critical", DAY, KEY) == f"critical/2026/10/24/{KEY}/01-input.json"
+    assert s3_processed_key("symptom-checker", "normal", DAY, KEY) == f"normal/2026/10/24/{KEY}/01-input.json"
+    assert s3_processed_key("on-demand", "normal", DAY, KEY) == f"normal/2026/10/24/{KEY}/01-input.json"
     assert s3_processed_key("batch", "normal", DAY, KEY, batch_id="normal_000001") == (
-        "processed/normal/2026/10/24/normal_000001/00-input/normal_000001.jsonl")
+        "normal/2026/10/24/normal_000001/01-input.jsonl")
+
+
+def test_the_only_file_uploaded_to_s3_is_01_input_which_is_all_the_iam_policy_allows():
+    keys = [s3_processed_key(source, lane, DAY, KEY) for source in ("urgent", "symptom-checker", "on-demand")
+            for lane in ("normal", "critical")]
+    assert all(key.endswith("/01-input.json") and not key.startswith("processed") for key in keys)
+    assert s3_processed_key("batch", "critical", DAY, None, batch_id="critical_000002").endswith("/01-input.jsonl")
 
 
 def test_the_date_folder_is_the_utc_day_the_visit_was_received():
@@ -86,7 +93,7 @@ def test_a_time_without_a_zone_is_refused():
 def test_all_files_of_one_visit_share_the_day_it_was_received():
     received = datetime(2026, 10, 24, 23, 59, tzinfo=UTC)
     day = blob_day(received)   # still used at 00:10 the next day, when the result is saved
-    assert raw_path("urgent", day, KEY).split("/")[2:5] == ["2026", "10", "24"]
+    assert raw_path("urgent", day, KEY).split("/")[1:4] == ["2026", "10", "24"]
     assert merged_output_path("normal", day, KEY).split("/")[1:4] == ["2026", "10", "24"]
 
 
@@ -124,7 +131,7 @@ def test_a_visit_id_must_be_a_positive_whole_number(bad):
 
 def test_a_rejected_payload_without_a_usable_visit_is_named_by_a_hash_of_its_bytes():
     digest = "0123456789abcdef" * 4
-    assert rejected_unknown_path(DAY, digest) == "raw/_rejected/unknown/2026/10/24/unknown_0123456789abcdef.json"
+    assert rejected_unknown_path(DAY, digest) == "_rejected/unknown/2026/10/24/unknown_0123456789abcdef.json"
     with pytest.raises(ValueError):
         rejected_unknown_path(DAY, "../../etc/passwd")
 

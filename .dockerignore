@@ -3,7 +3,12 @@
 .github
 docs
 tests
-tools
+tools/*
+!tools/check_connections.py
+!tools/check_s3_upload.py
+!tools/sample_processed_urgent.json
+!tools/send_samples.py
+!tools/samples/*.json
 __pycache__
 *.py[cod]
 .env

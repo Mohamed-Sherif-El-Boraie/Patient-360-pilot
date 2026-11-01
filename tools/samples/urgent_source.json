@@ -1,0 +1,239 @@
+{
+  "source": 1,
+  "patient_id": 2135740247,
+  "visit_id": 2075140466,
+  "company_id": 15,
+  "patient": {
+    "age_days": "27412",
+    "sex": 1
+  },
+  "tests": [
+    {
+      "test_id": 22,
+      "test_name": "Blood Urea",
+      "test_remark": null,
+      "results": [
+        {
+          "parameter_id": 61,
+          "parameter_name": "Blood Urea",
+          "result_date": "2026-09-24",
+          "value": "74",
+          "unit": "mg/dL",
+          "reference": {
+            "low": "17",
+            "high": "49",
+            "range": "17 - 49"
+          },
+          "lab_flag": "H",
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075116459,
+              "history_date": "2026-09-24",
+              "history_value": "69"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "test_id": 27,
+      "test_name": "Calcium",
+      "test_remark": null,
+      "results": [
+        {
+          "parameter_id": 57,
+          "parameter_name": "Calcium",
+          "result_date": "2026-09-24",
+          "value": "5.9",
+          "unit": "mg/dL",
+          "reference": {
+            "low": "8.6",
+            "high": "10.2",
+            "range": "8.6 - 10.2"
+          },
+          "lab_flag": "L",
+          "critical": {
+            "low": "6.5",
+            "high": "13",
+            "range_text": "6.5 - 13"
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075116459,
+              "history_date": "2026-09-24",
+              "history_value": "6.0"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "test_id": 30,
+      "test_name": "Creatinine, serum",
+      "test_remark": null,
+      "results": [
+        {
+          "parameter_id": 54,
+          "parameter_name": "CREATININE (serum)",
+          "result_date": "2026-09-24",
+          "value": "3.58",
+          "unit": "mg/dL",
+          "reference": {
+            "low": "0.7",
+            "high": "1.3",
+            "range": "0.7 - 1.3"
+          },
+          "lab_flag": "H",
+          "critical": {
+            "low": null,
+            "high": "6",
+            "range_text": "> 6"
+          },
+          "parameter_remark": "Cystatin C and eGFR  are recommended.",
+          "history": [
+            {
+              "history_visit_id": 2075116459,
+              "history_date": "2026-09-24",
+              "history_value": "3.51"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "test_id": 34,
+      "test_name": "Phosphorous",
+      "test_remark": null,
+      "results": [
+        {
+          "parameter_id": 56,
+          "parameter_name": "Phosphorous",
+          "result_date": "2026-09-24",
+          "value": "3.4",
+          "unit": "mg/dL",
+          "reference": {
+            "low": "2.5",
+            "high": "4.5",
+            "range": "2.5 - 4.5"
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": "1",
+            "high": "8.8",
+            "range_text": "1 - 8.8"
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075116459,
+              "history_date": "2026-09-24",
+              "history_value": "3.2"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "test_id": 35,
+      "test_name": "K+",
+      "test_remark": null,
+      "results": [
+        {
+          "parameter_id": 59,
+          "parameter_name": "K+",
+          "result_date": "2026-09-24",
+          "value": "3.7",
+          "unit": "mmol/L",
+          "reference": {
+            "low": "3.5",
+            "high": "5.5",
+            "range": "3.5 - 5.5"
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": "2.9",
+            "high": "6.1",
+            "range_text": "2.9 - 6.1"
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075116459,
+              "history_date": "2026-09-24",
+              "history_value": "3.7"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "test_id": 38,
+      "test_name": "Na",
+      "test_remark": null,
+      "results": [
+        {
+          "parameter_id": 58,
+          "parameter_name": "Na+",
+          "result_date": "2026-09-24",
+          "value": "138",
+          "unit": "mmol/L",
+          "reference": {
+            "low": "136",
+            "high": "145",
+            "range": "136 - 145"
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": [
+            {
+              "history_visit_id": 2075116459,
+              "history_date": "2026-09-24",
+              "history_value": "135"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "test_id": 1398,
+      "test_name": "Uric acid",
+      "test_remark": null,
+      "results": [
+        {
+          "parameter_id": 55,
+          "parameter_name": "URIC acid",
+          "result_date": "2026-09-24",
+          "value": "7.0",
+          "unit": "mg/dL",
+          "reference": {
+            "low": "3.4",
+            "high": "7",
+            "range": "3.4 - 7"
+          },
+          "lab_flag": null,
+          "critical": {
+            "low": null,
+            "high": null,
+            "range_text": null
+          },
+          "parameter_remark": null,
+          "history": []
+        }
+      ]
+    }
+  ],
+  "descriptive_results": [],
+  "visit_answer_list": []
+}

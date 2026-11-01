@@ -209,22 +209,21 @@ def test_too_large_from_intake_is_413_when_there_is_no_content_length(sample):
     assert response.status_code == 413 and not rig.store.visits
 
 
-@pytest.mark.parametrize("headers, status", [({}, 401), ({"X-Api-Key": "wrong"}, 401), ({"X-Api-Key": "s3cret"}, 202)])
-def test_the_api_key(sample, headers, status):
+@pytest.mark.parametrize("headers", [{}, {"X-Api-Key": "wrong"}, {"X-Api-Key": "s3cret"}])
+def test_the_visit_route_needs_no_key_even_when_one_is_set(sample, headers):
     rig = Rig(sample, INBOUND_API_KEY="s3cret")
     response = rig.post(sample("urgent_mild"), headers=headers)
-    assert response.status_code == status
-    if status == 401:
-        assert response.json() == {"response": {"code": 1, "message": "Unauthorized"}}
-        assert not rig.store.visits
-    assert "s3cret" not in response.text
+    assert response.status_code == 202 and "s3cret" not in response.text
 
 
 @pytest.mark.parametrize("headers, status", [({}, 401), ({"X-Api-Key": "wrong"}, 401), ({"X-Api-Key": "s3cret"}, 200)])
-def test_the_api_key_also_guards_the_ai_results_route_but_not_health(sample, headers, status):
+def test_the_api_key_guards_the_ai_results_route_but_not_health(sample, headers, status):
     rig = Rig(sample, INBOUND_API_KEY="s3cret")
     response = rig.client.post(AI_RESULTS, content=b"{}", headers=SOURCE_HEADERS | headers)
     assert response.status_code == status
+    if status == 401:
+        assert response.json() == {"response": {"code": 1, "message": "Unauthorized"}}
+        assert "s3cret" not in response.text
     assert (rig.spy_receiver.calls == []) == (status == 401)
     assert rig.client.get("/health").status_code == 200
 
