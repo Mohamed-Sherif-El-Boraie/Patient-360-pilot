@@ -72,7 +72,7 @@ class OutputReceiver:
         return [result]
 
     def _handle_failed(self, found: MergedOutput) -> Received:
-        """AWS wrote ``07-failed.json``: record the failure and queue the "failed" message for the Backend."""
+        """AWS wrote ``06-failed.json``: record the failure and queue the "failed" message for the Backend."""
         stored = self._store.find_visit(found.key) if found.key else None
         if stored is None:
             return self._ignore(found, found.key, "unknown_visit")

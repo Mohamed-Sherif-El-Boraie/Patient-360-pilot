@@ -142,7 +142,7 @@ def create_app(services: Services, lifespan=None) -> FastAPI:
         log.info("ai_result_received", source=x_source, has_idempotency_key=idempotency_key is not None)
         # Answered 200 for everything a retry cannot change; 500 only when it is worth retrying (the Function retries
         # a 5xx). OutputReceiver is safe to run twice. Outcomes: saved, blocked, duplicate, unknown_visit,
-        # source_mismatch, invalid_output, ignored, failed_recorded (a ``07-failed.json``).
+        # source_mismatch, invalid_output, ignored, failed_recorded (a ``06-failed.json``).
         try:
             results = services.receiver.receive_record(x_source, x_blob_path, raw.decode(errors="replace"))
         except Exception as error:

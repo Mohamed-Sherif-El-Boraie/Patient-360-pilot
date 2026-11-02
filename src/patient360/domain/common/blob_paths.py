@@ -90,7 +90,7 @@ def batch_jsonl_path(lane: str, day: date, batch_id: str) -> str:
 
 
 OUTPUT_FILE = "05-output-merged"      # the phase file AWS writes last: the English and Arabic answer together
-FAILED_FILE = "07-failed"             # AWS writes this instead when the visit could not be analysed
+FAILED_FILE = "06-failed"             # AWS writes this instead when the visit could not be analysed
 
 
 def merged_output_path(lane: str, day: date, idempotency_key: str) -> str:
@@ -131,7 +131,7 @@ _BATCH_JSONL = re.compile(rf"^(normal|critical)-jsonls/{_DATE}/{_NAME}/{OUTPUT_F
 
 def parse_output_path(source: str, path: str) -> MergedOutput | None:
     """What a path inside the output container of ``source`` is, or ``None`` for any other file (the other phase
-    files, logs: not ours to handle). ``07-failed.json`` in any container is a failure (``failed``). In the batch
+    files, logs: not ours to handle). ``06-failed.json`` in any container is a failure (``failed``). In the batch
     container a visit file is a copy of a line of the JSONL (``batch_visit``): the caller ignores it."""
     if source not in SOURCES:
         return None

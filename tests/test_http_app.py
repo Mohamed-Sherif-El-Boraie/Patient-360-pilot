@@ -306,7 +306,7 @@ def test_a_failed_file_is_answered_200_failed_recorded(sample):
     key = rig.store.visits[visit["visit_id"]]["idempotency_key"]
     rig.services = replace(rig.services, receiver=OutputReceiver(rig.store, FakeCatalogue()))
     client = TestClient(create_app(rig.services))
-    headers = {"X-Source": "urgent", "X-Blob-Path": f"normal/2026/10/24/{key}/07-failed.json"}
+    headers = {"X-Source": "urgent", "X-Blob-Path": f"normal/2026/10/24/{key}/06-failed.json"}
     response = client.post(AI_RESULTS, content=b"", headers=headers)
     assert response.status_code == 200 and response.json() == {"outcome": "failed_recorded"}
     assert rig.store.visits[visit["visit_id"]]["stage"] == "failed"

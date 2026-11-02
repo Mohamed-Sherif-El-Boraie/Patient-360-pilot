@@ -268,7 +268,7 @@ def test_a_visit_answer_needs_summary_and_simple_summary_but_a_symptom_answer_do
 
 
 def failed_path(key, lane="normal"):
-    return f"{lane}/2026/10/24/{key}/07-failed.json"
+    return f"{lane}/2026/10/24/{key}/06-failed.json"
 
 
 def test_a_failed_file_is_recorded_without_reading_it_and_the_wrapper_is_told(world):

@@ -302,7 +302,7 @@ def test_a_failed_file_of_the_symptom_checker_fails_the_symptom_check_and_tells_
     world.give_the_visit_its_result()
     world.receive_the_symptom_check()
     receiver = world.receiver()
-    path = f"normal/2026/10/24/{world.key}/07-failed.json"
+    path = f"normal/2026/10/24/{world.key}/06-failed.json"
     assert receiver.receive_record("symptom-checker", path, "")[0].outcome == "failed_recorded"
     assert receiver.receive_record("symptom-checker", path, "")[0].outcome == "duplicate"
     assert world.store.symptom_checks[VISIT_ID]["stage"] == "failed_symptom"

@@ -115,7 +115,7 @@ queues, pulls the file and posts each record to this app. This app never reads t
 The body is the file content as it is: the whole answer envelope for a visit file, and ONE line (one record) of the
 JSONL per call for a batch (`X-Blob-Path` is then the JSONL path). A body over 2,000,000 bytes is answered 413.
 The answer is 200 `{"outcome": ...}` for everything a retry cannot change: `saved`, `blocked`, `duplicate`,
-`unknown_visit`, `source_mismatch`, `invalid_output`, `failed_recorded` (a `07-failed.json`), `ignored` (a path that
+`unknown_visit`, `source_mismatch`, `invalid_output`, `failed_recorded` (a `06-failed.json`), `ignored` (a path that
 is not an answer). A 500 means "try again"
 (for example the database is down). A batch becomes `completed` when every one of its visits has its output saved
 (a blocked one counts), `partially_completed` until then.
@@ -128,7 +128,7 @@ Answer file paths inside an output container (the layout is in `tests/fixtures/f
 | A batch (one record per line) | `<lane>-jsonls/<yyyy>/<MM>/<dd>/<batch_id>/05-output-merged.jsonl` |
 
 `<lane>` is `normal` or `critical`. The content is the AWS envelope; its `recordId` is the visit's idempotency key.
-`<lane>/<yyyy>/<MM>/<dd>/<idempotency_key>/07-failed.json` (any container, the batch one too) is a failure: see
+`<lane>/<yyyy>/<MM>/<dd>/<idempotency_key>/06-failed.json` (any container, the batch one too) is a failure: see
 "Failures" below. Any other file in the containers (the other phase files, logs) is ignored. In the batch container a
 `.../<idempotency_key>/05-output-merged.json` file is a copy of one JSONL line, also ignored.
 
@@ -142,7 +142,7 @@ Schema samples of every body: `tests/fixtures/flow/*/8_postprocessing_output_*.j
 scenarios with real values: `urgent/9_scenario_guardrail_blocked_urgent.jsonc`, `urgent/9_scenario_failed_urgent.jsonc`,
 `symptom-checker/9_scenario_symptom_checker_result.jsonc`.
 
-- **`07-failed.json` in an output container.** The Function app forwards it like any record. The app does not read the
+- **`06-failed.json` in an output container.** The Function app forwards it like any record. The app does not read the
   body: it finds the visit by the key in the path, records the failure (stage `failed`, output status `error`) and queues
   the failed message in the normal delivery queue, so it is retried like any result. A failure after an answer was
   already saved is `duplicate`. An AI answer that cannot be used (`invalid_output`, or a visit answer with no `summary`
