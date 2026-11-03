@@ -249,6 +249,7 @@ CREATE TABLE ai_outputs (                                -- one row per visit an
   note_en              text, note_ar text,
   html_en              text,                           -- visit results only; NULL until the HTML format exists
   html_ar              text,
+  aws_review_status    text,                           -- AWS's own check: ok, needs_review or failed (analysis only; never sent to the Backend)
   generated_at         timestamptz,
   PRIMARY KEY (visit_id, analysis)
 );
@@ -261,7 +262,9 @@ CREATE TABLE ai_model_calls (                            -- INTERNAL ONLY: each 
   mode                        text CHECK (mode IN ('on_demand','batch_inference')),
   input_tokens                int,
   output_tokens               int,
-  cache_creation_input_tokens int,
+  cache_creation_input_tokens int,                     -- the total cache write; the two below split it by time to live
+  cache_creation_5m_input_tokens int,                  -- usage.cache_creation.ephemeral_5m_input_tokens
+  cache_creation_1h_input_tokens int,                  -- usage.cache_creation.ephemeral_1h_input_tokens
   cache_read_input_tokens     int,
   stop_reason                 text,                    -- end_turn, max_tokens, stop_sequence, tool_use, refusal ...
   stop_sequence               text,                    -- NULL unless a stop sequence ended the answer

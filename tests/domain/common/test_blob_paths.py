@@ -148,12 +148,6 @@ def test_an_output_path_is_read_back_into_its_parts():
     assert copy == MergedOutput("batch_visit", "batch", "critical", date(2026, 10, 25), key=KEY32)
 
 
-@pytest.mark.parametrize("source", ["urgent", "on-demand", "symptom-checker", "batch"])
-def test_a_failed_file_is_a_failure_in_every_source_container_the_batch_one_too(source):
-    found = parse_output_path(source, f"critical/2026/10/24/{KEY32}/06-failed.json")
-    assert found == MergedOutput("failed", source, "critical", date(2026, 10, 24), key=KEY32)
-
-
 def test_a_path_built_by_us_is_read_back_the_same_way():
     day = date(2026, 10, 24)
     assert parse_output_path("urgent", merged_output_path("normal", day, KEY32)).key == KEY32
@@ -164,11 +158,8 @@ def test_a_path_built_by_us_is_read_back_the_same_way():
 
 @pytest.mark.parametrize("source,path", [
     ("urgent", f"normal/2026/10/24/{KEY32}/01-input.json"),             # another phase file
-    ("urgent", f"normal/2026/10/24/{KEY32}/07-failed.json"),             # the old name is no longer ours
-    ("urgent", "normal/2026/13/45/x/06-failed.json"),                    # a failed file with a date that does not exist
-    ("urgent", f"normal/2026/10/24/{KEY32}/06-failed.txt"),
-    ("urgent", f"normal/2026/10/24/{KEY32}/06-failed.jsonl"),
-    ("urgent", f"normal/2026/10/24/{KEY32}/logs/06-failed.json"),
+    ("urgent", f"normal/2026/10/24/{KEY32}/06-failed.json"),             # AWS sends no failed file any more
+    ("batch", f"normal/2026/10/24/{KEY32}/06-failed.json"),
     ("urgent", f"normal/2026/10/24/{KEY32}/logs/05-output-merged.json"),
     ("urgent", "normal/2026/13/45/x/05-output-merged.json"),             # a date that does not exist
     ("urgent", "normal/2026/10/24/../05-output-merged.json"),

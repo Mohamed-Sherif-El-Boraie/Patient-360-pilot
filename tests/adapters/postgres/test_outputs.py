@@ -37,7 +37,8 @@ def public_output(visit_id, recommendations=None, source=1):
 
 
 def internal_output(with_arabic=True):
-    usage = {"input_tokens": 10, "output_tokens": 20, "cache_creation_input_tokens": 3, "cache_read_input_tokens": 4}
+    usage = {"input_tokens": 10, "output_tokens": 20, "cache_creation_input_tokens": 3, "cache_read_input_tokens": 4,
+             "cache_creation": {"ephemeral_5m_input_tokens": 2, "ephemeral_1h_input_tokens": 1}}
     metadata = {"en": {"stop_reason": "end_turn", "stop_sequence": None, "usage": usage}}
     if with_arabic:
         metadata["ar"] = {"stop_reason": "max_tokens", "usage": {"input_tokens": 5, "output_tokens": 6}}
@@ -118,8 +119,16 @@ def test_model_calls_with_and_without_the_arabic_metadata(db, store, ready):
     assert (analysis["model_id"], analysis["mode"], analysis["input_tokens"], analysis["cache_read_input_tokens"]) == (
         "model-x", "on_demand", 10, 4)
     assert (analysis["stop_reason"], analysis["stop_sequence"]) == ("end_turn", None)
+    assert (analysis["cache_creation_input_tokens"], analysis["cache_creation_5m_input_tokens"],
+            analysis["cache_creation_1h_input_tokens"]) == (3, 2, 1)         # the total and its split
     assert (translation["purpose"], translation["stop_reason"], translation["cache_read_input_tokens"]) == (
         "translation", "max_tokens", None)
+    assert translation["cache_creation_5m_input_tokens"] is None             # no split reported: nothing invented
+
+
+def test_the_status_aws_put_on_the_record_is_saved_for_analysis(db, store, ready):
+    store.save_output(1, {**internal_output(), "aws_review_status": "needs_review"}, public_output(1))
+    assert fetch(db, "SELECT aws_review_status FROM ai_outputs")[0]["aws_review_status"] == "needs_review"
 
 
 

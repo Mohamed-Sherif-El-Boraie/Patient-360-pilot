@@ -63,11 +63,12 @@ class OutputsMixin:
                 return      # the answer is already saved (and may be delivered): a late duplicate changes nothing
             conn.execute(
                 "INSERT INTO ai_outputs (visit_id, analysis, status, summary_en, summary_ar, simple_summary_en, "
-                "simple_summary_ar, note_en, note_ar, html_en, html_ar, generated_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())",
+                "simple_summary_ar, note_en, note_ar, html_en, html_ar, aws_review_status, generated_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())",
                 (visit_id, analysis, status, _text(ai.get("summary"), "en"), _text(ai.get("summary"), "ar"),
                  _text(ai.get("simple_summary"), "en"), _text(ai.get("simple_summary"), "ar"),
-                 _text(ai.get("note"), "en"), _text(ai.get("note"), "ar"), html.get("en"), html.get("ar")))
+                 _text(ai.get("note"), "en"), _text(ai.get("note"), "ar"), html.get("en"), html.get("ar"),
+                 internal_output.get("aws_review_status")))
             for alert in ai.get("critical_alerts") or []:
                 conn.execute("INSERT INTO ai_critical_alerts (visit_id, analysis, alert_en, alert_ar) "
                              "VALUES (%s, %s, %s, %s)", (visit_id, analysis, alert["en"], alert["ar"]))
@@ -129,12 +130,15 @@ class OutputsMixin:
                 continue
             call = call or {}
             usage = call.get("usage") or {}
+            written = usage.get("cache_creation") or {}      # the cache-write tokens, split by time to live
             conn.execute(
                 "INSERT INTO ai_model_calls (visit_id, analysis, purpose, model_id, mode, input_tokens, output_tokens, "
-                "cache_creation_input_tokens, cache_read_input_tokens, stop_reason, stop_sequence) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                "cache_creation_input_tokens, cache_creation_5m_input_tokens, cache_creation_1h_input_tokens, "
+                "cache_read_input_tokens, stop_reason, stop_sequence) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (visit_id, analysis, purpose, model, mode, usage.get("input_tokens"), usage.get("output_tokens"),
-                 usage.get("cache_creation_input_tokens"), usage.get("cache_read_input_tokens"),
+                 usage.get("cache_creation_input_tokens"), written.get("ephemeral_5m_input_tokens"),
+                 written.get("ephemeral_1h_input_tokens"), usage.get("cache_read_input_tokens"),
                  call.get("stop_reason"), call.get("stop_sequence")))
 
     def mark_output_failed(self, visit_id: int, error_type: str, analysis: Analysis = "visit") -> None:

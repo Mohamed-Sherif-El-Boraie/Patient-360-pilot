@@ -54,6 +54,33 @@ def test_there_are_two_messages_each_in_english_and_arabic():
     assert all(set(m) == {"en", "ar"} and all(m.values()) for m in BLOCKED_MESSAGES.values())
 
 
+CONVERSE_OUTPUT = {"stopReason": "guardrail_intervened", "trace": {"guardrail": {"outputAssessments": {"g": [TOPIC]}}}}
+CONVERSE_INPUT = {"stopReason": "guardrail_intervened", "trace": {"guardrail": {"inputAssessment": {"g": TOPIC}}}}
+APPLY_NONE = {"action": "NONE", "outputs": [], "assessments": [{"topicPolicy": {"topics": [{"action": "NONE"}]}}]}
+APPLY_BLOCKED = {"action": "GUARDRAIL_INTERVENED", "outputs": [{"text": "blocked"}], "assessments": [TOPIC]}
+
+
+@pytest.mark.parametrize(("record", "blocked", "reason"), [
+    (CONVERSE_OUTPUT, True, "output"),
+    (CONVERSE_INPUT, True, "input"),
+    ({"stopReason": "end_turn", "trace": {"guardrail": {"inputAssessment": {"g": TOPIC}}}}, False, "output"),
+    (APPLY_BLOCKED, True, "output"),                                      # ApplyGuardrail, at the top of the record
+    ({"guardrail": APPLY_BLOCKED}, True, "output"),                       # ... or under its own key
+    (APPLY_NONE, False, "output"),
+    ({"guardrail": APPLY_NONE}, False, "output"),
+    ({"guardrail": "not a mapping", "stop_reason": "end_turn"}, False, "output"),
+])
+def test_the_converse_and_apply_guardrail_shapes_are_read_like_the_invoke_model_one(record, blocked, reason):
+    assert is_blocked(record) is blocked and blocked_reason(record) == reason
+
+
+def test_an_apply_guardrail_intervention_that_only_anonymized_is_not_a_block():
+    anonymized = {"sensitiveInformationPolicy": {"piiEntities": [{"type": "NAME", "action": "ANONYMIZED"}]}}
+    assert not is_blocked({"action": "GUARDRAIL_INTERVENED", "assessments": [anonymized]})
+    assert is_blocked({"action": "GUARDRAIL_INTERVENED", "assessments": [anonymized, TOPIC]})
+    assert is_blocked({"action": "GUARDRAIL_INTERVENED"})                  # nothing to read: play safe
+
+
 def test_an_intervention_that_only_replaced_personal_data_is_not_a_block():
     """AWS reports INTERVENED also when it anonymized data; the model answer is still good then."""
     anonymized = {"sensitiveInformationPolicy": {"piiEntities": [{"type": "NAME", "action": "ANONYMIZED"}]}}

@@ -18,6 +18,7 @@ from patient360.adapters.postgres.db import Database
 # 127.0.0.1, not "localhost": on Windows "localhost" tries IPv6 first and every connection waits 3 seconds
 ADMIN_DSN = os.environ.get("TEST_PG_ADMIN_DSN", "postgresql://postgres:test@127.0.0.1:5433/postgres")
 MIGRATION = Path(__file__).parents[3] / "migrations" / "001_init.sql"
+MIGRATIONS = sorted(MIGRATION.parent.glob("*.sql"))
 
 
 def _admin():
@@ -34,7 +35,8 @@ def pg_template():
     with admin:
         admin.execute(f'CREATE DATABASE "{name}"')
         with psycopg.connect(make_conninfo(ADMIN_DSN, dbname=name), autocommit=True) as conn:
-            conn.execute(MIGRATION.read_text(encoding="utf-8"))
+            for migration in MIGRATIONS:
+                conn.execute(migration.read_text(encoding="utf-8"))
         yield name
         admin.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
 

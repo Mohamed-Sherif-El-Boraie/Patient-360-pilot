@@ -115,8 +115,7 @@ queues, pulls the file and posts each record to this app. This app never reads t
 The body is the file content as it is: the whole answer envelope for a visit file, and ONE line (one record) of the
 JSONL per call for a batch (`X-Blob-Path` is then the JSONL path). A body over 2,000,000 bytes is answered 413.
 The answer is 200 `{"outcome": ...}` for everything a retry cannot change: `saved`, `blocked`, `duplicate`,
-`unknown_visit`, `source_mismatch`, `invalid_output`, `failed_recorded` (a `06-failed.json`), `ignored` (a path that
-is not an answer). A 500 means "try again"
+`unknown_visit`, `source_mismatch`, `invalid_output`, `ignored` (a path that is not an answer). A 500 means "try again"
 (for example the database is down). A batch becomes `completed` when every one of its visits has its output saved
 (a blocked one counts), `partially_completed` until then.
 
@@ -128,9 +127,22 @@ Answer file paths inside an output container (the layout is in `tests/fixtures/f
 | A batch (one record per line) | `<lane>-jsonls/<yyyy>/<MM>/<dd>/<batch_id>/05-output-merged.jsonl` |
 
 `<lane>` is `normal` or `critical`. The content is the AWS envelope; its `recordId` is the visit's idempotency key.
-`<lane>/<yyyy>/<MM>/<dd>/<idempotency_key>/06-failed.json` (any container, the batch one too) is a failure: see
-"Failures" below. Any other file in the containers (the other phase files, logs) is ignored. In the batch container a
-`.../<idempotency_key>/05-output-merged.json` file is a copy of one JSONL line, also ignored.
+AWS sends only these answer files (no failed file any more). Any other file in the containers (the other phase files,
+logs) is ignored. In the batch container a `.../<idempotency_key>/05-output-merged.json` file is a copy of one JSONL
+line, also ignored.
+
+What the app reads from a record, besides the answer in `content[0].text`:
+
+- `metadata.en` and `metadata.ar` (analysis and translation call): `stop_reason`, `stop_sequence` and `usage`
+  (`input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`, and
+  `cache_creation.ephemeral_5m_input_tokens` / `ephemeral_1h_input_tokens`) go to `ai_model_calls`.
+- The guardrail result. A block is recognised in three shapes: InvokeModel (`amazon-bedrock-guardrailAction` =
+  `INTERVENED` with `amazon-bedrock-trace`; urgent, on-demand, symptom check), Converse (`stopReason` =
+  `guardrail_intervened` with `trace`), and ApplyGuardrail (`action` = `GUARDRAIL_INTERVENED` with `assessments`, at the
+  top or under `guardrail`; batch). An intervention that only anonymized is not a block. A block gets the fixed message,
+  never the model text.
+- `status` (`ok`, `needs_review`, `failed`: AWS's own check). It is for analysis only: it is saved as
+  `ai_outputs.aws_review_status` (and as `aws_review_status` in the saved record), and never sent to the Backend.
 
 The Function app posts each record to this app, and the path above goes in the `X-Blob-Path` header (see "The AI results endpoint" below).
 
@@ -142,11 +154,9 @@ Schema samples of every body: `tests/fixtures/flow/*/8_postprocessing_output_*.j
 scenarios with real values: `urgent/9_scenario_guardrail_blocked_urgent.jsonc`, `urgent/9_scenario_failed_urgent.jsonc`,
 `symptom-checker/9_scenario_symptom_checker_result.jsonc`.
 
-- **`06-failed.json` in an output container.** The Function app forwards it like any record. The app does not read the
-  body: it finds the visit by the key in the path, records the failure (stage `failed`, output status `error`) and queues
-  the failed message in the normal delivery queue, so it is retried like any result. A failure after an answer was
-  already saved is `duplicate`. An AI answer that cannot be used (`invalid_output`, or a visit answer with no `summary`
-  or `simple_summary`) is handled the same way.
+- **An AI answer that cannot be used** (`invalid_output`, or a visit answer with no `summary` or `simple_summary`).
+  The app records the failure (stage `failed`, output status `error`) and queues the failed message in the normal
+  delivery queue, so it is retried like any result. AWS no longer sends a failed file.
 - **A payload in Blob 1 `_rejected`.** When the ids can still be read, the app posts the failed message to the wrapper
   right after the 422. This is best effort: no visit exists to hold a retry, so a Backend error is only logged. A
   rejected payload with unusable ids sends nothing.

@@ -90,7 +90,6 @@ def batch_jsonl_path(lane: str, day: date, batch_id: str) -> str:
 
 
 OUTPUT_FILE = "05-output-merged"      # the phase file AWS writes last: the English and Arabic answer together
-FAILED_FILE = "06-failed"             # AWS writes this instead when the visit could not be analysed
 
 
 def merged_output_path(lane: str, day: date, idempotency_key: str) -> str:
@@ -114,7 +113,7 @@ def backend_output_path(lane: str, day: date, idempotency_key: str) -> str:
 @dataclass(frozen=True)
 class MergedOutput:
     """An answer file in an output container, read back from its path."""
-    kind: Literal["visit", "batch_jsonl", "batch_visit", "failed"]
+    kind: Literal["visit", "batch_jsonl", "batch_visit"]
     source: str
     lane: str
     day: date
@@ -125,14 +124,13 @@ class MergedOutput:
 _NAME = r"([A-Za-z0-9_-]{1,100})"
 _DATE = r"(\d{4})/(\d{2})/(\d{2})"
 _VISIT_FILE = re.compile(rf"^(normal|critical)/{_DATE}/{_NAME}/{OUTPUT_FILE}\.json$")
-_FAILED_FILE = re.compile(rf"^(normal|critical)/{_DATE}/{_NAME}/{FAILED_FILE}\.json$")
 _BATCH_JSONL = re.compile(rf"^(normal|critical)-jsonls/{_DATE}/{_NAME}/{OUTPUT_FILE}\.jsonl$")
 
 
 def parse_output_path(source: str, path: str) -> MergedOutput | None:
     """What a path inside the output container of ``source`` is, or ``None`` for any other file (the other phase
-    files, logs: not ours to handle). ``06-failed.json`` in any container is a failure (``failed``). In the batch
-    container a visit file is a copy of a line of the JSONL (``batch_visit``): the caller ignores it."""
+    files, logs: not ours to handle). In the batch container a visit file is a copy of a line of the JSONL
+    (``batch_visit``): the caller ignores it."""
     if source not in SOURCES:
         return None
     try:
@@ -140,9 +138,6 @@ def parse_output_path(source: str, path: str) -> MergedOutput | None:
             lane, *day, key = m.groups()
             return MergedOutput("batch_visit" if source == "batch" else "visit", source, lane,
                                 date(*map(int, day)), key=key)
-        if m := _FAILED_FILE.match(path):
-            lane, *day, key = m.groups()
-            return MergedOutput("failed", source, lane, date(*map(int, day)), key=key)
         if source == "batch" and (m := _BATCH_JSONL.match(path)):
             lane, *day, batch_id = m.groups()
             return MergedOutput("batch_jsonl", source, lane, date(*map(int, day)), batch_id=batch_id)

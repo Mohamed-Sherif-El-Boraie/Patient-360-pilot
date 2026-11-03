@@ -45,19 +45,36 @@ def _actions(node: Any, path: tuple[str, ...] = ()) -> Iterator[tuple[tuple[str,
             yield from _actions(child, path)
 
 
+def _intervention(record: Mapping[str, Any]) -> Any | None:
+    """What the guardrail found, when it intervened; ``None`` when it did not. AWS reports it in three shapes:
+    InvokeModel (``amazon-bedrock-guardrailAction`` and a trace; urgent, on-demand, symptom check), Converse
+    (``stopReason`` and ``trace``) and ApplyGuardrail (``action`` and ``assessments``, at the top or under
+    ``guardrail``; batch)."""
+    if _guardrail_action(record) == "INTERVENED":
+        return record.get(TRACE_KEY) or {}
+    if record.get("stopReason") == "guardrail_intervened":
+        return record.get("trace") or {}
+    apply = record.get("guardrail")
+    apply = apply if isinstance(apply, Mapping) else record
+    if apply.get("action") == "GUARDRAIL_INTERVENED":
+        return apply.get("assessments") or {}
+    return None
+
+
 def is_blocked(record: Mapping[str, Any]) -> bool:
     """INTERVENED is also reported when the guardrail only replaced personal data (ANONYMIZED) and the answer is still
     good. So with a trace that shows no BLOCKED action the answer is used; with no usable trace we play safe."""
-    if _guardrail_action(record) != "INTERVENED":
+    found = _intervention(record)
+    if found is None:
         return False
-    actions = {action for _, action in _actions(record.get(TRACE_KEY) or {})}
+    actions = {action for _, action in _actions(found)}
     return not actions or "BLOCKED" in actions
 
 
 def blocked_reason(record: Mapping[str, Any]) -> str:
     """``input`` when the guardrail refused what we sent (a key such as ``input`` or ``inputAssessment`` leads to the
-    block), otherwise ``output``."""
-    for path, action in _actions(record.get(TRACE_KEY) or {}):
+    block), otherwise ``output``. An ApplyGuardrail result has no such key: it is ``output``."""
+    for path, action in _actions(_intervention(record) or {}):
         if action == "BLOCKED" and any(key.lower().startswith("input") for key in path):
             return "input"
     return "output"

@@ -298,21 +298,6 @@ def test_a_symptom_answer_with_only_note_and_recommendations_is_saved(world):
     assert [r.outcome for r in world.receiver().receive("symptom-checker", path)] == ["saved"]
 
 
-def test_a_failed_file_of_the_symptom_checker_fails_the_symptom_check_and_tells_the_wrapper(world):
-    world.give_the_visit_its_result()
-    world.receive_the_symptom_check()
-    receiver = world.receiver()
-    path = f"normal/2026/10/24/{world.key}/06-failed.json"
-    assert receiver.receive_record("symptom-checker", path, "")[0].outcome == "failed_recorded"
-    assert receiver.receive_record("symptom-checker", path, "")[0].outcome == "duplicate"
-    assert world.store.symptom_checks[VISIT_ID]["stage"] == "failed_symptom"
-    backend = FakeBackend()
-    ResultSender(world.store, backend, lambda: NOW).run()
-    failed = [p for p in backend.posts if p["success"] is False]
-    assert failed == [{"success": False, "patient_id": PATIENT_ID, "visit_id": VISIT_ID, "source": 3,
-                       "symptom_flag": None, "tests": None, "ai": None, "html": None}]
-
-
 def test_a_symptom_check_that_arrived_before_its_visit_result_was_blocked_is_never_processed(world):
     """Intake refuses a symptom check once the result is known to be blocked; this is the check that arrived earlier."""
     world.receive_the_symptom_check()                      # accepted: the visit has no result yet, so it waits

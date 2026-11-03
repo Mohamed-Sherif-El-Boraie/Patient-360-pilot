@@ -271,56 +271,41 @@ def failed_path(key, lane="normal"):
     return f"{lane}/2026/10/24/{key}/06-failed.json"
 
 
-def test_a_failed_file_is_recorded_without_reading_it_and_the_wrapper_is_told(world):
+def test_a_failed_file_is_not_an_answer_any_more_and_changes_nothing(world):
     [visit] = world.add("urgent_mild", 1)
-    key = visit["idempotency_key"]
-    path = world.write("urgent", failed_path(key), {"anything": "at all"})
-    world.out["urgent"].files[path] = b"\x00 not json {"             # the body is never read
-    assert [r.outcome for r in world.receiver().receive("urgent", path)] == ["failed_recorded"]
-    assert visit["stage"] == "failed"
-    backend = FakeBackend()
-    sent = ResultSender(world.store, backend, lambda: NOW).run()
-    assert [d.outcome for d in sent] == ["delivered"]
-    assert backend.posts == [build_failed_output(patient_id=7_000_001, visit_id=1, source=1)]
-    assert visit["stage"] == "failed"                                  # delivered, and still a failed visit
-    assert ResultSender(world.store, backend, lambda: NOW).run() == [] and len(backend.posts) == 1
-
-
-@pytest.mark.parametrize(("sample_name", "source", "lane"), [
-    ("urgent_mild", "urgent", "normal"), ("on_demand_critical", "on-demand", "critical")])
-def test_a_failed_file_works_for_every_visit_source(world, sample_name, source, lane):
-    [visit] = world.add(sample_name, 1)
-    path = failed_path(visit["idempotency_key"], lane)
-    assert [r.outcome for r in world.receiver().receive_record(source, path, "")] == ["failed_recorded"]
-
-
-def test_a_failed_file_in_the_batch_container_fails_that_batch_visit(world):
-    [visit] = world.add("batch_normal", 100, count=1)
     path = failed_path(visit["idempotency_key"])
-    assert [r.outcome for r in world.receiver().receive_record("batch", path, "")] == ["failed_recorded"]
-    assert visit["public_output"]["source"] == 2
-
-
-def test_a_failed_file_for_an_unknown_visit_or_the_wrong_source_changes_nothing(world):
-    [visit] = world.add("urgent_mild", 1)
-    receiver = world.receiver()
-    assert receiver.receive_record("urgent", failed_path("a" * 32), "")[0].outcome == "unknown_visit"
-    wrong = receiver.receive_record("on-demand", failed_path(visit["idempotency_key"]), "")
-    assert wrong[0].outcome == "source_mismatch"
+    assert [r.outcome for r in world.receiver().receive_record("urgent", path, "")] == ["ignored"]
     assert visit["stage"] == "processed" and "public_output" not in visit
 
 
-def test_a_failed_file_after_a_saved_answer_is_a_duplicate_and_a_second_one_changes_nothing(world):
-    [first, second] = world.add("urgent_mild", 1) + world.add("urgent_mild", 2)
-    answered = world.write("urgent", vpath(first["idempotency_key"]), record(first["idempotency_key"]))
-    world.receiver().receive("urgent", answered)
-    saved = dict(first["public_output"])
-    late = world.receiver().receive_record("urgent", failed_path(first["idempotency_key"]), "")
-    assert late[0].outcome == "duplicate"
-    assert first["public_output"] == saved and first["stage"] == "post_processing"
-    receiver = world.receiver()
-    assert receiver.receive_record("urgent", failed_path(second["idempotency_key"]), "")[0].outcome == "failed_recorded"
-    assert receiver.receive_record("urgent", failed_path(second["idempotency_key"]), "")[0].outcome == "duplicate"
+def test_the_status_aws_puts_on_a_record_is_kept_under_its_own_name_and_never_sent_to_the_backend(world):
+    [visit] = world.add("urgent_mild", 1)
+    key = visit["idempotency_key"]
+    path = world.write("urgent", vpath(key), {**record(key), "status": "needs_review"})
+    assert [r.outcome for r in world.receiver().receive("urgent", path)] == ["saved"]
+    assert visit["internal_output"]["aws_review_status"] == "needs_review" and "status" not in visit["internal_output"]
+    backend = FakeBackend()
+    ResultSender(world.store, backend, lambda: NOW).run()
+    assert "needs_review" not in json.dumps(backend.posts) and "aws_review_status" not in json.dumps(backend.posts)
+
+
+BLOCKED_BY_AWS = {
+    "invoke": {"amazon-bedrock-guardrailAction": "INTERVENED"},
+    "converse": {"stopReason": "guardrail_intervened", "trace": {"guardrail": {"outputAssessments": {"g": [
+        {"topicPolicy": {"topics": [{"name": "t", "action": "BLOCKED", "detected": True}]}}]}}}},
+    "apply_guardrail": {"guardrail": {"action": "GUARDRAIL_INTERVENED", "outputs": [{"text": "blocked"}],
+                                      "assessments": [{"topicPolicy": {"topics": [{"action": "BLOCKED"}]}}]}},
+}
+
+
+@pytest.mark.parametrize("shape", BLOCKED_BY_AWS)
+def test_a_block_is_recognised_in_every_shape_aws_reports_it_in(world, shape):
+    [visit] = world.add("urgent_mild", 1)
+    key = visit["idempotency_key"]
+    path = world.write("urgent", vpath(key), {**record(key, text=ai_text("CANARY")), **BLOCKED_BY_AWS[shape]})
+    assert [r.outcome for r in world.receiver().receive("urgent", path)] == ["blocked"]
+    assert visit["public_output"]["ai"]["summary"] == BLOCKED_MESSAGES["output"]
+    assert "CANARY" not in json.dumps(visit["public_output"])
 
 
 def test_a_blocked_output_gets_our_own_problem_message_and_nothing_the_model_wrote(world):

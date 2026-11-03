@@ -26,8 +26,9 @@ log = structlog.get_logger()
 SYMPTOM_CHECKER = "symptom-checker"
 SYMPTOM_CHECKER_ID = 3
 Analysis = Literal["visit", "symptom"]
-Outcome = Literal["saved", "blocked", "duplicate", "unknown_visit", "source_mismatch", "invalid_output", "ignored",
-                 "failed_recorded"]
+Outcome = Literal["saved", "blocked", "duplicate", "unknown_visit", "source_mismatch", "invalid_output", "ignored"]
+AWS_STATUS_KEY = "status"                # AWS's own check of the record (ok, needs_review, failed): analysis only
+AWS_REVIEW_STATUS_KEY = "aws_review_status"   # its name here, so it is not mixed up with our own ``status``
 
 
 @dataclass(frozen=True)
@@ -62,27 +63,12 @@ class OutputReceiver:
         if found is None or found.kind == "batch_visit":
             log.info("output_ignored", source=source, status="ignored")
             return [Received(None, "ignored")]
-        if found.kind == "failed":      # the body is not read: its shape is unknown and may be broken
-            return [self._handle_failed(found)]
         result = self._handle_record(found, text)
         if found.kind == "batch_jsonl" and found.batch_id:
             # records of one batch arrive one by one: it is complete only when every visit has its output
             self._store.set_batch_status(found.batch_id, "completed" if self._store.batch_fully_answered(
                 found.batch_id) else "partially_completed")
         return [result]
-
-    def _handle_failed(self, found: MergedOutput) -> Received:
-        """AWS wrote ``06-failed.json``: record the failure and queue the "failed" message for the Backend."""
-        stored = self._store.find_visit(found.key) if found.key else None
-        if stored is None:
-            return self._ignore(found, found.key, "unknown_visit")
-        analysis = self._analysis(found)
-        if analysis == "visit" and SOURCE_NAMES[stored.source_id] != found.source:
-            return self._ignore(found, found.key, "source_mismatch")
-        if self._store.has_output(stored.visit_id, analysis):
-            return Received(found.key, "duplicate")
-        self._fail(found, stored, analysis, "aws_failed")
-        return Received(found.key, "failed_recorded")
 
     def _fail(self, found: MergedOutput, stored: StoredVisit, analysis: Analysis, reason: str) -> None:
         """One transaction: the visit failed, and the normal delivery queue tells the Backend (``success`` false)."""
@@ -103,6 +89,8 @@ class OutputReceiver:
             record_id = record["recordId"]
         except (ValueError, KeyError):
             return self._ignore(found, None, "invalid_output")
+        if AWS_STATUS_KEY in record:        # saved with the record under its new name; the Backend never gets it
+            record[AWS_REVIEW_STATUS_KEY] = record.pop(AWS_STATUS_KEY)
         stored = self._store.find_visit(record_id) if isinstance(record_id, str) else None
         if stored is None:
             return self._ignore(found, record_id, "unknown_visit")

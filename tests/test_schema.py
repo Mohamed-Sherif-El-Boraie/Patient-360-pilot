@@ -202,6 +202,12 @@ def test_model_usage_is_internal_in_its_own_table_and_there_is_no_cost_column():
     assert "PRIMARY KEY (visit_id, analysis, purpose)" in calls and "cost" not in calls
 
 
+def test_the_cache_split_and_the_aws_review_status_are_stored():
+    for column in ("cache_creation_5m_input_tokens int", "cache_creation_1h_input_tokens int"):
+        assert column in table("ai_model_calls")
+    assert "aws_review_status text" in table("ai_outputs")
+
+
 def test_the_visit_says_whether_the_symptom_checker_was_used_without_changing_its_source():
     visits = table("visits")
     assert "used_symptom_checker boolean GENERATED ALWAYS AS (symptom_received_at IS NOT NULL) STORED" in visits
