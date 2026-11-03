@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from patient360.domain.builders.model_input import single_visit_file
 from patient360.flow.batching import BatchTrigger
 from patient360.flow.dispatch import Dispatcher
 from patient360.flow.intake import Intake
@@ -109,7 +110,8 @@ def test_a_missing_blob_file_falls_back_to_the_database_copy(world):
     world.blobs.files.clear()
     world.dispatcher().run()
     sent = json.loads(next(iter(world.s3.files.values())))
-    assert sent == {"recordId": visit["idempotency_key"], "modelInput": visit["model_input"]}
+    assert sent == single_visit_file(visit["idempotency_key"], visit["model_input"])
+    assert "modelInput" not in sent and sent["messages"]
 
 
 def test_a_failed_upload_waits_longer_each_time_and_after_five_tries_gives_up(world):

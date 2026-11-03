@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from patient360.domain.builders.model_input import single_visit_file
 from patient360.domain.rules.retrieval import CatalogueTest
 from patient360.flow.intake import Accepted, Intake
 from patient360.flow.process import Processor, process_stuck_visits
@@ -43,7 +44,8 @@ def test_an_urgent_or_on_demand_visit_is_written_to_its_lane_folder(sample, name
     assert (outcome.tier, outcome.lane, outcome.read_from) == (tier, lane, "blob")
     written = json.loads(blobs.files[f"processed/{folder}/{lane}/2026/10/24/{key}.json"])
     saved = store.visits[visit["visit_id"]]
-    assert written == {"recordId": key, "modelInput": saved["model_input"]}   # file wrapped, database bare
+    assert written == single_visit_file(key, saved["model_input"])      # the file is flat, the database bare
+    assert "modelInput" not in written and written["messages"] and written["recordId"] == key
     assert "recordId" not in saved["model_input"] and saved["tier"] == tier and saved["stage"] == "processed"
 
 

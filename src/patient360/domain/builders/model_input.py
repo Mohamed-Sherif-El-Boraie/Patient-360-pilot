@@ -10,8 +10,16 @@ MAX_TOKENS = 2048
 
 
 def aws_record(record_id: str, model_input: Mapping[str, Any]) -> dict:
-    """The one shape AWS reads, in a batch line and in a single-visit file: ``recordId`` comes back in the answer."""
+    """One line of a batch file, as AWS reads it: ``recordId`` comes back in the answer."""
     return {"recordId": record_id, "modelInput": model_input}
+
+
+def single_visit_file(record_id: str, model_input: Mapping[str, Any]) -> dict:
+    """The file of one visit (urgent, on-demand, symptom check), as AWS reads it. Unlike a batch line it is flat: the
+    request keys sit next to ``recordId`` (AWS's validator reads ``messages`` at the top, so a ``modelInput`` wrapper is
+    refused). The system prompt is cached for an hour and the guardrail is switched on by AWS (the empty config)."""
+    system = [{**block, "cache_control": {"type": "ephemeral", "ttl": "1h"}} for block in model_input["system"]]
+    return {"recordId": record_id, **model_input, "system": system, "amazon-bedrock-guardrailConfig": {}}
 
 
 def build_model_input(*, system_prompt: str, output_schema: Mapping[str, Any], processed: Mapping[str, Any]) -> dict:

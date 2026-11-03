@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import Any, Literal
 
 from patient360.domain.builders.ai_input import SOURCE_NAMES, build_ai_input
-from patient360.domain.builders.model_input import aws_record, build_model_input
+from patient360.domain.builders.model_input import build_model_input, single_visit_file
 from patient360.domain.common.blob_paths import blob_day, processed_path
 from patient360.domain.rules.classify import decide_tier, lane_for_tier
 from patient360.domain.rules.retrieval import select_retrieved_tests
@@ -29,10 +29,10 @@ class Processed:
 
 def write_model_input(blobs: BlobStore, path: str, record_id: str,
                       model_input: dict[str, Any]) -> Literal["blob", "postgresql"]:
-    """Save the file AWS reads (``{recordId, modelInput}``, the visit's key) in Blob. ``postgresql`` when Blob is down:
-    the database copy (the bare request) is then the one that is read."""
+    """Save the file AWS reads (the flat single-visit file, with the visit's key) in Blob. ``postgresql`` when Blob is
+    down: the database copy (the bare request) is then the one that is read."""
     try:
-        blobs.put(path, json.dumps(aws_record(record_id, model_input), ensure_ascii=False).encode())
+        blobs.put(path, json.dumps(single_visit_file(record_id, model_input), ensure_ascii=False).encode())
     except BlobUnavailable:
         return "postgresql"
     return "blob"

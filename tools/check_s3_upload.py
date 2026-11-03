@@ -71,6 +71,7 @@ def suite(s3, now: datetime) -> int:
     must answer 4 with 05-output-merged and 4 with a failed file. The batch ones hold 3 lines each. The lane
     alternates, so normal and critical each get both kinds in different buckets."""
     sample = json.loads((Path(__file__).parent / "sample_processed_urgent.json").read_text(encoding="utf-8"))
+    sample.pop("recordId")        # a single-visit file is flat (recordId beside the request); a batch line wraps it
     stamp = now.strftime("%Y%m%dT%H%M%SZ")
     day = now.strftime("%Y/%m/%d")
     bad = sample | {"messages": []}
@@ -82,10 +83,12 @@ def suite(s3, now: datetime) -> int:
             lane = lanes[(i + j) % 2]      # both lanes get correct and wrong files
             name = f"p360t-{stamp}-{tag}"
             if env_name == "S3_BUCKET_BATCH":
-                lines = [json.dumps({"recordId": f"{name}-{n}", "modelInput": model_input}) for n in range(3)]
+                plain = {k: v for k, v in model_input.items() if k != "amazon-bedrock-guardrailConfig"} | {
+                    "system": [{k: v for k, v in b.items() if k != "cache_control"} for b in model_input["system"]]}
+                lines = [json.dumps({"recordId": f"{name}-{n}", "modelInput": plain}) for n in range(3)]
                 passed.append(put(s3, bucket, f"{lane}/{day}/{name}/01-input.jsonl", "\n".join(lines).encode()))
             else:
-                body = json.dumps({"recordId": name, "modelInput": model_input}).encode()
+                body = json.dumps({"recordId": name, **model_input}).encode()
                 passed.append(put(s3, bucket, f"{lane}/{day}/{name}/01-input.json", body))
     print(f"\nid stamp: {stamp}  (ok = expect 05-output-merged, bad = expect a failed file)")
     print("ALL UPLOADED" if all(passed) else "SOME FAILED")

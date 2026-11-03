@@ -86,6 +86,8 @@ class OutputReceiver:
     def _handle_record(self, found: MergedOutput, text: str) -> Received:
         try:
             record = _loads(text)
+            if isinstance(record.get("modelOutput"), dict):     # a batch line: the answer sits under modelOutput
+                record = {**record.pop("modelOutput"), **record}
             record_id = record["recordId"]
         except (ValueError, KeyError):
             return self._ignore(found, None, "invalid_output")

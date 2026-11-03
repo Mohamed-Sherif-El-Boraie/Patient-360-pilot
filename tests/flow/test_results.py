@@ -173,6 +173,19 @@ def test_a_batch_file_has_one_result_per_line_and_every_visit_moves_on(world):
     assert list(world.out["batch"].files) == [path]            # we write nothing back: AWS owns the container
     assert all(v["public_output"]["source"] == 2 for v in visits)
 
+def test_a_batch_line_answers_under_model_output_and_is_saved_like_a_visit_answer(world):
+    """AWS's batch line is ``{recordId, model, modelOutput: {content, metadata, ...}}``, not the flat visit shape."""
+    [visit] = world.add("batch_normal", 100)
+    [batch] = BatchTrigger(world.store, world.blobs, 1).run()
+    flat = record(visit["idempotency_key"])
+    line = {"recordId": flat.pop("recordId"), "model": flat.pop("model"), "modelOutput": flat}
+    path = world.write("batch", bpath(batch), line)
+    assert [r.outcome for r in world.receiver().receive("batch", path)] == ["saved"]
+    assert visit["stage"] == "post_processing" and visit["internal_output"]["model"] == "model-x"
+    assert visit["internal_output"]["metadata"]["en"]["usage"] == {"input_tokens": 10, "output_tokens": 20}
+    assert visit["public_output"]["ai"]["summary"] == both("summary")
+
+
 def test_a_batch_is_completed_only_when_every_visit_has_its_output(world):
     visits = world.add("batch_normal", 100, count=3)
     [batch] = BatchTrigger(world.store, world.blobs, 3).run()

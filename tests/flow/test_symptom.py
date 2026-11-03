@@ -5,6 +5,7 @@ import pytest
 
 from patient360.domain.builders.blocked import BLOCKED_MESSAGES
 from patient360.domain.builders.html_report import FOOTER, SYMPTOM_MESSAGE, VISIT_MESSAGE
+from patient360.domain.builders.model_input import single_visit_file
 from patient360.domain.rules.packages import Package
 from patient360.domain.rules.retrieval import CatalogueTest
 from patient360.flow.dispatch import Dispatcher
@@ -107,7 +108,7 @@ def test_a_symptom_check_makes_its_own_request_from_the_symptoms_the_results_and
     assert saved["model_input"]["system"][0]["text"] == prompt
     assert saved["model_input"]["output_config"]["format"]["schema"] == schema
     path = f"processed/symptom-checker/normal/2026/10/24/{world.key}.json"
-    assert json.loads(world.blobs.files[path]) == {"recordId": world.key, "modelInput": saved["model_input"]}
+    assert json.loads(world.blobs.files[path]) == single_visit_file(world.key, saved["model_input"])
     assert "recordId" not in saved["model_input"]
 
 
