@@ -942,5 +942,26 @@
     }
   ],
   "descriptive_results": [],
-  "visit_answer_list": []
+  "visit_answer_list": [
+    {
+      "preparation_id": 940,
+      "preparation_name": "هل يتناول المريض أدوية لعلاج السكر؟",
+      "answer": "Yes - Metformin"
+    },
+    {
+      "preparation_id": 941,
+      "preparation_name": "هل صام المريض 8 ساعات على الأقل؟",
+      "answer": "Yes"
+    },
+    {
+      "preparation_id": 928,
+      "preparation_name": "هل المريض مدخن ؟",
+      "answer": "No"
+    },
+    {
+      "preparation_id": 926,
+      "preparation_name": " هل يأخذ علاج للانيميا؟",
+      "answer": "No"
+    }
+  ]
 }

@@ -235,5 +235,61 @@
     }
   ],
   "descriptive_results": [],
-  "visit_answer_list": []
+  "visit_answer_list": [
+    {
+      "preparation_id": 205,
+      "preparation_name": "هل يؤخذ علاج كيماوى",
+      "answer": "No"
+    },
+    {
+      "preparation_id": 246,
+      "preparation_name": "هل يوجد حمل؟",
+      "answer": "No"
+    },
+    {
+      "preparation_id": 256,
+      "preparation_name": "هل يوجد نزيف أو بقع زرقاء تحت الجلد",
+      "answer": "No"
+    },
+    {
+      "preparation_id": 288,
+      "preparation_name": "هل المريض مصاب بامراض الكبد او القلب او الرئة ؟",
+      "answer": "No"
+    },
+    {
+      "preparation_id": 262,
+      "preparation_name": "هل يوجد نقص بالصفائح الدموية؟",
+      "answer": "No"
+    },
+    {
+      "preparation_id": 668,
+      "preparation_name": "   هل تم نقل دم او يأخذ علاج حديد؟",
+      "answer": "No"
+    },
+    {
+      "preparation_id": 926,
+      "preparation_name": " هل يأخذ علاج للانيميا؟",
+      "answer": "No"
+    },
+    {
+      "preparation_id": 927,
+      "preparation_name": "هل هناك  زيادة فى الهيموجلوبين ؟",
+      "answer": "No"
+    },
+    {
+      "preparation_id": 928,
+      "preparation_name": "هل المريض مدخن ؟",
+      "answer": "No"
+    },
+    {
+      "preparation_id": 929,
+      "preparation_name": "هل تم التبرع بالدم ؟ و منذ متى؟",
+      "answer": "No"
+    },
+    {
+      "preparation_id": 903,
+      "preparation_name": "سؤال عن أنيميا حادة أو نزيف أو أجراء جراحى ؟\r\n",
+      "answer": "No"
+    }
+  ]
 }
