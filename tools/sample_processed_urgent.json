@@ -202,6 +202,5 @@
         "additionalProperties": false
       }
     }
-  },
-  "amazon-bedrock-guardrailConfig": {}
+  }
 }

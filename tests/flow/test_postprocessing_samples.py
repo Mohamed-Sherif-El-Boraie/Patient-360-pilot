@@ -111,13 +111,13 @@ def test_every_flow_sample_parses(path):
 @pytest.mark.parametrize(("folder", "file"), [("urgent", "01-input"), ("on-demand", "01-input-en"),
                                               ("symptom-checker", "01-input-en")])
 def test_the_single_visit_file_has_the_keys_of_the_aws_sample(folder, file):
-    """Flat (no ``modelInput``), the prompt cached, the guardrail config: what AWS's validator reads."""
+    """Flat (no ``modelInput``), the prompt cached, no guardrail key (Bedrock refuses it in the body)."""
     sample = read_jsonc(FLOW / folder / f"{file}.jsonc")
     built = single_visit_file("k", build_model_input(system_prompt="p", output_schema={"type": "object"}, processed={}))
     assert list(built) == list(sample)
     assert list(built["system"][0]) == list(sample["system"][0])
     assert built["system"][0]["cache_control"] == sample["system"][0]["cache_control"]
-    assert built["amazon-bedrock-guardrailConfig"] == sample["amazon-bedrock-guardrailConfig"] == {}
+    assert "amazon-bedrock-guardrailConfig" not in built and "amazon-bedrock-guardrailConfig" not in sample
 
 
 def test_a_batch_line_of_the_aws_sample_is_wrapped_in_model_input():

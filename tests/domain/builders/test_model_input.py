@@ -8,15 +8,13 @@ SCHEMA = {"type": "object", "properties": {}}
 ARABIC = "عربي"
 
 
-def test_a_single_visit_file_is_flat_with_the_cached_prompt_and_the_guardrail_switch():
+def test_a_single_visit_file_is_flat_with_the_cached_prompt_and_no_guardrail_key():
     bare = build_model_input(system_prompt="Be careful.", output_schema=SCHEMA, processed={"patient": {}})
     out = single_visit_file("abc", bare)
-    assert list(out) == ["recordId", "anthropic_version", "max_tokens", "system", "messages", "output_config",
-                         "amazon-bedrock-guardrailConfig"]
+    assert list(out) == ["recordId", "anthropic_version", "max_tokens", "system", "messages", "output_config"]
     assert out["recordId"] == "abc" and "modelInput" not in out and out["messages"] == bare["messages"]
     cached = {"type": "text", "text": "Be careful.", "cache_control": {"type": "ephemeral", "ttl": "1h"}}
     assert out["system"] == [cached]
-    assert out["amazon-bedrock-guardrailConfig"] == {}
     assert "cache_control" not in bare["system"][0]     # the database copy and the batch line stay plain
 
 
