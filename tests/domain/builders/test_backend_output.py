@@ -26,7 +26,7 @@ def test_the_output_has_ids_status_unit_direction_and_history_per_parameter_and_
     calcium = next(r for r in results if r["status"] == "critical")
     assert list(calcium) == ["parameter_id", "value", "status", "result_date", "unit", "critical", "history"]
     assert calcium["critical"]["direction"] in ("critical_low", "critical_high")
-    assert all(set(r["critical"]) == {"direction"} for r in results)      # always an object, never a flat key
+    assert all(set(r["critical"]) == {"low", "high", "range_text", "direction"} for r in results)   # always an object
     assert all("alert" not in r for r in results)
     assert [t["test_id"] for t in out["tests"]] == list(dict.fromkeys(r["test_id"] for r in rows))
 
@@ -42,10 +42,11 @@ def test_a_history_point_gets_the_unit_of_its_result_and_no_history_is_an_empty_
     rows = [row(1, 5, "high", "mg/dL", "critical_high", points), row(1, 6, "normal")]
     out = build_backend_output(patient_id=1, visit_id=2, source=1, rows=rows, ai=AI)
     first, second = out["tests"][0]["results"]
-    assert (first["unit"], first["critical"]) == ("mg/dL", {"direction": "critical_high"})
+    assert (first["unit"], first["critical"]) == (
+        "mg/dL", {"low": None, "high": None, "range_text": None, "direction": "critical_high"})
     assert first["history"] == [{"date": "2026-01-01", "value": "5.1", "unit": "mg/dL"},
                                 {"date": "2025-06-01", "value": "4", "unit": "mg/dL"}]
-    assert (second["unit"], second["critical"], second["history"]) == (None, {"direction": None}, [])
+    assert (second["unit"], second["critical"]["direction"], second["history"]) == (None, None, [])
 
 
 def test_the_html_is_built_from_the_full_answer_and_the_saved_result_keeps_every_key():
@@ -62,10 +63,23 @@ def test_a_visit_is_sent_whole_with_every_key():
           "recommendations": []}
     out = build_backend_output(patient_id=1, visit_id=2, source=1, rows=[row(1, 5, "normal")], ai=ai, packages=[])
     sent = for_wrapper(out)
-    assert list(sent) == ["success", "patient_id", "visit_id", "company_id", "source", "symptom_flag", "tests", "ai",
-                          "html"]
+    assert list(sent) == ["success", "patient_id", "visit_id", "company_id", "source", "symptom_flag", "criticalTests",
+                          "ai", "html"]
     assert list(sent["ai"]) == ["summary", "simple_summary", "critical_alerts", "note", "recommendations", "packages"]
-    assert sent == out
+    assert sent["criticalTests"] == [] and {k: v for k, v in sent.items() if k != "criticalTests"} == {
+        k: v for k, v in out.items() if k != "tests"}
+
+
+def test_only_the_critical_parameters_of_the_tests_that_have_one_are_sent():
+    points = [{"history_date": "2026-01-01", "history_value": "5.1"}]
+    rows = [row(1, 5, "normal"), row(1, 6, "critical", "mg/dL", "critical_high", points), row(1, 7, "low"),
+            row(2, 8, "normal"), row(3, 9, "critical", None, "critical_low"), row(3, 10, "normal")]
+    out = build_backend_output(patient_id=1, visit_id=2, source=1, rows=rows, ai=AI)
+    sent = for_wrapper(out)["criticalTests"]
+    assert [(t["Testid"], [r["parameterid"] for r in t["results"]]) for t in sent] == [(1, [6]), (3, [9])]
+    assert sent[0]["results"][0] == {"parameterid": 6, "critical": {
+        "low": None, "high": None, "range_text": None, "direction": "critical_high"}}
+    assert [t["test_id"] for t in out["tests"]] == [1, 2, 3] and len(out["tests"][0]["results"]) == 3   # saved whole
 
 
 def test_a_symptom_result_is_sent_with_the_flag_note_recommendations_packages_and_html_but_no_tests():
@@ -86,11 +100,11 @@ def test_a_blocked_result_is_sent_with_its_fixed_message_in_the_keys_of_its_kind
     visit = for_wrapper(build_backend_output(patient_id=1, visit_id=2, source=1, rows=[row(1, 5, "high")], ai=blocked))
     assert visit["ai"] == {"summary": message, "simple_summary": message, "critical_alerts": [], "note": message,
                            "recommendations": [], "packages": []}
-    assert visit["symptom_flag"] is False and visit["tests"] and "html" in visit
+    assert visit["symptom_flag"] is False and "criticalTests" in visit and "html" in visit
     symptom = for_wrapper(build_backend_output(patient_id=1, visit_id=2, source=3, rows=[], ai=blocked,
                                                symptom_flag=True))
     assert symptom["ai"] == {"note": message, "recommendations": [], "packages": []}
-    assert symptom["symptom_flag"] is True and "tests" not in symptom and "html" in symptom
+    assert symptom["symptom_flag"] is True and "criticalTests" not in symptom and "html" in symptom
 
 
 def test_a_failed_result_is_sent_as_it_is():
@@ -135,7 +149,15 @@ def test_the_company_id_is_in_every_kind_of_result():
 def test_the_failed_output_has_the_ids_success_false_and_everything_else_null():
     assert build_failed_output(patient_id=1, visit_id=2, company_id=10, source=4) == {
         "success": False, "patient_id": 1, "visit_id": 2, "company_id": 10, "source": 4,
-        "symptom_flag": None, "tests": None, "ai": None, "html": None}
+        "symptom_flag": None, "criticalTests": [], "ai": None, "html": None}
+
+
+def test_a_failed_visit_still_carries_its_critical_tests_and_a_failed_symptom_check_has_none():
+    rows = [row(1, 5, "normal"), row(1, 6, "critical", "mg/dL", "critical_high"), row(2, 7, "normal")]
+    failed = build_failed_output(patient_id=1, visit_id=2, source=1, rows=rows)
+    assert [(t["Testid"], [r["parameterid"] for r in t["results"]]) for t in failed["criticalTests"]] == [(1, [6])]
+    assert failed["ai"] is None and failed["success"] is False
+    assert "criticalTests" not in build_failed_output(patient_id=1, visit_id=2, source=3, rows=rows)
 
 
 def test_the_symptom_flag_is_always_in_the_result_and_is_false_unless_it_is_given_as_true():

@@ -98,9 +98,11 @@ def test_the_sample_has_the_keys_of_the_real_body(folder, file, visit, answer, s
     body = real_body(visit, answer, source, flag)
     sample = read_jsonc(FLOW / folder / f"{file}.jsonc")
     same(shape(body), sample)
-    assert ("tests" in body) is (source != 3) and "critical_direction" not in json.dumps(sample)
-    if source != 3:      # the history of at least one real result is filled, so its keys were really compared
-        assert any(r["history"] for t in body["tests"] for r in t["results"])
+    assert ("criticalTests" in body) is (source != 3) and "tests" not in body
+    assert "critical_direction" not in json.dumps(sample)
+    if source == 2:      # a batch sample with critical results: the keys of the sent critical parameters were compared
+        assert body["criticalTests"] and all(r["critical"]["direction"] for t in body["criticalTests"]
+                                             for r in t["results"])
 
 
 @pytest.mark.parametrize("path", sorted(FLOW.rglob("*.jsonc")), ids=lambda p: f"{p.parent.name}/{p.name}")

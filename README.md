@@ -651,7 +651,7 @@ Sends each finished result to the Backend, one call per result, and retries when
 | `Delivered` | Class: one delivery attempt. | An object with the unit and outcome ("delivered", "retry" or "failed"). |
 | `ResultSender.__init__(store, backend, now)` | Keeps the database, the Backend client and the clock. | Nothing returned. |
 | `ResultSender.run()` | Sends every ready result one after another; failed ones wait for their retry time. | A list of Delivered objects. |
-| `ResultSender._send(unit)` | (helper) Posts one result through `for_wrapper` (a visit leaves whole, a symptom check without `tests` and with only note, recommendations and packages in `ai`); retries if the Backend is unreachable, stops if it refuses the content. | A Delivered object. |
+| `ResultSender._send(unit)` | (helper) Posts one result through `for_wrapper` (a visit leaves whole but its `tests` become `criticalTests`: only the parameters with a critical direction as `{Testid, results:[{parameterid, critical:{low, high, range_text, direction}}]}`, `[]` when none; a symptom check without it and with only note, recommendations and packages in `ai`); retries if the Backend is unreachable, stops if it refuses the content. | A Delivered object. |
 | `ResultSender._retry_time(unit)` | (helper) Works out when the next try should happen, using the retry schedule. | A time, or None when no tries are left. |
 | `ResultSender._fail(unit, error, retry_at)` | (helper) Records the failed attempt in the database and writes a warning to the log. | A Delivered object with "retry" or "failed". |
 

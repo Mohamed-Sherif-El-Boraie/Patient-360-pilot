@@ -144,15 +144,14 @@ def test_a_visit_goes_to_the_backend_whole_and_a_retry_sends_the_same_body(world
     ResultSender(world.store, Down(), lambda: NOW).run()
     ResultSender(world.store, Down(), lambda: NOW + timedelta(days=1)).run()
     assert len(sent) == 2 and sent[0] == sent[1]
-    assert set(sent[0]) == {"success", "patient_id", "visit_id", "company_id", "source", "symptom_flag", "tests", "ai",
-                            "html"}
+    assert set(sent[0]) == {"success", "patient_id", "visit_id", "company_id", "source", "symptom_flag",
+                            "criticalTests", "ai", "html"}
     assert sent[0]["company_id"] == visit["payload"]["company_id"]
     assert list(sent[0]["ai"]) == ["summary", "simple_summary", "critical_alerts", "note", "recommendations",
                                    "packages"]
     assert "summary" in sent[0]["html"]["en"]
-    result = sent[0]["tests"][0]["results"][0]
-    assert list(result) == ["parameter_id", "value", "status", "result_date", "unit", "critical", "history"]
-    assert set(result["critical"]) == {"direction"}
+    assert all(set(t) == {"Testid", "results"} and all(set(r) == {"parameterid", "critical"} for r in t["results"])
+               and all(r["critical"]["direction"] for r in t["results"]) for t in sent[0]["criticalTests"])
     assert {"summary", "simple_summary", "critical_alerts"} <= set(visit["public_output"]["ai"])
 
 
@@ -346,7 +345,7 @@ def test_a_blocked_output_gets_our_own_problem_message_and_nothing_the_model_wro
     assert posted["ai"] == {"summary": message, "simple_summary": message, "critical_alerts": [], "note": message,
                             "recommendations": [], "packages": []}
     assert posted["symptom_flag"] is False
-    assert posted["tests"] == public["tests"] and message["en"] in posted["html"]["en"]
+    assert "tests" not in posted and "criticalTests" in posted and message["en"] in posted["html"]["en"]
 
 
 def test_a_blocked_input_gets_the_input_message(world):

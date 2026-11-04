@@ -75,7 +75,8 @@ class OutputReceiver:
         raw = json.loads(stored.raw)
         failed = build_failed_output(
             patient_id=raw["patient_id"], visit_id=stored.visit_id, company_id=raw["company_id"],
-            source=SYMPTOM_CHECKER_ID if analysis == "symptom" else stored.source_id)
+            source=SYMPTOM_CHECKER_ID if analysis == "symptom" else stored.source_id,
+            rows=build_ai_input(raw).rows)
         self._store.save_failed_output(stored.visit_id, failed, analysis)
         self._keep_backend_output(found, stored, failed)
         log.warning(reason, source=found.source, status="failed")

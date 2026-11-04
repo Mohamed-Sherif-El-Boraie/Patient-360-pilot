@@ -95,6 +95,7 @@ def _result(test: Mapping[str, Any], raw: Mapping[str, Any]) -> tuple[dict[str, 
         "value": value, "status": status, "alert": alert, "unit": raw.get("unit"),
         "result_date": raw.get("result_date"),
         "critical_direction": f"critical_{direction}" if direction else None,
+        "critical": out["critical"],
         "history": _history(raw.get("history")),
     }
     return out, row
