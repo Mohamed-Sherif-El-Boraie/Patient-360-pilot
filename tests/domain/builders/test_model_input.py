@@ -28,7 +28,7 @@ def test_the_request_holds_the_prompt_the_processed_json_and_the_schema():
     out = build_model_input(system_prompt="Be careful.", output_schema=SCHEMA, processed=processed)
     assert out["system"] == [{"type": "text", "text": "Be careful."}]
     assert out["output_config"]["format"] == {"type": "json_schema", "schema": SCHEMA}
-    assert (out["anthropic_version"], out["max_tokens"]) == ("bedrock-2023-05-31", 2048)
+    assert (out["anthropic_version"], out["max_tokens"]) == ("bedrock-2023-05-31", 8192)
     [message] = out["messages"]
     assert message["role"] == "user"
     assert json.loads(message["content"][0]["text"]) == processed

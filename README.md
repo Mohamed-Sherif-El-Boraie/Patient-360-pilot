@@ -286,6 +286,7 @@ Decides the patient's tier (how serious) and the model lane (which AI model is u
 | Function | What it does | Output |
 |---|---|---|
 | `LANE_BY_TIER (constant)` | The lane table: NORMAL and MILD use the "normal" lane (cheaper model); MODERATE and CRITICAL use the "critical" lane (stronger model). | a read-only table |
+| (models per lane, set on the AWS side, not in this app) | Urgent, on-demand and symptom-checker files: critical lane = Claude Sonnet 5.5 (`eu.anthropic.claude-sonnet-5-5`), normal lane = Claude Haiku 5.5 (`eu.anthropic.claude-haiku-5-5`); `anthropic_version` stays `bedrock-2023-05-31`, `max_tokens` is 8192. Batch files: critical lane = Claude Sonnet 4.6, normal lane = Claude Haiku 4.5 (the 5.5 models have no batch mode). The request carries no model id. | a note |
 | `MILD_MAX (constant)` | 1 to 3 parameters that are not normal means MILD; more than 3 means MODERATE. | the number 3 |
 | `has_value(row)` | Checks that a result row has a value that is not empty or blank. | True or False. |
 | `decide_tier(result_rows, descriptive_count=0)` | Looks at rows with a value: any critical gives CRITICAL; otherwise counts not-normal rows plus text results. No numeric rows at all gives MODERATE. | One of NORMAL, MILD, MODERATE, CRITICAL. |
@@ -452,7 +453,7 @@ Builds the request sent to the AI model (Bedrock) for one visit.
 | Function | What it does | Output |
 |---|---|---|
 | `ANTHROPIC_VERSION (constant)` | The fixed version label Bedrock needs for the Claude model. | A text label. |
-| `MAX_TOKENS (constant)` | The longest answer the model may write: 2048 tokens (small pieces of text). | The number 2048. |
+| `MAX_TOKENS (constant)` | The longest answer the model may write: 8192 tokens (small pieces of text). | The number 8192. |
 | `build_model_input(system_prompt, output_schema, processed)` | Packs the prompt, the visit JSON and the answer format. Refuses an empty prompt or format. | The request as a dictionary. Raises an error if the prompt or schema is empty. |
 
 ### `domain/builders/symptom_ai_input.py`

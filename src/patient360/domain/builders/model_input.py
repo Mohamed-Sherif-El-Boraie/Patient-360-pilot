@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 ANTHROPIC_VERSION = "bedrock-2023-05-31"
-MAX_TOKENS = 2048
+MAX_TOKENS = 8192
 
 
 def aws_record(record_id: str, model_input: Mapping[str, Any]) -> dict:
