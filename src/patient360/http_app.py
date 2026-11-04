@@ -18,6 +18,8 @@ from patient360.flow.intake import (
     Accepted,
     Duplicate,
     Rejected,
+    Retry,
+    SymptomAgain,
     SymptomCheckerClosed,
     TooLarge,
     VisitNotFound,
@@ -30,10 +32,23 @@ BATCH = 2
 MAX_RESULT_BYTES = 2_000_000
 
 
-def reply(status: int, message: str, code: int = 1, **more: Any) -> JSONResponse:
-    """The one place that builds an answer. The ``response.code`` convention (-1 success, 1 failure) copies the
-    Backend's style; the exact reply the wrapper expects is not confirmed yet."""
+SUCCESS_CODE, ERROR_CODE = -1, 0
+MAX_ERROR_ITEMS, MAX_ERROR_CHARS = 5, 300
+
+
+def reply(status: int, message: str, code: int = ERROR_CODE, **more: Any) -> JSONResponse:
+    """The one place that builds an answer, with the two codes the Backend and the wrapper agreed: -1 and the
+    message "success" (plus ``data``) when we received the data and answer with data; 0 and only a message when we
+    received it but cannot accept it (visit not found, invalid payload, ...). There is no other code."""
     return JSONResponse({"response": {"code": code, "message": message}, **more}, status_code=status)
+
+
+def invalid_message(errors: list[dict[str, Any]]) -> str:
+    """One readable line for the 422, so the answer keeps to code and message: where each problem is and what it is.
+    The errors never hold the input values (see ``validate_payload``)."""
+    shown = [f"{'.'.join(e['loc']) or 'body'}: {e['msg']}" for e in errors[:MAX_ERROR_ITEMS]]
+    more = f" (+{len(errors) - MAX_ERROR_ITEMS} more)" if len(errors) > MAX_ERROR_ITEMS else ""
+    return f"Invalid payload: {'; '.join(shown)}{more}"[:MAX_ERROR_CHARS]
 
 
 class _Stop(Exception):
@@ -64,7 +79,8 @@ def _tell_backend_rejected(services: Services, rejected: Rejected) -> None:
         return
     try:
         services.backend.post_result(build_failed_output(
-            patient_id=rejected.patient_id, visit_id=rejected.visit_id, source=rejected.source_id))
+            patient_id=rejected.patient_id, visit_id=rejected.visit_id, source=rejected.source_id,
+            company_id=rejected.company_id))
     except Exception as error:
         log.warning("rejected_failed_message_not_sent", error_type=type(error).__name__)
 
@@ -108,13 +124,17 @@ def create_app(services: Services, lifespan=None) -> FastAPI:
             return reply(500, "Internal error")             # no 202 without a safe save: the caller resends
         if isinstance(outcome, Accepted):
             background.add_task(_process, services, outcome)
-            return reply(202, "Accepted", -1, data={"visit_id": outcome.visit_id})
-        if isinstance(outcome, Duplicate):                   # answered as success so the caller stops resending
-            return reply(200, "Duplicate", -1, data={"visit_id": outcome.visit_id})
+            return reply(202, "success", SUCCESS_CODE, data={"visit_id": outcome.visit_id})
+        if isinstance(outcome, Retry):                       # we have it, its result was not delivered: sent again
+            return reply(200, "success", SUCCESS_CODE, data={"visit_id": outcome.visit_id})
+        if isinstance(outcome, Duplicate):                   # we have it and its result was delivered
+            return reply(409, "DUPLICATE_VISIT")
+        if isinstance(outcome, SymptomAgain):                # started again by the wrapper: the checker is closed now
+            return reply(200, "success", SUCCESS_CODE, data=outcome.data)
         if isinstance(outcome, Rejected):
             if None not in (outcome.patient_id, outcome.visit_id, outcome.source_id):
                 background.add_task(_tell_backend_rejected, services, outcome)
-            return reply(422, "Invalid payload", errors=outcome.errors)
+            return reply(422, invalid_message(outcome.errors))
         if isinstance(outcome, VisitNotFound):
             return reply(404, "VISIT_NOT_FOUND")
         if isinstance(outcome, SymptomCheckerClosed):

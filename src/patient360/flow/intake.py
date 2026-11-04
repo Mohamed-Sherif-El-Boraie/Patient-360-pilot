@@ -26,8 +26,18 @@ class Accepted:        # answer 202
 
 
 @dataclass(frozen=True)
-class Duplicate:       # answer 200: we already have it
+class Duplicate:       # answer 409, code 0: we already have it and its result was delivered
     visit_id: int
+
+
+@dataclass(frozen=True)
+class Retry:           # answer 200, code -1: we already have it but its result was not delivered: it is sent again
+    visit_id: int
+
+
+@dataclass(frozen=True)
+class SymptomAgain:    # answer 200, code -1: the symptom check came again; ``data`` says the checker is closed now
+    data: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -36,6 +46,7 @@ class Rejected:        # answer 422, with the error list (never the input)
     patient_id: int | None = None      # the ids that could still be read: enough to tell the Backend the patient failed
     visit_id: int | None = None
     source_id: int | None = None
+    company_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -54,19 +65,21 @@ class TooLarge:        # answer 413: over MAX_REQUEST_BYTES; nothing is read, sa
     limit: int
 
 
-def _peek(raw: bytes) -> tuple[int | None, int | None, int | None]:
-    """The source number, visit id and patient id of a payload that failed validation, if they are usable."""
+def _peek(raw: bytes) -> tuple[int | None, int | None, int | None, int | None]:
+    """The source number, visit id, patient id and company id of a payload that failed validation, if usable."""
     try:
         obj = json.loads(raw)
     except (ValueError, RecursionError):
-        return None, None, None
+        return None, None, None, None
     if not isinstance(obj, dict):
-        return None, None, None
-    source, visit, patient = (as_whole_number(obj.get(k)) for k in ("source", "visit_id", "patient_id"))
+        return None, None, None, None
+    source, visit, patient, company = (as_whole_number(obj.get(k))
+                                       for k in ("source", "visit_id", "patient_id", "company_id"))
     source = source if type(source) is int and source in SOURCE_NAMES else None
     visit = visit if type(visit) is int and visit >= 1 else None
     patient = patient if type(patient) is int and patient >= 1 else None
-    return source, visit, patient
+    company = company if type(company) is int and company >= 1 else None
+    return source, visit, patient, company
 
 
 class Intake:
@@ -74,8 +87,26 @@ class Intake:
                  max_bytes: int | None = None) -> None:
         self._store, self._blobs, self._secret, self._now, self._max_bytes = store, blobs, secret, now, max_bytes
 
+    def _visit_again(self, visit_id: int) -> Duplicate | Retry:
+        """The same visit came again: a duplicate if its result was delivered, else a retry (a result whose delivery
+        gave up is put back on the delivery queue)."""
+        if self._store.result_delivered(visit_id):
+            return Duplicate(visit_id)
+        self._store.requeue_failed_delivery(visit_id)
+        return Retry(visit_id)
+
+    def _symptom_again(self, visit_id: int) -> SymptomAgain:
+        """The symptom check came again (the wrapper started it a second time): success, and the data says the checker
+        is closed now. A result that was not delivered is sent again, as for a visit."""
+        if not self._store.result_delivered(visit_id, "symptom"):
+            self._store.requeue_failed_delivery(visit_id, "symptom")
+        raw = json.loads(self._store.stored_visit(visit_id).raw)
+        return SymptomAgain({"success": True, "patient_id": raw["patient_id"], "visit_id": visit_id,
+                             "company_id": raw["company_id"], "source": SYMPTOM_CHECKER, "symptom_flag": False})
+
     def receive(self, raw: bytes, *, symptom_check: bool | None = None,
-                ) -> Accepted | Duplicate | Rejected | VisitNotFound | SymptomCheckerClosed | TooLarge:
+                ) -> (Accepted | Duplicate | Retry | SymptomAgain | Rejected | VisitNotFound | SymptomCheckerClosed
+                      | TooLarge):
         """``symptom_check``: True when the call came to the symptom-check endpoint, False for the visit endpoint (the
         other kind of payload is refused); None accepts both."""
         if self._max_bytes is not None and len(raw) > self._max_bytes:
@@ -95,11 +126,11 @@ class Intake:
             if state == "no_visit":
                 return VisitNotFound(visit_id)
             if state == "already_used":
-                return Duplicate(visit_id)
+                return self._symptom_again(visit_id)
             if state == "closed":       # nothing is saved: the patient is told at once instead of waiting for no answer
                 return SymptomCheckerClosed(visit_id)
         elif self._store.visit_exists(visit_id):
-            return Duplicate(visit_id)
+            return self._visit_again(visit_id)
         # A symptom check has no company_id: it keeps the key its stored visit already got.
         key = (self._store.stored_visit(visit_id).idempotency_key if source_id == SYMPTOM_CHECKER
                else make_idempotency_key(self._secret, patient_id=patient_id, visit_id=visit_id,
@@ -120,7 +151,7 @@ class Intake:
         return "blob"
 
     def _reject(self, raw: bytes, errors: list[dict[str, Any]], received_at: datetime) -> Rejected:
-        source_id, visit_id, patient_id = _peek(raw)
+        source_id, visit_id, patient_id, company_id = _peek(raw)
         day = blob_day(received_at)
         if source_id is not None and visit_id is not None:
             path = rejected_path(SOURCE_NAMES[source_id], day, visit_id)
@@ -131,4 +162,4 @@ class Intake:
         except BlobUnavailable:
             path = None
         self._store.save_rejected(source_id, raw, errors, path)
-        return Rejected(errors, patient_id, visit_id, source_id)
+        return Rejected(errors, patient_id, visit_id, source_id, company_id)

@@ -161,7 +161,9 @@ def test_the_whole_way_the_visit_result_and_the_symptom_result_are_two_posts(wor
     assert [post["source"] for post in backend.posts] == [world.source, 3]          # urgent goes before symptom-checker
     visit_post, symptom_post = backend.posts
     assert visit_post["symptom_flag"] is True and symptom_post["symptom_flag"] is True
-    assert list(symptom_post) == ["success", "patient_id", "visit_id", "source", "symptom_flag", "ai", "html"]
+    assert list(symptom_post) == ["success", "patient_id", "visit_id", "company_id", "source", "symptom_flag", "ai",
+                                  "html"]
+    assert symptom_post["company_id"] == visit_post["company_id"] == world.visit["payload"]["company_id"]
     assert list(symptom_post["ai"]) == ["note", "recommendations", "packages"]
     assert world.store.symptom_checks[VISIT_ID]["public_output"]["symptom_flag"] is True
     assert symptom_post["visit_id"] == VISIT_ID and symptom_post["patient_id"] == PATIENT_ID
@@ -169,6 +171,7 @@ def test_the_whole_way_the_visit_result_and_the_symptom_result_are_two_posts(wor
     assert symptom_post["ai"]["recommendations"][0]["explanation"] == both("still applies")
     assert "because" in symptom_post["html"]["en"] and "AR-because" in symptom_post["html"]["ar"]
     assert "because" not in visit_post["html"]["en"]                                 # the visit html has no reasons
+    assert "tests" in visit_post and "summary" in visit_post["ai"] and "tests" not in symptom_post
     assert world.visit["stage"] == "delivered" and world.store.symptom_checks[VISIT_ID]["stage"] == "delivered_symptom"
 
 

@@ -9,6 +9,7 @@ tools/*
 !tools/sample_processed_urgent.json
 !tools/send_samples.py
 !tools/samples/*.json
+!tools/aws_samples/*
 __pycache__
 *.py[cod]
 .env

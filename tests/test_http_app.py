@@ -101,7 +101,7 @@ def test_a_valid_urgent_visit_is_accepted_and_then_processed(rig, sample):
     visit = sample("urgent_mild")
     response = rig.post(visit)
     assert response.status_code == 202
-    assert response.json() == {"response": {"code": -1, "message": "Accepted"}, "data": {"visit_id": visit["visit_id"]}}
+    assert response.json() == {"response": {"code": -1, "message": "success"}, "data": {"visit_id": visit["visit_id"]}}
     assert rig.store.visits[visit["visit_id"]]["stage"] == "processed"
     assert rig.batch_spy.calls == []
 
@@ -149,7 +149,8 @@ def test_each_kind_of_payload_is_only_accepted_at_its_own_endpoint(rig, sample):
     wrong_for_visits = rig.post(sample("symptom_check"), VISITS)
     wrong_for_symptoms = rig.post(sample("urgent_mild"), SYMPTOM_CHECKS)
     for reply in (wrong_for_visits, wrong_for_symptoms):
-        assert reply.status_code == 422 and reply.json()["errors"][0]["type"] == "wrong_endpoint"
+        assert reply.status_code == 422 and reply.json()["response"]["code"] == 0
+        assert "source must be one of" in reply.json()["response"]["message"]
     assert rig.post(sample("urgent_mild"), VISITS).status_code == 202
 
 
@@ -158,24 +159,42 @@ def test_a_source_sent_as_text_is_accepted(rig, sample):
     assert rig.post(visit).status_code == 202
 
 
-def test_a_duplicate_is_answered_200(rig, sample):
+def test_the_same_visit_again_is_a_retry_answered_success_until_delivered_then_a_duplicate_with_code_0(rig, sample):
     visit = sample("urgent_mild")
     rig.post(visit)
-    response = rig.post(visit)
+    response = rig.post(visit)          # the result was not delivered yet: success, with the visit id as data
     assert response.status_code == 200
-    assert response.json()["response"] == {"code": -1, "message": "Duplicate"}
+    assert response.json() == {"response": {"code": -1, "message": "success"}, "data": {"visit_id": visit["visit_id"]}}
+    rig.store.visits[visit["visit_id"]]["stage"] = "delivered"
+    response = rig.post(visit)
+    assert response.status_code == 409
+    assert response.json() == {"response": {"code": 0, "message": "DUPLICATE_VISIT"}}
 
 
-def test_invalid_json_and_a_wrong_field_are_422_with_errors_and_no_echo(rig, sample):
+def test_a_symptom_check_started_again_is_success_with_the_ids_and_the_flag_false(rig, sample):
+    visit, symptom = sample("urgent_mild"), sample("symptom_check")
+    visit.update(visit_id=symptom["visit_id"], patient_id=symptom["patient_id"])
+    rig.post(visit)
+    assert rig.post(symptom).status_code == 202
+    response = rig.post(symptom)
+    assert response.status_code == 200
+    assert response.json() == {"response": {"code": -1, "message": "success"}, "data": {
+        "success": True, "patient_id": visit["patient_id"], "visit_id": visit["visit_id"],
+        "company_id": visit["company_id"], "source": 3, "symptom_flag": False}}
+
+
+def test_invalid_json_and_a_wrong_field_are_422_with_code_0_and_one_message_and_no_echo(rig, sample):
     response = rig.post(b"{not json at all SECRET-PATIENT")
-    assert response.status_code == 422 and response.json()["errors"]
+    assert response.status_code == 422 and list(response.json()) == ["response"]
+    assert response.json()["response"]["code"] == 0 and "not valid JSON" in response.json()["response"]["message"]
     assert "SECRET-PATIENT" not in response.text
     visit = sample("urgent_mild")
     visit["patient_id"] = "SECRET-PATIENT-ID"
     response = rig.post(visit)
     body = response.json()
-    assert response.status_code == 422 and body["response"] == {"code": 1, "message": "Invalid payload"}
-    assert body["errors"] and "SECRET-PATIENT-ID" not in response.text
+    assert response.status_code == 422 and list(body) == ["response"] and body["response"]["code"] == 0
+    assert body["response"]["message"].startswith("Invalid payload: patient_id: ")
+    assert "SECRET-PATIENT-ID" not in response.text
 
 
 def test_a_symptom_check_for_a_visit_with_a_closed_checker_is_409_and_nothing_is_processed(rig, sample):
@@ -185,21 +204,21 @@ def test_a_symptom_check_for_a_visit_with_a_closed_checker_is_409_and_nothing_is
     rig.store.visits[visit["visit_id"]]["public_output"] = {"symptom_flag": False}
     response = rig.post(symptom)
     assert response.status_code == 409
-    assert response.json() == {"response": {"code": 1, "message": "SYMPTOM_CHECKER_CLOSED"}}
+    assert response.json() == {"response": {"code": 0, "message": "SYMPTOM_CHECKER_CLOSED"}}
     assert not rig.store.symptom_checks
 
 
 def test_a_symptom_check_for_an_unknown_visit_is_404(rig, sample):
     response = rig.post(sample("symptom_check"))
     assert response.status_code == 404
-    assert response.json() == {"response": {"code": 1, "message": "VISIT_NOT_FOUND"}}
+    assert response.json() == {"response": {"code": 0, "message": "VISIT_NOT_FOUND"}}
 
 
 def test_a_body_over_the_limit_is_413_by_content_length_without_reading_it(sample):
     rig = Rig(sample, MAX_REQUEST_BYTES="100")
     response = rig.post(sample("urgent_mild"))
     assert response.status_code == 413
-    assert response.json() == {"response": {"code": 1, "message": "Payload too large"}}
+    assert response.json() == {"response": {"code": 0, "message": "Payload too large"}}
     assert not rig.store.visits and not rig.store.rejected
 
 
@@ -222,7 +241,7 @@ def test_the_api_key_guards_the_ai_results_route_but_not_health(sample, headers,
     response = rig.client.post(AI_RESULTS, content=b"{}", headers=SOURCE_HEADERS | headers)
     assert response.status_code == status
     if status == 401:
-        assert response.json() == {"response": {"code": 1, "message": "Unauthorized"}}
+        assert response.json() == {"response": {"code": 0, "message": "Unauthorized"}}
         assert "s3cret" not in response.text
     assert (rig.spy_receiver.calls == []) == (status == 401)
     assert rig.client.get("/health").status_code == 200
@@ -236,7 +255,7 @@ def test_a_database_failure_in_intake_is_500_never_202(rig, sample):
     rig.store.fail_on_save = True
     response = rig.post(sample("urgent_mild"))
     assert response.status_code == 500
-    assert response.json() == {"response": {"code": 1, "message": "Internal error"}}
+    assert response.json() == {"response": {"code": 0, "message": "Internal error"}}
 
 
 def test_a_background_failure_does_not_break_the_response(rig, sample):
@@ -271,7 +290,7 @@ def test_a_receiver_failure_answers_500_so_the_function_retries_and_logs_only_th
     rig.spy_receiver.error = RuntimeError("boom with PATIENT-DATA")
     with capture_logs() as logs:
         response = rig.client.post(AI_RESULTS, content=b"{}", headers=SOURCE_HEADERS)
-    assert response.status_code == 500 and response.json() == {"response": {"code": 1, "message": "Internal error"}}
+    assert response.status_code == 500 and response.json() == {"response": {"code": 0, "message": "Internal error"}}
     assert {"event": "request_failed", "error_type": "RuntimeError", "log_level": "error"} in logs
     assert "PATIENT-DATA" not in str(logs)
 
@@ -325,8 +344,10 @@ def test_a_rejected_payload_with_usable_ids_tells_the_backend_the_patient_failed
     backend = FakeBackend()
     rig, visit = rejected_rig(sample, backend)
     response = rig.post(visit)
-    assert response.status_code == 422 and response.json()["response"] == {"code": 1, "message": "Invalid payload"}
-    assert backend.posts == [build_failed_output(patient_id=visit["patient_id"], visit_id=visit["visit_id"], source=1)]
+    assert response.status_code == 422 and response.json()["response"]["code"] == 0
+    assert response.json()["response"]["message"].startswith("Invalid payload: ")
+    assert backend.posts == [build_failed_output(patient_id=visit["patient_id"], visit_id=visit["visit_id"], source=1,
+                                                 company_id=visit["company_id"])]
 
 
 def test_a_rejected_payload_without_usable_ids_or_without_a_backend_sends_nothing(sample):

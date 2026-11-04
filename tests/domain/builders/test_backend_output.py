@@ -48,45 +48,49 @@ def test_a_history_point_gets_the_unit_of_its_result_and_no_history_is_an_empty_
     assert (second["unit"], second["critical"], second["history"]) == (None, {"direction": None}, [])
 
 
-def test_the_html_is_built_from_the_full_answer_and_the_summary_stays_in_the_saved_result():
+def test_the_html_is_built_from_the_full_answer_and_the_saved_result_keeps_every_key():
     ai = {"summary": {"en": "SUMMARY-TEXT", "ar": "x"}, "critical_alerts": [{"en": "ALERT-TEXT", "ar": "y"}],
           "recommendations": []}
     out = build_backend_output(patient_id=1, visit_id=2, source=1, rows=[], ai=ai)
     assert "SUMMARY-TEXT" in out["html"]["en"]
-    assert out["ai"]["summary"] and out["ai"]["critical_alerts"]
-    sent = for_wrapper(out)
-    assert set(sent["ai"]) == {"recommendations"} and sent["html"] == out["html"]
-    assert out["ai"]["summary"]      # the saved result is not changed
+    assert out["ai"]["summary"] and out["ai"]["critical_alerts"] and "recommendations" in out["ai"]
+    assert "html" in out      # the saved result is not changed by what is sent
 
 
-def test_for_wrapper_drops_the_three_keys_for_a_visit_and_keeps_everything_else():
+def test_a_visit_is_sent_whole_with_every_key():
     ai = {"summary": AI["summary"], "simple_summary": AI["summary"], "critical_alerts": [], "note": AI["summary"],
           "recommendations": []}
     out = build_backend_output(patient_id=1, visit_id=2, source=1, rows=[row(1, 5, "normal")], ai=ai, packages=[])
     sent = for_wrapper(out)
-    assert list(sent) == ["success", "patient_id", "visit_id", "source", "symptom_flag", "tests", "ai", "html"]
-    assert set(sent["ai"]) == {"note", "recommendations", "packages"} and sent["tests"] == out["tests"]
+    assert list(sent) == ["success", "patient_id", "visit_id", "company_id", "source", "symptom_flag", "tests", "ai",
+                          "html"]
+    assert list(sent["ai"]) == ["summary", "simple_summary", "critical_alerts", "note", "recommendations", "packages"]
+    assert sent == out
 
 
-def test_a_symptom_result_is_sent_with_the_flag_and_packages_but_no_tests():
+def test_a_symptom_result_is_sent_with_the_flag_note_recommendations_packages_and_html_but_no_tests():
     ai = {"summary": AI["summary"], "simple_summary": AI["summary"], "critical_alerts": [], "note": AI["summary"],
           "recommendations": []}
     out = build_backend_output(patient_id=1, visit_id=2, source=3, rows=[row(1, 5, "normal")], ai=ai, packages=[],
                                symptom_flag=True)
     sent = for_wrapper(out)
-    assert list(sent) == ["success", "patient_id", "visit_id", "source", "symptom_flag", "ai", "html"]
+    assert list(sent) == ["success", "patient_id", "visit_id", "company_id", "source", "symptom_flag", "ai", "html"]
     assert sent["symptom_flag"] is True and list(sent["ai"]) == ["note", "recommendations", "packages"]
+    assert sent["html"] == out["html"]
 
 
-def test_a_blocked_result_is_sent_with_its_fixed_message_empty_recommendations_and_no_packages():
+def test_a_blocked_result_is_sent_with_its_fixed_message_in_the_keys_of_its_kind():
     blocked = {"summary": {"en": "fixed", "ar": "ثابت"}, "simple_summary": None, "critical_alerts": None,
                "note": None, "recommendations": None}
+    message = {"en": "fixed", "ar": "ثابت"}
     visit = for_wrapper(build_backend_output(patient_id=1, visit_id=2, source=1, rows=[row(1, 5, "high")], ai=blocked))
-    assert visit["ai"] == {"note": {"en": "fixed", "ar": "ثابت"}, "recommendations": [], "packages": []}
-    assert visit["symptom_flag"] is False and visit["tests"]
+    assert visit["ai"] == {"summary": message, "simple_summary": message, "critical_alerts": [], "note": message,
+                           "recommendations": [], "packages": []}
+    assert visit["symptom_flag"] is False and visit["tests"] and "html" in visit
     symptom = for_wrapper(build_backend_output(patient_id=1, visit_id=2, source=3, rows=[], ai=blocked,
                                                symptom_flag=True))
-    assert symptom["ai"] == visit["ai"] and symptom["symptom_flag"] is True and "tests" not in symptom
+    assert symptom["ai"] == {"note": message, "recommendations": [], "packages": []}
+    assert symptom["symptom_flag"] is True and "tests" not in symptom and "html" in symptom
 
 
 def test_a_failed_result_is_sent_as_it_is():
@@ -116,13 +120,21 @@ def test_packages_and_html_are_added_and_the_ai_input_is_not_changed():
 def test_the_symptom_result_has_the_same_shape(sample):
     rows = build_ai_input(sample("batch_critical")).rows
     out = build_backend_output(patient_id=1, visit_id=2, source=3, rows=rows, ai=AI)
-    keys = {"success", "patient_id", "visit_id", "source", "symptom_flag", "tests", "ai", "html"}
+    keys = {"success", "patient_id", "visit_id", "company_id", "source", "symptom_flag", "tests", "ai", "html"}
     assert out["source"] == 3 and set(out) == keys and out["success"] is True
 
 
+def test_the_company_id_is_in_every_kind_of_result():
+    visit = build_backend_output(patient_id=1, visit_id=2, company_id=15, source=1, rows=[], ai=AI)
+    symptom = build_backend_output(patient_id=1, visit_id=2, company_id=15, source=3, rows=[], ai=AI)
+    assert visit["company_id"] == symptom["company_id"] == 15
+    assert for_wrapper(symptom)["company_id"] == 15 and for_wrapper(visit)["company_id"] == 15
+    assert build_failed_output(patient_id=1, visit_id=2, company_id=15, source=1)["company_id"] == 15
+
+
 def test_the_failed_output_has_the_ids_success_false_and_everything_else_null():
-    assert build_failed_output(patient_id=1, visit_id=2, source=4) == {
-        "success": False, "patient_id": 1, "visit_id": 2, "source": 4,
+    assert build_failed_output(patient_id=1, visit_id=2, company_id=10, source=4) == {
+        "success": False, "patient_id": 1, "visit_id": 2, "company_id": 10, "source": 4,
         "symptom_flag": None, "tests": None, "ai": None, "html": None}
 
 

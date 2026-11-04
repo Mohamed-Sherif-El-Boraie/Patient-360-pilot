@@ -122,10 +122,16 @@ def test_success_code_minus_one_returns_none():
     assert make(FakeWrapper()).post_result(BODY) is None
 
 
-@pytest.mark.parametrize("code", [0, 1])
-def test_other_code_is_unavailable(code):
+@pytest.mark.parametrize("code", [1, 7, 500])
+def test_an_unknown_code_is_unavailable(code):
     reply = httpx.Response(200, json={"response": {"code": code, "message": "x"}})
     with pytest.raises(BackendUnavailable):
+        make(FakeWrapper(post_replies=[reply])).post_result(BODY)
+
+
+def test_code_0_is_the_wrapper_refusing_the_result_so_it_is_not_retried():
+    reply = httpx.Response(200, json={"response": {"code": 0, "message": "VISIT_NOT_FOUND"}})
+    with pytest.raises(BackendRejected, match="HTTP 200, code 0: VISIT_NOT_FOUND"):
         make(FakeWrapper(post_replies=[reply])).post_result(BODY)
 
 

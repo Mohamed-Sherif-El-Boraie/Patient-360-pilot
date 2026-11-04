@@ -72,8 +72,9 @@ class OutputReceiver:
 
     def _fail(self, found: MergedOutput, stored: StoredVisit, analysis: Analysis, reason: str) -> None:
         """One transaction: the visit failed, and the normal delivery queue tells the Backend (``success`` false)."""
+        raw = json.loads(stored.raw)
         failed = build_failed_output(
-            patient_id=json.loads(stored.raw)["patient_id"], visit_id=stored.visit_id,
+            patient_id=raw["patient_id"], visit_id=stored.visit_id, company_id=raw["company_id"],
             source=SYMPTOM_CHECKER_ID if analysis == "symptom" else stored.source_id)
         self._store.save_failed_output(stored.visit_id, failed, analysis)
         self._keep_backend_output(found, stored, failed)
@@ -147,7 +148,7 @@ class OutputReceiver:
         symptom = analysis == "symptom"
         tier = decide_tier(built.rows, len(built.descriptive_rows))
         return build_backend_output(
-            patient_id=raw["patient_id"], visit_id=stored.visit_id,
+            patient_id=raw["patient_id"], visit_id=stored.visit_id, company_id=raw["company_id"],
             source=SYMPTOM_CHECKER_ID if symptom else stored.source_id, rows=built.rows,
             ai=ai, packages=None if blocked else self._packages(raw["patient"], ai),
             arabic_test_names=self._catalogue.test_names_ar(),

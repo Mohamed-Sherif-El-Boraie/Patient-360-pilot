@@ -235,3 +235,20 @@ class OutputsMixin:
                            "failed" if retry_at is None else "retry", error_type)
             if retry_at is None:
                 set_stage(conn, unit.visit_id, _stage("failed", unit.analysis))
+
+    def result_delivered(self, visit_id: int, analysis: Analysis = "visit") -> bool:
+        with self._db.transaction() as conn:
+            row = conn.execute("SELECT status FROM record_processing WHERE visit_id = %s AND analysis = %s",
+                               (visit_id, analysis)).fetchone()
+        return row is not None and row["status"] == "delivered"
+
+    def requeue_failed_delivery(self, visit_id: int, analysis: Analysis = "visit") -> None:
+        with self._db.transaction() as conn:
+            row = conn.execute(
+                "UPDATE record_processing SET status = 'pending', attempts = 0, next_retry_at = NULL, "
+                "last_error = NULL, claimed_by = NULL, updated_at = now() "
+                "WHERE visit_id = %s AND analysis = %s AND step = 'deliver' AND status = 'failed' "
+                "AND EXISTS (SELECT 1 FROM ai_outputs o WHERE o.visit_id = %s AND o.analysis = %s "
+                "AND o.status <> 'error') RETURNING 1", (visit_id, analysis, visit_id, analysis)).fetchone()
+            if row is not None:
+                set_stage(conn, visit_id, _stage("post_processing", analysis))

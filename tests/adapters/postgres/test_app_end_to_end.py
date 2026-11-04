@@ -115,7 +115,7 @@ def test_the_whole_service_from_an_incoming_visit_to_the_delivered_symptom_resul
     [posted] = rig.wrapper.results
     assert (posted["patient_id"], posted["visit_id"], posted["source"]) == (PATIENT_ID, VISIT_ID, 1)
     assert posted["ai"]["note"] == both("note") and "AR-Extra test" in posted["html"]["ar"]
-    assert not {"summary", "simple_summary", "critical_alerts"} & set(posted["ai"])      # only the html shows them
+    assert {"summary", "simple_summary", "critical_alerts", "recommendations", "packages"} <= set(posted["ai"])
     assert "model-x" not in json.dumps(posted) and rig.wrapper.logins == 1
 
     symptom = rig.sample("symptom_check")
@@ -126,7 +126,8 @@ def test_the_whole_service_from_an_incoming_visit_to_the_delivered_symptom_resul
     rig.work()
     assert [r["source"] for r in rig.wrapper.results] == [1, 3]
     assert rig.wrapper.results[1]["ai"]["recommendations"][0]["change_type"] == both("kept")
-    assert set(rig.wrapper.results[1]) == {"success", "patient_id", "visit_id", "source", "symptom_flag", "ai", "html"}
+    assert set(rig.wrapper.results[1]) == {"success", "patient_id", "visit_id", "company_id", "source", "symptom_flag",
+                                           "ai", "html"}
     assert rig.wrapper.results[1]["symptom_flag"] is True and "packages" in rig.wrapper.results[1]["ai"]
     assert rig.wrapper.logins == 1                                  # one login for everything: the token is reused
 

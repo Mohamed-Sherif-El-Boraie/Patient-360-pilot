@@ -126,12 +126,12 @@ def test_the_saved_result_is_then_sent_to_the_backend(world):
     assert backend.posts == [for_wrapper(visit["public_output"])] and visit["stage"] == "delivered"
 
 
-def test_the_backend_never_gets_the_summaries_but_the_saved_result_keeps_them_and_a_retry_is_stripped_too(world):
+def test_a_visit_goes_to_the_backend_whole_and_a_retry_sends_the_same_body(world):
     [visit] = world.add("urgent_mild", 1)
     key = visit["idempotency_key"]
     world.receiver().receive("urgent", world.write("urgent", vpath(key), record(key)))
     saved = visit["public_output"]
-    assert {"summary", "simple_summary", "critical_alerts"} <= set(saved["ai"])      # the symptom check reads these
+    assert {"summary", "simple_summary", "critical_alerts", "note", "recommendations"} <= set(saved["ai"])
     sent = []
 
     class Down(FakeBackend):
@@ -144,8 +144,11 @@ def test_the_backend_never_gets_the_summaries_but_the_saved_result_keeps_them_an
     ResultSender(world.store, Down(), lambda: NOW).run()
     ResultSender(world.store, Down(), lambda: NOW + timedelta(days=1)).run()
     assert len(sent) == 2 and sent[0] == sent[1]
-    assert set(sent[0]) == {"success", "patient_id", "visit_id", "source", "symptom_flag", "tests", "ai", "html"}
-    assert set(sent[0]["ai"]) == {"note", "recommendations", "packages"}
+    assert set(sent[0]) == {"success", "patient_id", "visit_id", "company_id", "source", "symptom_flag", "tests", "ai",
+                            "html"}
+    assert sent[0]["company_id"] == visit["payload"]["company_id"]
+    assert list(sent[0]["ai"]) == ["summary", "simple_summary", "critical_alerts", "note", "recommendations",
+                                   "packages"]
     assert "summary" in sent[0]["html"]["en"]
     result = sent[0]["tests"][0]["results"][0]
     assert list(result) == ["parameter_id", "value", "status", "result_date", "unit", "critical", "history"]
@@ -264,7 +267,8 @@ def test_the_invalid_answer_tells_the_backend_the_patient_failed(world):
     assert [r.outcome for r in world.receiver().receive("urgent", path)] == ["invalid_output"]
     backend = FakeBackend()
     ResultSender(world.store, backend, lambda: NOW).run()
-    assert backend.posts == [build_failed_output(patient_id=7_000_001, visit_id=1, source=1)]
+    assert backend.posts == [build_failed_output(patient_id=7_000_001, visit_id=1, source=1,
+                                                 company_id=visit["payload"]["company_id"])]
     assert visit["stage"] == "failed"
 
 
@@ -338,9 +342,11 @@ def test_a_blocked_output_gets_our_own_problem_message_and_nothing_the_model_wro
     backend = FakeBackend()
     ResultSender(world.store, backend, lambda: NOW).run()
     [posted] = backend.posts
-    assert posted["ai"] == {"note": BLOCKED_MESSAGES["output"], "recommendations": [], "packages": []}
+    message = BLOCKED_MESSAGES["output"]
+    assert posted["ai"] == {"summary": message, "simple_summary": message, "critical_alerts": [], "note": message,
+                            "recommendations": [], "packages": []}
     assert posted["symptom_flag"] is False
-    assert posted["tests"] == public["tests"] and BLOCKED_MESSAGES["output"]["en"] in posted["html"]["en"]
+    assert posted["tests"] == public["tests"] and message["en"] in posted["html"]["en"]
 
 
 def test_a_blocked_input_gets_the_input_message(world):

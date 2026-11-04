@@ -221,6 +221,13 @@ class VisitStore(Protocol):
     def mark_delivery_failed_attempt(self, unit: DeliveryUnit, error_type: str, retry_at: datetime | None) -> None:
         """Count the failure and release the result for ``retry_at``; ``None`` = give up: stage ``failed``."""
 
+    def result_delivered(self, visit_id: int, analysis: Literal["visit", "symptom"] = "visit") -> bool:
+        """Was this result (the visit's, or its symptom check's) delivered to the Backend?"""
+
+    def requeue_failed_delivery(self, visit_id: int, analysis: Literal["visit", "symptom"] = "visit") -> None:
+        """A result whose delivery gave up (stage ``failed``) goes back to ``post_processing`` with its tries reset, so
+        it is sent again. Nothing happens to any other state, nor to a failed analysis (an AI output that failed)."""
+
     def set_batch_read_from(self, batch_id: str, read_from: Literal["blob", "postgresql"]) -> None:
         """Where the batch's visits are read from once the batch files were (or could not be) written."""
 

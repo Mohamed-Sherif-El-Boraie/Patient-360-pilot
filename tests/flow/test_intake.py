@@ -9,6 +9,8 @@ from patient360.flow.intake import (
     Duplicate,
     Intake,
     Rejected,
+    Retry,
+    SymptomAgain,
     SymptomCheckerClosed,
     TooLarge,
     VisitNotFound,
@@ -47,13 +49,28 @@ def test_a_valid_visit_is_saved_raw_in_blob_and_in_the_database_and_accepted(par
     assert saved["received_at"] == NOW and saved["payload"]["tests"][0]["test_id"] == visit["tests"][0]["test_id"]
 
 
-def test_the_same_visit_again_is_a_duplicate_and_changes_nothing(parts, sample):
+def test_the_same_visit_again_is_a_retry_until_its_result_is_delivered_and_a_duplicate_after_and_changes_nothing(
+        parts, sample):
     intake, store, blobs = parts
-    body = raw(sample("urgent_mild"))
+    visit = sample("urgent_mild")
+    body = raw(visit)
     intake.receive(body)
     files_before = dict(blobs.files)
-    assert isinstance(intake.receive(body), Duplicate)
+    assert intake.receive(body) == Retry(visit["visit_id"])           # asked again before the result was delivered
+    store.visits[visit["visit_id"]]["stage"] = "delivered"
+    assert intake.receive(body) == Duplicate(visit["visit_id"])
     assert blobs.files == files_before and len(store.visits) == 1
+
+
+def test_a_retry_puts_a_result_whose_delivery_gave_up_back_on_the_queue(parts, sample):
+    intake, store, _ = parts
+    visit = sample("urgent_mild")
+    body = raw(visit)
+    intake.receive(body)
+    record = store.visits[visit["visit_id"]]
+    record.update(stage="failed", delivered=True, delivery_attempts=5)        # the five tries were used up
+    assert intake.receive(body) == Retry(visit["visit_id"])
+    assert (record["stage"], record["delivered"], record["delivery_attempts"]) == ("post_processing", False, 0)
 
 
 def test_a_batch_visit_goes_to_the_batch_raw_folder(parts, sample):
@@ -175,13 +192,17 @@ def test_a_symptom_check_is_accepted_when_the_flag_is_true_or_the_visit_has_no_r
     assert isinstance(intake.receive(raw(symptom_for(visit, sample))), Accepted)
 
 
-def test_a_symptom_check_already_received_is_a_duplicate_even_if_the_checker_is_closed_now(parts, sample):
+def test_a_symptom_check_started_again_is_a_success_that_says_the_checker_is_closed(parts, sample):
     intake, store, _ = parts
     visit = sample("urgent_mild")
     intake.receive(raw(visit))
     intake.receive(raw(symptom_for(visit, sample)))
     store.visits[visit["visit_id"]]["public_output"] = {"symptom_flag": False}
-    assert isinstance(intake.receive(raw(symptom_for(visit, sample))), Duplicate)
+    expected = SymptomAgain({"success": True, "patient_id": visit["patient_id"], "visit_id": visit["visit_id"],
+                             "company_id": visit["company_id"], "source": 3, "symptom_flag": False})
+    assert intake.receive(raw(symptom_for(visit, sample))) == expected         # not delivered yet
+    store.symptom_checks[visit["visit_id"]]["stage"] = "delivered_symptom"
+    assert intake.receive(raw(symptom_for(visit, sample))) == expected         # delivered: the same answer, no error
 
 
 def test_a_symptom_check_for_a_stored_visit_is_accepted_once(parts, sample):
@@ -193,7 +214,7 @@ def test_a_symptom_check_for_a_stored_visit_is_accepted_once(parts, sample):
     assert intake.receive(body) == Accepted(visit["visit_id"], key_of(visit), 3)      # source 3: the symptom checker
     assert blobs.files[f"symptom-checker/2026/10/24/{key_of(visit)}.json"] == body
     assert store.symptom_checks[visit["visit_id"]]["read_from"] == "blob"
-    assert isinstance(intake.receive(body), Duplicate)
+    assert isinstance(intake.receive(body), SymptomAgain)
 
 
 def test_a_symptom_check_for_an_unknown_visit_or_another_patient_is_not_found_and_saves_nothing(parts, sample):

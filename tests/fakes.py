@@ -340,6 +340,16 @@ class FakeStore:
             record["stage"] = "failed_symptom" if unit.analysis == "symptom" else "failed"
             record["delivered"] = True      # given up: no more tries
 
+    def result_delivered(self, visit_id, analysis="visit"):
+        record = (self.symptom_checks if analysis == "symptom" else self.visits)[visit_id]
+        return record.get("stage") in ("delivered", "delivered_symptom")
+
+    def requeue_failed_delivery(self, visit_id, analysis="visit"):
+        record = (self.symptom_checks if analysis == "symptom" else self.visits)[visit_id]
+        if record.get("stage") in ("failed", "failed_symptom") and "failed_output" not in record:
+            record.update(stage="post_processing_symptom" if analysis == "symptom" else "post_processing",
+                          delivered=False, delivery_attempts=0, delivery_retry_at=None)
+
     # ---- the symptom check and the rejected payloads ------------------------------------------
     def symptom_check_state(self, visit_id, patient_id):
         visit = self.visits.get(visit_id)

@@ -12,7 +12,7 @@ from patient360.adapters.postgres.store import PostgresCatalogue, PostgresStore
 from patient360.domain.common.blob_paths import merged_output_jsonl_path, merged_output_path
 from patient360.flow.batching import BatchTrigger
 from patient360.flow.dispatch import Dispatcher
-from patient360.flow.intake import Accepted, Duplicate, Intake
+from patient360.flow.intake import Accepted, Duplicate, Intake, Retry
 from patient360.flow.process import Processor, process_stuck_visits
 from patient360.flow.results import OutputReceiver
 from patient360.flow.send_result import ResultSender
@@ -130,11 +130,14 @@ def test_an_urgent_visit_goes_from_intake_to_the_backend(world):
     assert seed.fetch(world.db, "SELECT status FROM record_processing")[0]["status"] == "delivered"
 
 
-def test_a_duplicate_visit_is_answered_as_a_duplicate(world):
+def test_the_same_visit_again_is_a_retry_until_its_result_is_delivered_then_a_duplicate(world):
     world.receive_visit("urgent_mild")
-    outcome = world.intake().receive(json.dumps(world.sample("urgent_mild") | {
-        "visit_id": VISIT_ID, "patient_id": PATIENT_ID}).encode())
-    assert outcome == Duplicate(VISIT_ID)
+    world.process()
+    body = json.dumps(world.sample("urgent_mild") | {"visit_id": VISIT_ID, "patient_id": PATIENT_ID}).encode()
+    assert world.intake().receive(body) == Retry(VISIT_ID)
+    with world.db.transaction() as conn:
+        conn.execute("UPDATE record_processing SET status = 'delivered' WHERE visit_id = %s", (VISIT_ID,))
+    assert world.intake().receive(body) == Duplicate(VISIT_ID)
 
 
 def test_a_batch_is_made_uploaded_answered_and_every_visit_delivered(world):

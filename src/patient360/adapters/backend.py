@@ -17,7 +17,8 @@ log = structlog.get_logger()
 LOGIN_PATH = "/API/v2/Auth/Callerlogin"
 RESULT_PATH = "/API/v2/Patient360/Patient360011"
 LOGIN_COMPANY_ID = "10"           # the login always names company 10, also for company 15 (text, as the wrapper wants)
-SUCCESS_CODE = -1                 # the Backend's own success marker in ``response.code``
+SUCCESS_CODE = -1                 # ``response.code``: -1 = received and answered with data (message "success")
+ERROR_CODE = 0                    # 0 = received but not accepted, with a message only
 DEFAULT_TOKEN_MINUTES = 480       # used only if the login reply does not say
 RENEW_BEFORE_S = 10 * 60          # log in again when less than this is left of the token's life
 MAX_MESSAGE_CHARS = 200           # how much of the wrapper's own message we keep in an error
@@ -117,6 +118,10 @@ class WrapperBackend:
             code = response.json()["response"]["code"]
         except Exception:
             self._unavailable(f"HTTP {status}, the reply is not the expected JSON")
+        if code == ERROR_CODE:                # received and refused (visit not found, ...): the same body fails again
+            reason = f"HTTP {status}, code {code}: {_wrapper_message(response)}"
+            log.warning("backend_rejected", reason=reason)
+            raise BackendRejected(f"The wrapper refused the result: {reason}")
         if code != SUCCESS_CODE:              # play safe: any other code is "not success", so the sender retries
             self._unavailable(f"HTTP {status}, code {code}: {_wrapper_message(response)}")
 
