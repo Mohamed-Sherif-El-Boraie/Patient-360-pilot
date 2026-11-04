@@ -8,6 +8,7 @@ tools/*
 !tools/check_s3_upload.py
 !tools/sample_processed_urgent.json
 !tools/send_samples.py
+!tools/trace_visit.py
 !tools/samples/*.json
 !tools/aws_samples/*
 __pycache__
