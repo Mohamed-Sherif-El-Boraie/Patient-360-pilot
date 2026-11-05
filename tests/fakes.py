@@ -117,6 +117,7 @@ class FakeStore:
         self.symptom_checks: dict[int, dict] = {}
         self.batches: dict[str, dict] = {}
         self.rejected: list[dict] = []
+        self.ai_failures: dict[tuple[int, str], dict] = {}      # (visit_id, analysis) -> the ai_failures row
         self.fail_on_save = False
         self.batch_numbers = {"normal": 0, "critical": 0}
         self.batch_created_at = datetime(2026, 10, 25, 0, 30, tzinfo=UTC)   # the database time of a new batch
@@ -251,8 +252,17 @@ class FakeStore:
     def _analysis_record(self, visit_id, analysis):
         return self.symptom_checks[visit_id] if analysis == "symptom" else self.visits[visit_id]
 
+    def failed_by_aws(self, visit_id, analysis="visit"):
+        record = self._analysis_record(visit_id, analysis)
+        return "failed_output" in record and (visit_id, analysis) in self.ai_failures
+
     def save_output(self, visit_id, internal_output, public_output, analysis="visit", internal_raw=None):
-        self._analysis_record(visit_id, analysis).update(
+        record = self._analysis_record(visit_id, analysis)
+        if "internal_output" in record or ("failed_output" in record and not self.failed_by_aws(visit_id, analysis)):
+            return      # as the database: an answer (or another kind of failure) is never replaced
+        if record.pop("failed_output", None):       # a late answer after an AWS failure: queued for delivery again
+            record.update(delivered=False, delivery_claimed=False, delivery_attempts=0, delivery_retry_at=None)
+        record.update(
             internal_output=internal_output, public_output=public_output, internal_raw=internal_raw,
             stage="post_processing_symptom" if analysis == "symptom" else "post_processing")
 
@@ -260,10 +270,12 @@ class FakeStore:
         self._analysis_record(visit_id, analysis).update(
             stage="failed_symptom" if analysis == "symptom" else "failed", output_error=error_type)
 
-    def save_failed_output(self, visit_id, public_output, analysis="visit"):
+    def save_failed_output(self, visit_id, public_output, analysis="visit", failure=None):
         record = self._analysis_record(visit_id, analysis)
         if "internal_output" in record or "failed_output" in record:
             return
+        if failure is not None:
+            self.ai_failures.setdefault((visit_id, analysis), failure)
         record.update(failed_output=True, public_output=public_output,
                       stage="failed_symptom" if analysis == "symptom" else "failed")
 

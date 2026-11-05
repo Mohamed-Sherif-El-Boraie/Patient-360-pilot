@@ -44,8 +44,8 @@ class Spy:
         if self.error:
             raise self.error
 
-    def receive_record(self, source, path, text):
-        self.calls.append((source, path, text))
+    def receive_record(self, source, path, text, visit_key=None):
+        self.calls.append((source, path, text) + ((visit_key,) if visit_key else ()))
         if self.error:
             raise self.error
         return [Received(None, self.outcome)]
@@ -269,6 +269,30 @@ def test_an_ai_result_goes_to_the_receiver_with_the_source_path_and_body_and_ans
         "Idempotency-Key": "abc"})
     assert response.status_code == 200 and response.json() == {"outcome": "saved"}
     assert rig.spy_receiver.calls == [("urgent", ANSWER_PATH, '{"recordId": "k"}')]
+
+
+BATCH_FAILED = "normal-jsonls/2026/11/04/normal_000001/06-failed.jsonl"
+
+
+def test_the_visit_key_header_goes_to_the_receiver(rig):
+    headers = {"X-Source": "batch", "X-Blob-Path": BATCH_FAILED, "X-Visit-Key": "k" * 32}
+    assert rig.client.post(AI_RESULTS, content=b"<<broken", headers=headers).status_code == 200
+    assert rig.spy_receiver.calls == [("batch", BATCH_FAILED, "<<broken", "k" * 32)]
+
+
+def test_a_batch_failed_line_is_failed_by_the_header_and_without_any_key_it_is_a_permanent_400(sample):
+    rig = Rig(sample)
+    visit = sample("batch_normal")
+    rig.post(visit)
+    key = rig.store.visits[visit["visit_id"]]["idempotency_key"]
+    rig.services = replace(rig.services, receiver=OutputReceiver(rig.store, FakeCatalogue()))
+    client = TestClient(create_app(rig.services))
+    headers = {"X-Source": "batch", "X-Blob-Path": BATCH_FAILED}
+    nokey = client.post(AI_RESULTS, content=b"<<broken", headers=headers)
+    assert nokey.status_code == 400 and rig.store.visits[visit["visit_id"]]["stage"] != "failed"
+    response = client.post(AI_RESULTS, content=b"<<broken", headers=headers | {"X-Visit-Key": key})
+    assert response.status_code == 200 and response.json() == {"outcome": "failed"}
+    assert rig.store.visits[visit["visit_id"]]["stage"] == "failed"
 
 
 @pytest.mark.parametrize("headers", [{}, {"X-Source": "urgent"}, {"X-Blob-Path": ANSWER_PATH},

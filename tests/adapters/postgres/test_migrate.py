@@ -49,9 +49,9 @@ def _tables(dsn):
 
 
 def test_empty_database_gets_the_schema_and_a_second_run_does_nothing(empty_dsn):
-    assert migrate(empty_dsn, MIGRATION.parent) == ["001_init"]
-    assert len(_tables(empty_dsn)) == 29 + 1  # the schema's 29 tables and schema_migrations
-    assert _recorded(empty_dsn) == ["001_init"]
+    assert migrate(empty_dsn, MIGRATION.parent) == ["001_init", "002_ai_failures"]
+    assert len(_tables(empty_dsn)) == 30 + 1  # the schema's 30 tables and schema_migrations
+    assert _recorded(empty_dsn) == ["001_init", "002_ai_failures"]
     assert migrate(empty_dsn, MIGRATION.parent) == []
 
 
@@ -59,10 +59,10 @@ def test_a_named_schema_is_made_and_holds_every_table_and_the_app_connection_fin
     options = "-c search_path=p360"
     with psycopg.connect(make_conninfo(empty_dsn, options=options)) as conn:   # before the schema exists: fine
         assert conn.execute("SELECT 1").fetchone()[0] == 1
-    assert migrate(empty_dsn, MIGRATION.parent, "p360") == ["001_init"]
+    assert migrate(empty_dsn, MIGRATION.parent, "p360") == ["001_init", "002_ai_failures"]
     where = ("SELECT table_name FROM information_schema.tables WHERE table_schema = '{}' "
              "AND table_type = 'BASE TABLE'")
-    assert len(_query(empty_dsn, where.format("p360"))) == 29 + 1 and _query(empty_dsn, where.format("public")) == []
+    assert len(_query(empty_dsn, where.format("p360"))) == 30 + 1 and _query(empty_dsn, where.format("public")) == []
     with psycopg.connect(make_conninfo(empty_dsn, options=options)) as conn:   # no schema name in the app's queries
         assert conn.execute("SELECT count(*) FROM visits").fetchone()[0] == 0
     assert migrate(empty_dsn, MIGRATION.parent, "p360") == []
@@ -70,9 +70,9 @@ def test_a_named_schema_is_made_and_holds_every_table_and_the_app_connection_fin
 
 def test_hand_applied_database_is_baselined_without_running(db, capsys):
     dsn = db._pool.conninfo
-    assert migrate(dsn, MIGRATION.parent) == []
+    assert migrate(dsn, MIGRATION.parent) == ["002_ai_failures"]      # IF NOT EXISTS: a table made by hand is fine
     assert "baselined 001_init" in capsys.readouterr().out
-    assert _recorded(dsn) == ["001_init"]
+    assert _recorded(dsn) == ["001_init", "002_ai_failures"]
     assert migrate(dsn, MIGRATION.parent) == []
     assert "skipped 001_init (already applied)" in capsys.readouterr().out
 

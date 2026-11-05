@@ -28,6 +28,10 @@ _SYMPTOM_SOURCE = "symptom-checker"
 _UNIT_SOURCE = f"(CASE WHEN rp.analysis = 'symptom' THEN '{_SYMPTOM_SOURCE}' ELSE s.source_name END)"
 _UNIT_RECEIVED = "(CASE WHEN rp.analysis = 'symptom' THEN v.symptom_received_at ELSE v.created_at END)"
 
+# an output that is only a failure AWS reported: status error and a row in ai_failures
+_AWS_FAILED = ("SELECT 1 FROM ai_outputs o JOIN ai_failures f ON f.visit_id = o.visit_id AND f.analysis = o.analysis "
+               "WHERE o.visit_id = %s AND o.analysis = %s AND o.status = 'error'")
+
 
 def _stage(name: str, analysis: Analysis) -> str:
     return f"{name}_symptom" if analysis == "symptom" else name
@@ -62,7 +66,11 @@ class OutputsMixin:
                                      (visit_id,)).fetchone()["source_id"]
             if conn.execute("SELECT 1 FROM ai_outputs WHERE visit_id = %s AND analysis = %s",
                             (visit_id, analysis)).fetchone():
-                return      # the answer is already saved (and may be delivered): a late duplicate changes nothing
+                if conn.execute(_AWS_FAILED, (visit_id, analysis)).fetchone() is None:
+                    return      # the answer is already saved (and may be delivered): a late duplicate changes nothing
+                # a late answer after a failure AWS reported: it replaces the failed row (ai_failures is kept) and
+                # the delivery below is queued again, so the wrapper gets the answer after the failure
+                conn.execute("DELETE FROM ai_outputs WHERE visit_id = %s AND analysis = %s", (visit_id, analysis))
             conn.execute(
                 "INSERT INTO ai_outputs (visit_id, analysis, status, summary_en, summary_ar, simple_summary_en, "
                 "simple_summary_ar, note_en, note_ar, html_en, html_ar, aws_review_status, generated_at) "
@@ -155,7 +163,12 @@ class OutputsMixin:
                          "WHERE visit_id = %s AND analysis = %s", (error_type, visit_id, analysis))
             set_stage(conn, visit_id, _stage("failed", analysis))
 
-    def save_failed_output(self, visit_id: int, public_output: dict[str, Any], analysis: Analysis = "visit") -> None:
+    def failed_by_aws(self, visit_id: int, analysis: Analysis = "visit") -> bool:
+        with self._db.transaction() as conn:
+            return conn.execute(_AWS_FAILED, (visit_id, analysis)).fetchone() is not None
+
+    def save_failed_output(self, visit_id: int, public_output: dict[str, Any], analysis: Analysis = "visit",
+                           failure: dict[str, Any] | None = None) -> None:
         with self._db.transaction() as conn:
             conn.execute("SELECT 1 FROM visits WHERE visit_id = %s FOR UPDATE", (visit_id,))     # as save_output
             if conn.execute("SELECT 1 FROM ai_outputs WHERE visit_id = %s AND analysis = %s",
@@ -163,6 +176,13 @@ class OutputsMixin:
                 return
             conn.execute("INSERT INTO ai_outputs (visit_id, analysis, status) VALUES (%s, %s, 'error')",
                          (visit_id, analysis))
+            if failure is not None:
+                conn.execute(
+                    "INSERT INTO ai_failures (visit_id, analysis, source, lane, batch_id, failed_step, error, "
+                    "failed_at, aws_status, record_id, details) VALUES (%(visit_id)s, %(analysis)s, %(source)s, "
+                    "%(lane)s, %(batch_id)s, %(failed_step)s, %(error)s, %(failed_at)s, %(aws_status)s, "
+                    "%(record_id)s, %(details)s) "
+                    "ON CONFLICT DO NOTHING", {**failure, "visit_id": visit_id, "analysis": analysis})
             insert_payload(conn, visit_id, analysis, "output_public", public_output)
             conn.execute(
                 "INSERT INTO record_processing (visit_id, analysis, step, read_from, status) "

@@ -26,6 +26,9 @@ ONE = {
         "SELECT analysis, phase, attempt, started_at, duration_ms FROM record_phase_timings "
         "WHERE visit_id = %s ORDER BY analysis, started_at",
     "ai_outputs": "SELECT analysis, status, aws_review_status, generated_at FROM ai_outputs WHERE visit_id = %s",
+    "ai_failures (what AWS said when it gave up; details cut to 200)":
+        "SELECT analysis, source, lane, batch_id, failed_step, error, failed_at, aws_status, record_id, "
+        "left(details, 200) AS details_preview, received_at FROM ai_failures WHERE visit_id = %s",
     "ai_model_calls": "SELECT analysis, purpose, model_id, mode, input_tokens, output_tokens, "
                       "cache_creation_input_tokens, cache_read_input_tokens, stop_reason "
                       "FROM ai_model_calls WHERE visit_id = %s ORDER BY analysis, purpose",

@@ -2,6 +2,7 @@ import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from structlog.testing import capture_logs
 
 from patient360.domain.builders.backend_output import build_failed_output, for_wrapper
 from patient360.domain.builders.blocked import BLOCKED_MESSAGES
@@ -343,6 +344,125 @@ def test_a_failed_file_of_a_batch_visit_fails_that_visit_only(world):
     path = world.write("batch", failed_path(first["idempotency_key"]), AWS_FAILED)
     assert [r.outcome for r in world.receiver().receive("batch", path)] == ["failed"]
     assert first["stage"] == "failed" and second["stage"] == "processed"
+
+
+def failed_line(key, **extra):
+    """One line of a batch ``06-failed.jsonl``, as AWS writes it."""
+    return {**AWS_FAILED, "recordId": key, "idempotency_key": key, "failed_at": "2026-11-04T14:31:28.358145+00:00",
+            **extra}
+
+
+JSONL_FAILED = "normal-jsonls/2026/10/25/normal_000001/06-failed.jsonl"
+
+
+def fail_line(world, text, visit_key=None):
+    return OutputReceiver(world.store, world.catalogue).receive_record("batch", JSONL_FAILED, text, visit_key)[0]
+
+
+def test_a_batch_failed_line_with_the_header_key_fails_that_visit_and_keeps_one_ai_failures_row(world):
+    [first, second] = world.add("batch_normal", 1, count=2)
+    key = first["idempotency_key"]
+    got = fail_line(world, json.dumps(failed_line(key)), visit_key=key)
+    assert (got.record_id, got.outcome) == (key, "failed")
+    assert first["stage"] == "failed" and second["stage"] == "processed"
+    row = world.store.ai_failures[(1, "visit")]
+    assert (row["source"], row["lane"], row["batch_id"], row["failed_step"]) == ("batch", "normal", "normal_000001",
+                                                                                 "output_guardrail")
+    assert row["details"] == AWS_FAILED["details"] and row["error"] == "An AWS call failed."
+    assert row["aws_status"] == "failed" and row["record_id"] == key
+    assert row["failed_at"] == datetime(2026, 11, 4, 14, 31, 28, 358145, tzinfo=UTC)
+    assert fail_line(world, json.dumps(failed_line(key)), visit_key=key).outcome == "duplicate"
+    assert len(world.store.ai_failures) == 1
+
+
+def test_a_batch_failed_line_that_is_garbage_still_fails_the_visit_by_the_header_and_keeps_the_raw_text(world):
+    [visit] = world.add("batch_normal", 1)
+    key = visit["idempotency_key"]
+    assert fail_line(world, "<<garbage \x00 line>>" + "x" * 9000, visit_key=key).outcome == "failed"
+    row = world.store.ai_failures[(1, "visit")]
+    assert visit["stage"] == "failed" and row["failed_step"] is None and len(row["details"]) == 8192
+    assert row["details"].startswith("<<garbage  line>>") and row["error"] is None and row["failed_at"] is None
+
+
+def test_a_batch_failed_line_without_the_header_takes_its_key_from_the_line(world):
+    [first, second] = world.add("batch_normal", 1, count=2)
+    assert fail_line(world, json.dumps(failed_line(first["idempotency_key"]))).outcome == "failed"
+    line = {"recordId": second["idempotency_key"], "status": "failed"}      # no idempotency_key: recordId is used
+    assert fail_line(world, json.dumps(line), visit_key="not a key!").outcome == "failed"      # a bad header: the line
+    assert first["stage"] == second["stage"] == "failed"
+
+
+@pytest.mark.parametrize("text", ["garbage", "{}", '{"recordId": "../x"}', '{"idempotency_key": 5}', ""])
+def test_a_batch_failed_line_with_no_usable_key_is_unreadable_and_changes_nothing(world, text):
+    [visit] = world.add("batch_normal", 1)
+    got = fail_line(world, text, visit_key=None)
+    assert (got.record_id, got.outcome) == (None, "unreadable") and visit["stage"] == "processed"
+    assert world.store.ai_failures == {}
+
+
+def test_a_batch_failed_line_of_an_unknown_visit_the_wrong_source_or_an_answered_visit_changes_nothing(world):
+    [visit] = world.add("urgent_mild", 1)
+    [batch_visit] = world.add("batch_normal", 2)
+    assert fail_line(world, "{}", visit_key="a" * 32).outcome == "unknown_visit"
+    assert fail_line(world, "{}", visit_key=visit["idempotency_key"]).outcome == "source_mismatch"
+    key = batch_visit["idempotency_key"]
+    [batch] = BatchTrigger(world.store, world.blobs, 1).run()
+    world.receiver().receive("batch", world.write("batch", bpath(batch), record(key)))
+    assert fail_line(world, json.dumps(failed_line(key)), visit_key=key).outcome == "duplicate"
+    assert batch_visit["stage"] == "post_processing" and batch_visit["public_output"]["success"] is True
+    assert visit["stage"] == "processed" and world.store.ai_failures == {}
+
+
+def test_the_aws_text_never_reaches_the_wrapper_or_the_log(world):
+    [visit] = world.add("batch_normal", 1)
+    key = visit["idempotency_key"]
+    with capture_logs() as logs:
+        fail_line(world, json.dumps(failed_line(key, details="SECRET-AWS-TEXT")), visit_key=key)
+    backend = FakeBackend()
+    ResultSender(world.store, backend, lambda: NOW).run()
+    [posted] = backend.posts
+    assert posted["success"] is False and "SECRET-AWS-TEXT" not in json.dumps(posted)
+    assert "SECRET-AWS-TEXT" not in str(logs) and "SECRET-AWS-TEXT" not in json.dumps(visit["public_output"])
+    [event] = [e for e in logs if e["event"] == "aws_failed"]
+    assert event["failed_step"] == "output_guardrail"
+
+
+def test_a_failed_file_also_keeps_one_ai_failures_row(world):
+    [visit] = world.add("urgent_mild", 1)
+    path = world.write("urgent", failed_path(visit["idempotency_key"]), AWS_FAILED)
+    world.receiver().receive("urgent", path)
+    world.receiver().receive("urgent", path)
+    row = world.store.ai_failures[(1, "visit")]
+    assert (row["source"], row["batch_id"], row["failed_step"]) == ("urgent", None, "output_guardrail")
+    assert len(world.store.ai_failures) == 1
+
+
+def test_a_late_answer_after_an_aws_failure_is_accepted_and_the_wrapper_gets_the_failure_then_the_answer(world):
+    [visit] = world.add("urgent_mild", 1)
+    key = visit["idempotency_key"]
+    world.receiver().receive("urgent", world.write("urgent", failed_path(key), AWS_FAILED))
+    backend = FakeBackend()
+    ResultSender(world.store, backend, lambda: NOW).run()
+    assert [p["success"] for p in backend.posts] == [False] and visit["stage"] == "failed"
+    answer = world.write("urgent", vpath(key), record(key))
+    assert [r.outcome for r in world.receiver().receive("urgent", answer)] == ["saved"]
+    assert visit["stage"] == "post_processing" and visit["public_output"]["success"] is True
+    ResultSender(world.store, backend, lambda: NOW).run()
+    assert [p["success"] for p in backend.posts] == [False, True] and visit["stage"] == "delivered"
+    assert [r.outcome for r in world.receiver().receive("urgent", answer)] == ["duplicate"]      # answered once
+    failed = world.write("urgent", failed_path(key), AWS_FAILED)
+    assert [r.outcome for r in world.receiver().receive("urgent", failed)] == ["duplicate"]
+    assert len(world.store.ai_failures) == 1
+
+
+def test_a_late_answer_after_another_kind_of_failure_stays_a_duplicate(world):
+    [visit] = world.add("urgent_mild", 1)
+    key = visit["idempotency_key"]
+    world.receiver().receive("urgent", world.write("urgent", vpath(key), record(key, text='{"summary": "wrong"}')))
+    assert visit["stage"] == "failed" and world.store.ai_failures == {}
+    again = world.write("urgent", vpath(key), record(key))
+    assert [r.outcome for r in world.receiver().receive("urgent", again)] == ["duplicate"]
+    assert visit["public_output"]["success"] is False
 
 
 def test_the_status_aws_puts_on_a_record_is_kept_under_its_own_name_and_never_sent_to_the_backend(world):

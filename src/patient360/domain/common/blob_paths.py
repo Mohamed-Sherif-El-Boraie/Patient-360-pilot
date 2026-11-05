@@ -114,7 +114,7 @@ def backend_output_path(lane: str, day: date, idempotency_key: str) -> str:
 @dataclass(frozen=True)
 class MergedOutput:
     """An answer file in an output container, read back from its path."""
-    kind: Literal["visit", "batch_jsonl", "batch_visit", "failed"]
+    kind: Literal["visit", "batch_jsonl", "batch_visit", "failed", "batch_failed"]
     source: str
     lane: str
     day: date
@@ -127,6 +127,7 @@ _DATE = r"(\d{4})/(\d{2})/(\d{2})"
 _VISIT_FILE = re.compile(rf"^(normal|critical)/{_DATE}/{_NAME}/{OUTPUT_FILE}\.json$")
 _BATCH_JSONL = re.compile(rf"^(normal|critical)-jsonls/{_DATE}/{_NAME}/{OUTPUT_FILE}\.jsonl$")
 _FAILED_FILE = re.compile(rf"^(normal|critical)/{_DATE}/{_NAME}/{FAILED_FILE}\.json$")
+_BATCH_FAILED = re.compile(rf"^(normal|critical)-jsonls/{_DATE}/{_NAME}/{FAILED_FILE}\.jsonl$")   # one line per visit
 
 
 def parse_output_path(source: str, path: str) -> MergedOutput | None:
@@ -146,6 +147,9 @@ def parse_output_path(source: str, path: str) -> MergedOutput | None:
         if source == "batch" and (m := _BATCH_JSONL.match(path)):
             lane, *day, batch_id = m.groups()
             return MergedOutput("batch_jsonl", source, lane, date(*map(int, day)), batch_id=batch_id)
+        if source == "batch" and (m := _BATCH_FAILED.match(path)):     # the key of a line is not in the path
+            lane, *day, batch_id = m.groups()
+            return MergedOutput("batch_failed", source, lane, date(*map(int, day)), batch_id=batch_id)
     except ValueError:      # a date that does not exist, such as 2026/13/45
         return None
     return None

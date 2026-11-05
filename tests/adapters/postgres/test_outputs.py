@@ -444,3 +444,55 @@ def test_a_failed_output_does_not_replace_a_saved_answer(db, store, ready):
     store.save_failed_output(1, failed_message())
     assert fetch(db, "SELECT status FROM ai_outputs")[0]["status"] == "success"
     assert store.public_output_of(DeliveryUnit(1, "urgent", 0))["ai"] is not None
+
+
+# ---- ai_failures and the late answer (Option B) ------------------------------------------------
+FAILURE = {"source": "urgent", "lane": "normal", "batch_id": None, "failed_step": "output_guardrail",
+           "error": "An AWS call failed.", "failed_at": datetime(2026, 11, 4, 14, 31, tzinfo=UTC),
+           "aws_status": "failed", "record_id": "key", "details": "AWS text"}
+
+
+def test_an_aws_failure_is_saved_with_the_failed_output_in_one_call_and_once(db, store, ready):
+    store.save_failed_output(1, failed_message(), "visit", FAILURE)
+    store.save_failed_output(1, failed_message(), "visit", FAILURE | {"details": "second"})
+    [row] = fetch(db, "SELECT * FROM ai_failures")
+    assert (row["visit_id"], row["analysis"], row["source"], row["lane"], row["batch_id"]) == (
+        1, "visit", "urgent", "normal", None)
+    assert (row["failed_step"], row["error"], row["aws_status"], row["record_id"], row["details"]) == (
+        "output_guardrail", "An AWS call failed.", "failed", "key", "AWS text")
+    assert row["failed_at"] == FAILURE["failed_at"] and row["received_at"] is not None
+    assert store.failed_by_aws(1) and not store.failed_by_aws(1, "symptom")
+
+
+def test_a_failed_output_without_an_aws_failure_writes_no_row_and_is_not_a_failure_of_aws(db, store, ready):
+    store.save_failed_output(1, failed_message())
+    assert fetch(db, "SELECT * FROM ai_failures") == [] and not store.failed_by_aws(1)
+
+
+def test_an_answer_does_not_get_an_ai_failures_row_and_a_failure_after_it_changes_nothing(db, store, ready):
+    store.save_output(1, internal_output(), public_output(1))
+    store.save_failed_output(1, failed_message(), "visit", FAILURE)
+    assert fetch(db, "SELECT * FROM ai_failures") == [] and not store.failed_by_aws(1)
+
+
+def test_a_late_answer_replaces_an_aws_failure_and_is_delivered_after_it(db, store, ready):
+    seed.add_processing(db, 1, status="sent")
+    store.save_failed_output(1, failed_message(), "visit", FAILURE)
+    first = store.claim_next_delivery(NOW)
+    assert store.public_output_of(first)["success"] is False
+    store.mark_delivered(first)
+    store.save_output(1, internal_output(), public_output(1))
+    assert fetch(db, "SELECT status FROM ai_outputs")[0]["status"] == "success" and not store.failed_by_aws(1)
+    assert stage_of(db) == "post_processing" and len(fetch(db, "SELECT * FROM ai_failures")) == 1   # kept
+    second = store.claim_next_delivery(NOW)
+    assert store.public_output_of(second)["ai"] is not None
+    store.mark_delivered(second)
+    assert stage_of(db) == "delivered" and store.claim_next_delivery(NOW) is None
+    store.save_output(1, internal_output(), public_output(1) | {"patient_id": 99})      # answered once
+    assert store.public_output_of(second)["patient_id"] == 1
+
+
+def test_a_late_answer_does_not_replace_a_failure_that_aws_did_not_report(db, store, ready):
+    store.save_failed_output(1, failed_message())
+    store.save_output(1, internal_output(), public_output(1))
+    assert fetch(db, "SELECT status FROM ai_outputs")[0]["status"] == "error"

@@ -111,11 +111,14 @@ queues, pulls the file and posts each record to this app. This app never reads t
 | `X-Source` | `urgent`, `symptom-checker`, `on-demand` or `batch`; anything else is answered 400 |
 | `X-Blob-Path` | The path of the file inside the output container (see below); required, else 400 |
 | `Idempotency-Key` | Informational: only logged that it exists, never required |
+| `X-Visit-Key` | Only for a line of a batch `06-failed.jsonl`: the visit's idempotency key (the Function checks it, the app checks it again against `[A-Za-z0-9_-]{1,100}`). The line may be unreadable, so this is the reliable key |
 
 The body is the file content as it is: the whole answer envelope for a visit file, and ONE line (one record) of the
 JSONL per call for a batch (`X-Blob-Path` is then the JSONL path). A body over 2,000,000 bytes is answered 413.
 The answer is 200 `{"outcome": ...}` for everything a retry cannot change: `saved`, `blocked`, `duplicate`,
-`unknown_visit`, `source_mismatch`, `invalid_output`, `ignored` (a path that is not an answer). A 500 means "try again"
+`unknown_visit`, `source_mismatch`, `invalid_output`, `failed`, `ignored` (a path that is not an answer). A failed line
+of a batch with no usable visit key (no valid `X-Visit-Key`, and no valid `idempotency_key` or `recordId` in the line) is
+a permanent 400 (the Function sets it aside) and is logged as `unreadable_failed_line`. A 500 means "try again"
 (for example the database is down). A batch becomes `completed` when every one of its visits has its output saved
 (a blocked one counts), `partially_completed` until then.
 
@@ -125,6 +128,7 @@ Answer file paths inside an output container (the layout is in `tests/fixtures/f
 |---|---|
 | One visit | `<lane>/<yyyy>/<MM>/<dd>/<idempotency_key>/05-output-merged.json` |
 | A batch (one record per line) | `<lane>-jsonls/<yyyy>/<MM>/<dd>/<batch_id>/05-output-merged.jsonl` |
+| A batch's failed visits (one failed visit per line, no key in the path) | `<lane>-jsonls/<yyyy>/<MM>/<dd>/<batch_id>/06-failed.jsonl` |
 
 `<lane>` is `normal` or `critical`. The content is the AWS envelope; its `recordId` is the visit's idempotency key.
 AWS sends these answer files, and `<lane>/<yyyy>/<MM>/<dd>/<key>/06-failed.json` when it gave up on a visit (the key in
@@ -160,6 +164,31 @@ scenarios with real values: `urgent/9_scenario_guardrail_blocked_urgent.jsonc`, 
 - **A `06-failed.json` from AWS** (it gave up on the visit, for example `failed_step: output_guardrail`). This is final:
   the app fails the visit at once and queues the same failed message. The text of the file is never sent on; only the
   step name is logged. A visit that already has an output (an answer, or an earlier failure) is left as it is.
+- **A line of a batch `06-failed.jsonl`** (batch only; the Function posts one line per call with `X-Visit-Key`). The
+  visit is the header key, else the line's `idempotency_key` / `recordId`. It is handled exactly like a `06-failed.json`
+  (unknown visit, wrong source, visit already answered or failed: nothing changes), and even an unreadable line fails
+  the visit when the header is there: the wrapper is never left waiting because of AI. With no usable key it is a 400.
+- **`ai_failures`** (one row per visit and analysis, written in the same transaction that fails the visit, for both
+  forms above): `visit_id`, `analysis`, `source`, `lane`, `batch_id` (null for a single file), `failed_step` (only when it
+  looks like a name), `error` (500 characters), `failed_at`, `aws_status` (40), `record_id` (100), `details` (8192; for an
+  unreadable line the raw text) and `received_at`. It is for analysis only: never logged, never sent to the Backend or the
+  wrapper, never deleted (only with its visit). `python tools/trace_visit.py <visit_id>` shows it, `details` cut to 200.
+  It comes with `migrations/002_ai_failures.sql` (applied at start-up like any migration; `CREATE TABLE IF NOT EXISTS`, so a
+  database where the table was made by hand is fine). The same SQL, to run once by hand on an existing database:
+
+  ```sql
+  CREATE TABLE IF NOT EXISTS ai_failures (
+    visit_id bigint NOT NULL REFERENCES visits (visit_id) ON DELETE CASCADE,
+    analysis analysis_kind NOT NULL DEFAULT 'visit',
+    source text NOT NULL, lane text NOT NULL CHECK (lane IN ('normal','critical')), batch_id text,
+    failed_step text, error text, failed_at timestamptz, aws_status text, record_id text, details text,
+    received_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (visit_id, analysis));
+  ```
+- **A late answer after an AWS failure is accepted.** If a `05-output-merged` answer arrives for a visit that already
+  failed through `06-failed` (not for any other kind of failure), it is saved and post-processed, the visit leaves
+  `failed`, and its success body is queued: the wrapper sees the failure, then the success. This is intended. A failed
+  record for a visit that already has an answer, or already failed, is a `duplicate`. `ai_failures` keeps its row.
 - **A payload in Blob 1 `_rejected`.** When the ids can still be read, the app posts the failed message to the wrapper
   right after the 422. This is best effort: no visit exists to hold a retry, so a Backend error is only logged. A
   rejected payload with unusable ids sends nothing.
@@ -369,7 +398,7 @@ The one place that builds every file path in Azure Blob and S3 (folders by sourc
 | `OUTPUT_FILE (constant)` | The name of the phase file AWS writes last (English and Arabic together): `05-output-merged`. | a text |
 | `merged_output_path(lane, day, idempotency_key)` | Path of the answer of one visit inside the output container of its source: `<lane>/<yyyy>/<MM>/<dd>/<idempotency_key>/05-output-merged.json`. | A path text. |
 | `merged_output_jsonl_path(lane, day, batch_id)` | Path of the answers of a whole batch inside the batch output container: `<lane>-jsonls/<yyyy>/<MM>/<dd>/<batch_id>/05-output-merged.jsonl`. | A path text. |
-| `MergedOutput` | Describes an answer file read back from its path: kind (visit, batch_jsonl or batch_visit), source, lane, day, key, batch id. | an object with those fields |
+| `MergedOutput` | Describes an answer file read back from its path: kind (visit, batch_jsonl, batch_visit, failed or batch_failed), source, lane, day, key, batch id. | an object with those fields |
 | `parse_output_path(source, path)` | Works out what a path inside the output container of `source` is. Any other file (other phase files, logs, failures) is not ours; in the batch container a visit file is a copy of a JSONL line (`batch_visit`). | A `MergedOutput`, or None for any other file or a fake date. |
 | `s3_processed_key(source, lane, day, idempotency_key, batch_id=None)` | Builds the file key inside the S3 bucket: `<lane>/<yyyy>/<MM>/<dd>/<idempotency_key>/01-input.json`, and for a batch `<lane>/<yyyy>/<MM>/<dd>/<batch_id>/01-input.jsonl`. `01-input` is the only file we upload (the IAM policy allows nothing else). A batch has no idempotency key. | A key text. |
 
@@ -641,7 +670,7 @@ Receives the AWS answers the Function app posts (from the Blob 2 output containe
 | `Received` | Class: what happened to one result record. | An object with record_id and outcome (saved, blocked, duplicate, unknown_visit, source_mismatch, invalid_output, failed or ignored). |
 | `_loads(text)` | (helper) Reads JSON strictly; if that fails, tries once to repair it. Refuses anything that is not an object. | A dictionary, or an error is raised. |
 | `OutputReceiver.__init__(store, catalogue)` | Keeps the database and the test catalogue. | Nothing returned. |
-| `OutputReceiver.receive_record(source, path, text)` | Handles one record the Function app posted: works out from the path what it is (`parse_output_path`) and handles the record. For a batch JSONL line it then sets the batch `completed` when every visit of the batch has its output saved, else `partially_completed`. Other files and the per-visit copies in the batch container are `ignored`. A database error is not caught, so the Function sends it again. | A list with one Received object. |
+| `OutputReceiver.receive_record(source, path, text, visit_key)` | Handles one record the Function app posted: works out from the path what it is (`parse_output_path`) and handles the record. For a batch JSONL line it then sets the batch `completed` when every visit of the batch has its output saved, else `partially_completed`. Other files and the per-visit copies in the batch container are `ignored`. A database error is not caught, so the Function sends it again. | A list with one Received object. |
 | `OutputReceiver._handle_record(found, text)` | (helper) Checks one record: known visit, right source, not a duplicate, blocked or valid AI answer; then saves it. | A Received object. |
 | `OutputReceiver._save(found, text, stored, record, ai, analysis, blocked)` | (helper) Saves a batch record as its own file, and stores the result for the Backend in the database. | Nothing returned. |
 | `OutputReceiver._ignore(found, record_id, outcome)` | (helper) Writes a warning to the log for a record that is not ours or is broken. | A Received object with that outcome. |
@@ -684,7 +713,7 @@ The web application: receives visits, receives the AI answers the Function app p
 | `result_body(request)` | (helper) Reads the body of an AI result; refuses one over `MAX_RESULT_BYTES` (2,000,000), also when it comes in chunks. | The body bytes, or a 413 answer. |
 | `POST /api/v1/patient360/visits` | Receives a visit (source 1, 2 or 4) from the Backend app service; a symptom check sent here is refused (422 `wrong_endpoint`). Numbers (`source`, ids, `sex`, `age_days`) may arrive as text ("1", "10.0"). No API key is checked on this route (the network protects it). Processing continues in the background. | 202 Accepted, 200 Duplicate, 422 invalid, 413 too large, 401 bad key, 500 error. |
 | `POST /api/v1/patient360/visits-symptoms` | Receives a symptom check (source 3) from the wrapper; a visit sent here is refused (422 `wrong_endpoint`). | 202 (new) or 200 (retry: the visit is known but its result was not delivered yet, a failed delivery is queued again) with `{response:{code:-1,message:"success"},data}`; 409 `DUPLICATE_VISIT` when its result was already delivered; a symptom check started a second time answers 200 `success` with `data` = `success`, ids, `company_id`, `source` 3 and `symptom_flag` false; every other answer is `{response:{code:0,message}}` only: 422 (`Invalid payload: <where>: <what>`), 404 VISIT_NOT_FOUND, 409 SYMPTOM_CHECKER_CLOSED, 413 too large, 401 bad key, 500 error. |
-| `POST /api/v1/patient360/ai-results` | From the Function app: one AI answer record per call (headers `X-Source`, `X-Blob-Path`, optional `Idempotency-Key`; the body is the file content, or one JSONL line). | 200 `{"outcome": ...}` (saved, blocked, duplicate, unknown_visit, source_mismatch, invalid_output, failed or ignored), 400 bad headers, 401 bad key, 413 too large, 500 error (the Function retries). |
+| `POST /api/v1/patient360/ai-results` | From the Function app: one AI answer record per call (headers `X-Source`, `X-Blob-Path`, optional `Idempotency-Key`, `X-Visit-Key` for a batch failed line; the body is the file content, or one JSONL line). | 200 `{"outcome": ...}` (saved, blocked, duplicate, unknown_visit, source_mismatch, invalid_output, failed or ignored), 400 bad headers or a failed batch line with no visit key, 401 bad key, 413 too large, 500 error (the Function retries). |
 | `GET /health` | Checks that the database answers a simple query. | 200 status "ok", or 503 "database_unavailable". |
 
 ### `runtime.py`

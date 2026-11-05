@@ -156,18 +156,23 @@ def create_app(services: Services, lifespan=None) -> FastAPI:
     def receive_ai_result(
         raw: bytes = Depends(result_body), x_source: str | None = Header(default=None),
         x_blob_path: str | None = Header(default=None), idempotency_key: str | None = Header(default=None),
+        x_visit_key: str | None = Header(default=None),
     ) -> JSONResponse:
         if x_source not in SOURCES or not x_blob_path:
             return reply(400, "Invalid headers")
         log.info("ai_result_received", source=x_source, has_idempotency_key=idempotency_key is not None)
         # Answered 200 for everything a retry cannot change; 500 only when it is worth retrying (the Function retries
         # a 5xx). OutputReceiver is safe to run twice. Outcomes: saved, blocked, duplicate, unknown_visit,
-        # source_mismatch, invalid_output, ignored.
+        # source_mismatch, invalid_output, ignored. A failed line of a batch with no usable visit key is a permanent
+        # 400 (a retry can not help: the Function sets it aside). ``X-Visit-Key``: the visit of that line.
         try:
-            results = services.receiver.receive_record(x_source, x_blob_path, raw.decode(errors="replace"))
+            results = services.receiver.receive_record(x_source, x_blob_path, raw.decode(errors="replace"),
+                                                       x_visit_key)
         except Exception as error:
             log.error("request_failed", error_type=type(error).__name__)
             return reply(500, "Internal error")
+        if results[0].outcome == "unreadable":
+            return reply(400, "Failed line without a visit key")
         return JSONResponse({"outcome": results[0].outcome})
 
     @app.get("/health")

@@ -4,8 +4,8 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
-from datetime import UTC
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 import json_repair
@@ -28,7 +28,8 @@ SYMPTOM_CHECKER = "symptom-checker"
 SYMPTOM_CHECKER_ID = 3
 Analysis = Literal["visit", "symptom"]
 Outcome = Literal["saved", "blocked", "duplicate", "unknown_visit", "source_mismatch", "invalid_output", "ignored",
-                  "failed"]
+                  "failed", "unreadable"]
+_KEY = re.compile(r"[A-Za-z0-9_-]{1,100}")      # a visit key, as the Function app checks it too
 _STEP_NAME = re.compile(r"[a-z0-9_]{1,40}")    # the AWS step in a 06-failed.json, kept only if it looks like a name
 AWS_STATUS_KEY = "status"                # AWS's own check of the record (ok, needs_review, failed): analysis only
 AWS_REVIEW_STATUS_KEY = "aws_review_status"   # its name here, so it is not mixed up with our own ``status``
@@ -53,21 +54,47 @@ def _loads(text: str) -> dict[str, Any]:
     return value
 
 
+def _cut(value: object, size: int) -> str | None:
+    """A text of AWS cut to ``size``; a NUL character is dropped (PostgreSQL text can not hold it)."""
+    return value.replace("\x00", "")[:size] if isinstance(value, str) else None
+
+
+def _moment(value: object) -> datetime | None:
+    try:
+        moment = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+
+
+def _failure_row(found: MergedOutput, line: dict[str, Any] | None, text: str) -> dict[str, Any]:
+    """What AWS said about a failed visit, as the ``ai_failures`` row (every field best effort). A line that could not
+    be read keeps its raw text as ``details``."""
+    line = line or {}
+    step = line.get("failed_step")
+    return {"source": found.source, "lane": found.lane, "batch_id": found.batch_id,
+            "failed_step": step if isinstance(step, str) and _STEP_NAME.fullmatch(step) else None,
+            "error": _cut(line.get("error"), 500), "failed_at": _moment(line.get("failed_at")),
+            "aws_status": _cut(line.get("status"), 40), "record_id": _cut(line.get("recordId"), 100),
+            "details": _cut(line.get("details") if line else text, 8192)}
+
+
 class OutputReceiver:
     def __init__(self, store: VisitStore, catalogue: Catalogue, outputs: Mapping[str, BlobStore] | None = None) -> None:
         """``outputs``: the output container of each source, to keep the Backend body (``06-backend-output.json``)."""
         self._store, self._catalogue, self._outputs = store, catalogue, outputs or {}
 
-    def receive_record(self, source: str, path: str, text: str) -> list[Received]:
+    def receive_record(self, source: str, path: str, text: str, visit_key: str | None = None) -> list[Received]:
         """Handle one record the Function app sent: a visit file, or one line of a batch JSONL (``path`` is the file).
         A path that is not an answer (the other phase files, a batch's per-visit copies) is ignored. A database
-        error is not caught: the Function sends the record again."""
+        error is not caught: the Function sends the record again. ``visit_key``: the ``X-Visit-Key`` header, the
+        visit of one line of a batch ``06-failed.jsonl`` (the line itself may be unreadable)."""
         found = parse_output_path(source, path)
         if found is None or found.kind == "batch_visit":
             log.info("output_ignored", source=source, status="ignored")
             return [Received(None, "ignored")]
-        if found.kind == "failed":
-            return [self._handle_failed(found, text)]
+        if found.kind in ("failed", "batch_failed"):
+            return [self._handle_failed(found, text, visit_key)]
         result = self._handle_record(found, text)
         if found.kind == "batch_jsonl" and found.batch_id:
             # records of one batch arrive one by one: it is complete only when every visit has its output
@@ -75,10 +102,22 @@ class OutputReceiver:
                 found.batch_id) else "partially_completed")
         return [result]
 
-    def _handle_failed(self, found: MergedOutput, text: str) -> Received:
-        """AWS gave up on the visit (``06-failed.json``): final, so the Backend is told it failed at once. The text of
-        the file is never sent on; only the name of the AWS step that failed is logged. A visit that already has an
-        output (an answer, or an earlier failure) is left as it is."""
+    def _handle_failed(self, found: MergedOutput, text: str, visit_key: str | None = None) -> Received:
+        """AWS gave up on the visit (``06-failed.json``, or one line of a batch ``06-failed.jsonl``): final, so the
+        Backend is told it failed at once, even when the text is unreadable. The text is never sent on nor logged;
+        only the name of the AWS step that failed is logged. It is kept in ``ai_failures`` (for analysis only).
+        A visit that already has an output (an answer, or an earlier failure) is left as it is."""
+        try:
+            line = _loads(text)
+        except ValueError:
+            line = None
+        if found.kind == "batch_failed":        # no key in the path: the header, else the line itself
+            key = next((v for v in (visit_key, (line or {}).get("idempotency_key"), (line or {}).get("recordId"))
+                        if isinstance(v, str) and _KEY.fullmatch(v)), None)
+            if key is None:
+                log.warning("unreadable_failed_line", source=found.source, status="unreadable")
+                return Received(None, "unreadable")
+            found = replace(found, key=key)
         stored = self._store.find_visit(found.key)
         if stored is None:
             return self._ignore(found, found.key, "unknown_visit")
@@ -87,22 +126,20 @@ class OutputReceiver:
             return self._ignore(found, found.key, "source_mismatch")
         if self._store.has_output(stored.visit_id, analysis):
             return Received(found.key, "duplicate")
-        try:
-            step = _loads(text).get("failed_step")
-        except ValueError:
-            step = None
-        self._fail(found, stored, analysis, "aws_failed",
-                   failed_step=step if isinstance(step, str) and _STEP_NAME.fullmatch(step) else None)
+        failure = _failure_row(found, line, text)
+        self._fail(found, stored, analysis, "aws_failed", failure, failed_step=failure["failed_step"])
         return Received(found.key, "failed")
 
-    def _fail(self, found: MergedOutput, stored: StoredVisit, analysis: Analysis, reason: str, **fields: Any) -> None:
-        """One transaction: the visit failed, and the normal delivery queue tells the Backend (``success`` false)."""
+    def _fail(self, found: MergedOutput, stored: StoredVisit, analysis: Analysis, reason: str,
+              failure: dict[str, Any] | None = None, **fields: Any) -> None:
+        """One transaction: the visit failed, and the normal delivery queue tells the Backend (``success`` false).
+        ``failure``: the AWS failure, kept in ``ai_failures`` in the same transaction."""
         raw = json.loads(stored.raw)
         failed = build_failed_output(
             patient_id=raw["patient_id"], visit_id=stored.visit_id, company_id=raw["company_id"],
             source=SYMPTOM_CHECKER_ID if analysis == "symptom" else stored.source_id,
             rows=build_ai_input(raw).rows)
-        self._store.save_failed_output(stored.visit_id, failed, analysis)
+        self._store.save_failed_output(stored.visit_id, failed, analysis, failure)
         self._keep_backend_output(found, stored, failed)
         log.warning(reason, source=found.source, status="failed", **fields)
 
@@ -126,7 +163,8 @@ class OutputReceiver:
         analysis = self._analysis(found)
         if analysis == "visit" and SOURCE_NAMES[stored.source_id] != found.source:
             return self._ignore(found, record_id, "source_mismatch")     # a symptom answer has the visit's key
-        if self._store.has_output(stored.visit_id, analysis):
+        if self._store.has_output(stored.visit_id, analysis) and not self._store.failed_by_aws(
+                stored.visit_id, analysis):     # a late answer after an AWS failure is accepted (the wrapper sees both)
             return Received(record_id, "duplicate")
         if is_blocked(record):      # never read the model's text: the Backend gets the fixed message
             self._save(found, stored, record, blocked_ai(record), analysis, blocked=True, text=text)

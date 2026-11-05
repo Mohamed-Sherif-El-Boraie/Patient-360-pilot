@@ -178,10 +178,16 @@ class VisitStore(Protocol):
         """The AWS output could not be used: stage ``failed`` (``failed_symptom``). The file stays in Blob 2."""
 
     def save_failed_output(self, visit_id: int, public_output: dict[str, Any],
-                           analysis: Literal["visit", "symptom"] = "visit") -> None:
+                           analysis: Literal["visit", "symptom"] = "visit",
+                           failure: dict[str, Any] | None = None) -> None:
         """One transaction, when the visit has no output yet (else nothing changes): the output row with status
         ``error``, the failed message as ``output_public``, a pending delivery, stage ``failed`` (``failed_symptom``).
-        The normal sender then tells the Backend."""
+        The normal sender then tells the Backend. ``failure``: what AWS said (an AWS failure only), kept in the table
+        ``ai_failures`` in the same transaction; the keys are the columns of that table (no ``visit_id``)."""
+
+    def failed_by_aws(self, visit_id: int, analysis: Literal["visit", "symptom"] = "visit") -> bool:
+        """Is the only output of this analysis a failure AWS reported (a row in ``ai_failures``)? A late answer may
+        still replace it: ``save_output`` then saves the answer and queues a new delivery."""
 
     def stored_symptom_check(self, visit_id: int) -> StoredSymptomCheck:
         """The symptom check of a visit as received, with its raw bytes."""

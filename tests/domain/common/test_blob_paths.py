@@ -159,6 +159,21 @@ def test_a_path_built_by_us_is_read_back_the_same_way():
         assert (failed.kind, failed.source, failed.lane, failed.key) == ("failed", source, "critical", KEY32)
 
 
+def test_the_failed_lines_of_a_batch_are_read_with_their_batch_and_no_key():
+    found = parse_output_path("batch", "critical-jsonls/2026/11/04/critical_000007/06-failed.jsonl")
+    assert found == MergedOutput("batch_failed", "batch", "critical", date(2026, 11, 4), batch_id="critical_000007")
+
+
+@pytest.mark.parametrize("source,path", [
+    ("urgent", "normal-jsonls/2026/11/04/b/06-failed.jsonl"),             # not the batch container
+    ("batch", "normal/2026/11/04/06-failed.jsonl"),                       # the lane folder, no batch folder
+    ("batch", "normal-jsonls/2026/13/45/b/06-failed.jsonl"),              # a date that does not exist
+    ("batch", "high-jsonls/2026/11/04/b/06-failed.jsonl"),                # unknown lane
+    ("batch", "normal-jsonls/2026/11/04/b/x/06-failed.jsonl")])
+def test_a_failed_jsonl_anywhere_else_is_not_ours(source, path):
+    assert parse_output_path(source, path) is None
+
+
 @pytest.mark.parametrize("source,path", [
     ("urgent", f"normal/2026/10/24/{KEY32}/01-input.json"),             # another phase file
     ("batch", "normal-jsonls/2026/10/24/b/06-failed.json"),              # a failed file of a whole batch: no visit key
