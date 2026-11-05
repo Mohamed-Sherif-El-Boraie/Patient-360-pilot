@@ -154,12 +154,16 @@ def test_a_path_built_by_us_is_read_back_the_same_way():
     assert parse_output_path("batch", merged_output_path("critical", day, KEY32)).kind == "batch_visit"
     jsonl = parse_output_path("batch", merged_output_jsonl_path("normal", day, "normal_000001"))
     assert (jsonl.kind, jsonl.batch_id) == ("batch_jsonl", "normal_000001")
+    for source in ("urgent", "on-demand", "symptom-checker", "batch"):        # a failed visit file, in every source
+        failed = parse_output_path(source, f"critical/2026/10/24/{KEY32}/06-failed.json")
+        assert (failed.kind, failed.source, failed.lane, failed.key) == ("failed", source, "critical", KEY32)
 
 
 @pytest.mark.parametrize("source,path", [
     ("urgent", f"normal/2026/10/24/{KEY32}/01-input.json"),             # another phase file
-    ("urgent", f"normal/2026/10/24/{KEY32}/06-failed.json"),             # AWS sends no failed file any more
-    ("batch", f"normal/2026/10/24/{KEY32}/06-failed.json"),
+    ("batch", "normal-jsonls/2026/10/24/b/06-failed.json"),              # a failed file of a whole batch: no visit key
+    ("urgent", f"normal/2026/10/24/{KEY32}/06-failed.jsonl"),
+    ("urgent", "normal/2026/13/45/x/06-failed.json"),
     ("urgent", f"normal/2026/10/24/{KEY32}/logs/05-output-merged.json"),
     ("urgent", "normal/2026/13/45/x/05-output-merged.json"),             # a date that does not exist
     ("urgent", "normal/2026/10/24/../05-output-merged.json"),

@@ -287,11 +287,62 @@ def failed_path(key, lane="normal"):
     return f"{lane}/2026/10/24/{key}/06-failed.json"
 
 
-def test_a_failed_file_is_not_an_answer_any_more_and_changes_nothing(world):
+AWS_FAILED = {"details": "The response length is too long", "error": "An AWS call failed.", "status": "failed",
+              "failed_step": "output_guardrail", "recordId": "x", "idempotency_key": "x"}
+
+
+def test_a_failed_file_fails_the_visit_at_once_and_the_backend_gets_the_failed_body_with_its_critical_tests(world):
+    [visit] = world.add("on_demand_critical", 1)
+    path = world.write("on-demand", failed_path(visit["idempotency_key"], "critical"), AWS_FAILED)
+    assert [r.outcome for r in world.receiver().receive("on-demand", path)] == ["failed"]
+    assert visit["stage"] == "failed" and visit["public_output"]["success"] is False
+    backend = FakeBackend()
+    ResultSender(world.store, backend, lambda: NOW).run()
+    [posted] = backend.posts
+    assert (posted["success"], posted["ai"], posted["html"], posted["visit_id"]) == (False, None, None, 1)
+    assert posted["criticalTests"] and all(r["critical"]["direction"] for t in posted["criticalTests"]
+                                           for r in t["results"])
+    assert "details" not in json.dumps(posted) and "output_guardrail" not in json.dumps(posted)
+
+
+def test_a_failed_file_that_is_not_json_still_fails_the_visit(world):
     [visit] = world.add("urgent_mild", 1)
     path = failed_path(visit["idempotency_key"])
-    assert [r.outcome for r in world.receiver().receive_record("urgent", path, "")] == ["ignored"]
+    world.out["urgent"].files[path] = b"<<not json>>"
+    assert [r.outcome for r in world.receiver().receive("urgent", path)] == ["failed"]
+    assert visit["stage"] == "failed"
+
+
+def test_a_failed_file_arriving_twice_or_after_an_answer_changes_nothing(world):
+    [first, second] = world.add("urgent_mild", 1, count=2)
+    failed = world.write("urgent", failed_path(first["idempotency_key"]), AWS_FAILED)
+    assert [r.outcome for r in world.receiver().receive("urgent", failed)] == ["failed"]
+    assert [r.outcome for r in world.receiver().receive("urgent", failed)] == ["duplicate"]
+    answered = world.write("urgent", vpath(second["idempotency_key"]), record(second["idempotency_key"]))
+    assert [r.outcome for r in world.receiver().receive("urgent", answered)] == ["saved"]
+    late = world.write("urgent", failed_path(second["idempotency_key"]), AWS_FAILED)
+    assert [r.outcome for r in world.receiver().receive("urgent", late)] == ["duplicate"]
+    assert second["public_output"]["success"] is True and second["stage"] == "post_processing"
+    backend = FakeBackend()
+    ResultSender(world.store, backend, lambda: NOW).run()
+    ResultSender(world.store, backend, lambda: NOW).run()
+    assert sorted(p["success"] for p in backend.posts) == [False, True]       # one message each
+
+
+def test_a_failed_file_of_an_unknown_visit_or_the_wrong_source_is_ignored(world):
+    [visit] = world.add("urgent_mild", 1)
+    unknown = world.write("urgent", failed_path("a" * 32), AWS_FAILED)
+    assert [r.outcome for r in world.receiver().receive("urgent", unknown)] == ["unknown_visit"]
+    wrong = world.write("on-demand", failed_path(visit["idempotency_key"]), AWS_FAILED)
+    assert [r.outcome for r in world.receiver().receive("on-demand", wrong)] == ["source_mismatch"]
     assert visit["stage"] == "processed" and "public_output" not in visit
+
+
+def test_a_failed_file_of_a_batch_visit_fails_that_visit_only(world):
+    [first, second] = world.add("batch_normal", 1, count=2)
+    path = world.write("batch", failed_path(first["idempotency_key"]), AWS_FAILED)
+    assert [r.outcome for r in world.receiver().receive("batch", path)] == ["failed"]
+    assert first["stage"] == "failed" and second["stage"] == "processed"
 
 
 def test_the_status_aws_puts_on_a_record_is_kept_under_its_own_name_and_never_sent_to_the_backend(world):

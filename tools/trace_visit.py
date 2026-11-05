@@ -22,6 +22,9 @@ ONE = {
     "record_processing_attempts":
         "SELECT analysis, attempt, started_at, finished_at, outcome, error "
         "FROM record_processing_attempts WHERE visit_id = %s ORDER BY record_processing_attempt_id",
+    "record_phase_timings (where the time went)":
+        "SELECT analysis, phase, attempt, started_at, duration_ms FROM record_phase_timings "
+        "WHERE visit_id = %s ORDER BY analysis, started_at",
     "ai_outputs": "SELECT analysis, status, aws_review_status, generated_at FROM ai_outputs WHERE visit_id = %s",
     "ai_model_calls": "SELECT analysis, purpose, model_id, mode, input_tokens, output_tokens, "
                       "cache_creation_input_tokens, cache_read_input_tokens, stop_reason "

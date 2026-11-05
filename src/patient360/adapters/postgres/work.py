@@ -12,9 +12,11 @@ import psycopg
 from patient360.adapters.postgres.db import (
     CLAIM_TIMEOUT,
     Database,
+    claimed_at,
     current_payload,
     insert_payload,
     record_attempt,
+    record_phase,
     set_stage,
     source_priority_sql,
 )
@@ -46,6 +48,10 @@ class WorkMixin:
             "ON CONFLICT (visit_id, analysis) DO UPDATE SET step = 'upload', read_from = excluded.read_from, "
             "status = 'pending', attempts = 0, next_retry_at = NULL, last_error = NULL, claimed_by = NULL, "
             "updated_at = now()", (visit_id, analysis, read_from))
+        received = conn.execute(     # the visit's own arrival, or the symptom check's
+            "SELECT CASE WHEN %s::text = 'symptom' THEN symptom_received_at ELSE created_at END AS at "
+            "FROM visits WHERE visit_id = %s", (analysis, visit_id)).fetchone()["at"]
+        record_phase(conn, visit_id, analysis, "process", 1, received)
         set_stage(conn, visit_id, "processed" + _suffix(analysis))
 
     def save_processed(self, visit_id: int, tier: str, model_input: dict[str, Any],
@@ -147,6 +153,14 @@ class WorkMixin:
                             (batch_id,)).fetchall()
         return [row["visit_id"] for row in rows]
 
+    @staticmethod
+    def _queue_wait(conn: Conn, visit_id: int, analysis: str, attempt: int) -> None:
+        """The wait from the processed request being saved to its upload to AWS (a batch waits for 100 records)."""
+        row = conn.execute("SELECT created_at FROM record_payloads_current "
+                           "WHERE visit_id = %s AND analysis = %s AND kind = 'processed'",
+                           (visit_id, analysis)).fetchone()
+        record_phase(conn, visit_id, analysis, "queue_wait", attempt, row["created_at"] if row else None)
+
     def mark_sent(self, unit: WorkUnit) -> None:
         with self._db.transaction() as conn:
             if unit.batch_id:
@@ -158,12 +172,15 @@ class WorkMixin:
                              "WHERE analysis = 'visit' AND visit_id = ANY(%s)", (visit_ids,))
                 for visit_id in visit_ids:
                     record_attempt(conn, visit_id, "visit", attempts + 1, "sent")
+                    self._queue_wait(conn, visit_id, "visit", attempts + 1)
                     set_stage(conn, visit_id, "sent_to_aws")
                 return
+            started = claimed_at(conn, unit.visit_id, unit.analysis)       # before the update moves it
             attempts = conn.execute(
                 "UPDATE record_processing SET status = 'sent', updated_at = now() WHERE visit_id = %s "
                 "AND analysis = %s RETURNING attempts", (unit.visit_id, unit.analysis)).fetchone()["attempts"]
-            record_attempt(conn, unit.visit_id, unit.analysis, attempts + 1, "sent")
+            record_attempt(conn, unit.visit_id, unit.analysis, attempts + 1, "sent", started_at=started)
+            self._queue_wait(conn, unit.visit_id, unit.analysis, attempts + 1)
             set_stage(conn, unit.visit_id, "sent_to_aws" + _suffix(unit.analysis))
 
     def mark_failed_attempt(self, unit: WorkUnit, error_type: str, retry_at: datetime | None) -> None:
@@ -180,13 +197,14 @@ class WorkMixin:
                     if retry_at is None:
                         set_stage(conn, visit_id, "failed")
                 return
+            started = claimed_at(conn, unit.visit_id, unit.analysis)
             attempts = conn.execute(
                 "UPDATE record_processing SET attempts = attempts + 1, last_error = %s, claimed_by = NULL, "
                 "next_retry_at = %s, status = %s, updated_at = now() WHERE visit_id = %s AND analysis = %s "
                 "RETURNING attempts",
                 (error_type, retry_at, "failed" if retry_at is None else "pending", unit.visit_id,
                  unit.analysis)).fetchone()["attempts"]
-            record_attempt(conn, unit.visit_id, unit.analysis, attempts, outcome, error_type)
+            record_attempt(conn, unit.visit_id, unit.analysis, attempts, outcome, error_type, started_at=started)
             if retry_at is None:
                 set_stage(conn, unit.visit_id, "failed" + _suffix(unit.analysis))
 

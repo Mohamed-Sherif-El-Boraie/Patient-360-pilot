@@ -9,7 +9,7 @@ import hashlib
 import json
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, Literal
 
 import psycopg
@@ -95,8 +95,31 @@ def set_stage(conn: psycopg.Connection[dict[str, Any]], visit_id: int, stage: st
 
 
 def record_attempt(conn: psycopg.Connection[dict[str, Any]], visit_id: int, analysis: Analysis, attempt: int,
-                   outcome: Literal["sent", "retry", "failed"], error: str | None = None) -> None:
-    """One line in the insert-only history of tries."""
+                   outcome: Literal["sent", "retry", "failed"], error: str | None = None,
+                   started_at: datetime | None = None) -> None:
+    """One line in the insert-only history of tries. ``started_at`` is when the unit was claimed (default: now)."""
     conn.execute(
-        "INSERT INTO record_processing_attempts (visit_id, analysis, attempt, finished_at, outcome, error) "
-        "VALUES (%s, %s, %s, now(), %s, %s)", (visit_id, analysis, attempt, outcome, error))
+        "INSERT INTO record_processing_attempts (visit_id, analysis, attempt, started_at, finished_at, outcome, error) "
+        "VALUES (%s, %s, %s, coalesce(%s, now()), now(), %s, %s)",
+        (visit_id, analysis, attempt, started_at, outcome, error))
+
+
+def record_phase(conn: psycopg.Connection[dict[str, Any]], visit_id: int, analysis: Analysis, phase: str,
+                 attempt: int, started_at: datetime | None) -> None:
+    """One row of ``record_phase_timings``: the phase began at ``started_at`` and ends now. Run again, it is replaced.
+    No start time (a stage that never happened) means no row."""
+    if started_at is None:
+        return
+    conn.execute(
+        "INSERT INTO record_phase_timings (visit_id, analysis, phase, attempt, started_at, duration_ms) "
+        "VALUES (%s, %s, %s, %s, %s, greatest(0, round(extract(epoch FROM now() - %s) * 1000))::int) "
+        "ON CONFLICT (visit_id, analysis, phase, attempt) DO UPDATE "
+        "SET started_at = excluded.started_at, duration_ms = excluded.duration_ms",
+        (visit_id, analysis, phase, attempt, started_at, started_at))
+
+
+def claimed_at(conn: psycopg.Connection[dict[str, Any]], visit_id: int, analysis: Analysis) -> datetime | None:
+    """When the current unit of work was claimed (a claim sets ``updated_at``): read it BEFORE the result is saved."""
+    row = conn.execute("SELECT updated_at FROM record_processing WHERE visit_id = %s AND analysis = %s",
+                       (visit_id, analysis)).fetchone()
+    return row["updated_at"] if row else None

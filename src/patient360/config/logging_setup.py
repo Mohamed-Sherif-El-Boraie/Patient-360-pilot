@@ -13,7 +13,7 @@ import structlog
 
 ALLOWED_FIELDS = frozenset({
     "event", "level", "timestamp", "idempotency_key", "source", "lane", "tier", "stage", "phase", "attempt",
-    "duration_ms", "status", "error_type",
+    "duration_ms", "status", "error_type", "failed_step",
 })
 
 

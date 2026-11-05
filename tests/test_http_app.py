@@ -318,7 +318,7 @@ def test_a_visit_answer_is_saved_and_an_unknown_visit_is_200(sample):
     assert client.post(AI_RESULTS, content=b"not json", headers=SOURCE_HEADERS).json() == {"outcome": "invalid_output"}
 
 
-def test_a_failed_file_is_answered_200_ignored(sample):
+def test_a_failed_file_is_answered_200_failed_and_the_visit_is_failed(sample):
     rig = Rig(sample)
     visit = sample("urgent_mild")
     rig.post(visit)
@@ -327,8 +327,8 @@ def test_a_failed_file_is_answered_200_ignored(sample):
     client = TestClient(create_app(rig.services))
     headers = {"X-Source": "urgent", "X-Blob-Path": f"normal/2026/10/24/{key}/06-failed.json"}
     response = client.post(AI_RESULTS, content=b"", headers=headers)
-    assert response.status_code == 200 and response.json() == {"outcome": "ignored"}
-    assert rig.store.visits[visit["visit_id"]]["stage"] != "failed"
+    assert response.status_code == 200 and response.json() == {"outcome": "failed"}
+    assert rig.store.visits[visit["visit_id"]]["stage"] == "failed"
 
 
 def rejected_rig(sample, backend):

@@ -8,10 +8,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-# validate: check the payload | process: build the AI input JSON, tier and lane
-# queue_wait: processed until it is sent to AWS (a batch waits for 100 records)
-# aws_round_trip: sent to AWS until the answer is back | post_process: packages, html, strip internal fields
-# deliver: POST to the Backend
+# The PostgreSQL store writes these rows from timestamps it already keeps (``adapters/postgres/db.py::record_phase``):
+# process: visit (or symptom check) received until its AI request is built and saved
+# queue_wait: that request saved until it is uploaded to AWS (a batch waits for 100 records)
+# aws_round_trip: uploaded until the answer is saved (includes the post-processing of the answer)
+# deliver: claimed until the POST to the Backend answered, one row per attempt
+# validate and post_process are not written: they are in-memory and under a second, inside the phases above.
 PHASES = ("validate", "process", "queue_wait", "aws_round_trip", "post_process", "deliver")
 
 

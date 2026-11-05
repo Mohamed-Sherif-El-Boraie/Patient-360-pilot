@@ -8,9 +8,11 @@ from patient360.adapters.postgres.db import (
     CLAIM_TIMEOUT,
     Analysis,
     Database,
+    claimed_at,
     current_payload,
     insert_payload,
     record_attempt,
+    record_phase,
     set_stage,
     source_priority_sql,
 )
@@ -87,6 +89,10 @@ class OutputsMixin:
             if analysis == "visit":     # a symptom result carries true and must not reopen the visit
                 conn.execute("UPDATE visits SET symptom_flag = %s WHERE visit_id = %s",
                              (public_output.get("symptom_flag"), visit_id))
+            sent = conn.execute(        # from the upload to AWS until the answer is saved (includes post-processing)
+                "SELECT max(finished_at) AS at FROM record_processing_attempts "
+                "WHERE visit_id = %s AND analysis = %s AND outcome = 'sent'", (visit_id, analysis)).fetchone()["at"]
+            record_phase(conn, visit_id, analysis, "aws_round_trip", 1, sent)
             set_stage(conn, visit_id, _stage("post_processing", analysis))
 
     @staticmethod
@@ -216,23 +222,27 @@ class OutputsMixin:
 
     def mark_delivered(self, unit: DeliveryUnit) -> None:
         with self._db.transaction() as conn:
+            started = claimed_at(conn, unit.visit_id, unit.analysis)       # before the update moves it
             row = conn.execute(
                 "UPDATE record_processing SET status = 'delivered', updated_at = now() "
                 "WHERE visit_id = %s AND analysis = %s RETURNING attempts", (unit.visit_id, unit.analysis)).fetchone()
-            record_attempt(conn, unit.visit_id, unit.analysis, row["attempts"] + 1, "sent")
+            record_attempt(conn, unit.visit_id, unit.analysis, row["attempts"] + 1, "sent", started_at=started)
+            record_phase(conn, unit.visit_id, unit.analysis, "deliver", row["attempts"] + 1, started)
             if conn.execute("SELECT 1 FROM ai_outputs WHERE visit_id = %s AND analysis = %s AND status = 'error'",
                             (unit.visit_id, unit.analysis)).fetchone() is None:   # a failed visit stays failed
                 set_stage(conn, unit.visit_id, _stage("delivered", unit.analysis))
 
     def mark_delivery_failed_attempt(self, unit: DeliveryUnit, error_type: str, retry_at: datetime | None) -> None:
         with self._db.transaction() as conn:
+            started = claimed_at(conn, unit.visit_id, unit.analysis)
             row = conn.execute(
                 "UPDATE record_processing SET attempts = attempts + 1, last_error = %s, claimed_by = NULL, "
                 "status = %s, next_retry_at = %s, updated_at = now() WHERE visit_id = %s AND analysis = %s "
                 "RETURNING attempts", (error_type, "failed" if retry_at is None else "pending", retry_at,
                                        unit.visit_id, unit.analysis)).fetchone()
             record_attempt(conn, unit.visit_id, unit.analysis, row["attempts"],
-                           "failed" if retry_at is None else "retry", error_type)
+                           "failed" if retry_at is None else "retry", error_type, started_at=started)
+            record_phase(conn, unit.visit_id, unit.analysis, "deliver", row["attempts"], started)
             if retry_at is None:
                 set_stage(conn, unit.visit_id, _stage("failed", unit.analysis))
 

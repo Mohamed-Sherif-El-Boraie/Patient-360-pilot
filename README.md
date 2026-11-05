@@ -127,8 +127,8 @@ Answer file paths inside an output container (the layout is in `tests/fixtures/f
 | A batch (one record per line) | `<lane>-jsonls/<yyyy>/<MM>/<dd>/<batch_id>/05-output-merged.jsonl` |
 
 `<lane>` is `normal` or `critical`. The content is the AWS envelope; its `recordId` is the visit's idempotency key.
-AWS sends only these answer files (no failed file any more). Any other file in the containers (the other phase files,
-logs) is ignored. In the batch container a `.../<idempotency_key>/05-output-merged.json` file is a copy of one JSONL
+AWS sends these answer files, and `<lane>/<yyyy>/<MM>/<dd>/<key>/06-failed.json` when it gave up on a visit (the key in
+the path is the visit's idempotency key). Any other file in the containers (the other phase files, logs) is ignored. In the batch container a `.../<idempotency_key>/05-output-merged.json` file is a copy of one JSONL
 line, also ignored.
 
 What the app reads from a record, besides the answer in `content[0].text`:
@@ -156,7 +156,10 @@ scenarios with real values: `urgent/9_scenario_guardrail_blocked_urgent.jsonc`, 
 
 - **An AI answer that cannot be used** (`invalid_output`, or a visit answer with no `summary` or `simple_summary`).
   The app records the failure (stage `failed`, output status `error`) and queues the failed message in the normal
-  delivery queue, so it is retried like any result. AWS no longer sends a failed file.
+  delivery queue, so it is retried like any result.
+- **A `06-failed.json` from AWS** (it gave up on the visit, for example `failed_step: output_guardrail`). This is final:
+  the app fails the visit at once and queues the same failed message. The text of the file is never sent on; only the
+  step name is logged. A visit that already has an output (an answer, or an earlier failure) is left as it is.
 - **A payload in Blob 1 `_rejected`.** When the ids can still be read, the app posts the failed message to the wrapper
   right after the 422. This is best effort: no visit exists to hold a retry, so a Backend error is only logged. A
   rejected payload with unusable ids sends nothing.
@@ -386,7 +389,7 @@ Makes the visit's unique key and the batch names.
 | `format_batch_id(lane, number)` | Builds a batch name from the lane and a number, such as `normal_000001`. Raises an error for a bad lane or number below 1. | A batch id text. |
 
 ### `domain/common/timing.py`
-Measures how long each step of the pipeline takes, so slow steps can be found later.
+Measures how long each step of the pipeline takes, so slow steps can be found later. The table `record_phase_timings` is filled by the PostgreSQL store from timestamps it already keeps (`record_phase` in `adapters/postgres/db.py`), not by `PhaseTimer`: `process` (received until the AI request is saved), `queue_wait` (saved until uploaded), `aws_round_trip` (uploaded until the answer is saved) and `deliver` (one row per delivery attempt). `validate` and `post_process` are in-memory and under a second, so they are not written. The attempt rows in `record_processing_attempts` now carry the claim time as `started_at`. Read it with `python /app/tools/trace_visit.py <visit_id>`.
 
 | Function | What it does | Output |
 |---|---|---|
@@ -635,7 +638,7 @@ Receives the AWS answers the Function app posts (from the Blob 2 output containe
 
 | Function | What it does | Output |
 |---|---|---|
-| `Received` | Class: what happened to one result record. | An object with record_id and outcome (saved, blocked, duplicate, unknown_visit, source_mismatch, invalid_output or ignored). |
+| `Received` | Class: what happened to one result record. | An object with record_id and outcome (saved, blocked, duplicate, unknown_visit, source_mismatch, invalid_output, failed or ignored). |
 | `_loads(text)` | (helper) Reads JSON strictly; if that fails, tries once to repair it. Refuses anything that is not an object. | A dictionary, or an error is raised. |
 | `OutputReceiver.__init__(store, catalogue)` | Keeps the database and the test catalogue. | Nothing returned. |
 | `OutputReceiver.receive_record(source, path, text)` | Handles one record the Function app posted: works out from the path what it is (`parse_output_path`) and handles the record. For a batch JSONL line it then sets the batch `completed` when every visit of the batch has its output saved, else `partially_completed`. Other files and the per-visit copies in the batch container are `ignored`. A database error is not caught, so the Function sends it again. | A list with one Received object. |
@@ -681,7 +684,7 @@ The web application: receives visits, receives the AI answers the Function app p
 | `result_body(request)` | (helper) Reads the body of an AI result; refuses one over `MAX_RESULT_BYTES` (2,000,000), also when it comes in chunks. | The body bytes, or a 413 answer. |
 | `POST /api/v1/patient360/visits` | Receives a visit (source 1, 2 or 4) from the Backend app service; a symptom check sent here is refused (422 `wrong_endpoint`). Numbers (`source`, ids, `sex`, `age_days`) may arrive as text ("1", "10.0"). No API key is checked on this route (the network protects it). Processing continues in the background. | 202 Accepted, 200 Duplicate, 422 invalid, 413 too large, 401 bad key, 500 error. |
 | `POST /api/v1/patient360/visits-symptoms` | Receives a symptom check (source 3) from the wrapper; a visit sent here is refused (422 `wrong_endpoint`). | 202 (new) or 200 (retry: the visit is known but its result was not delivered yet, a failed delivery is queued again) with `{response:{code:-1,message:"success"},data}`; 409 `DUPLICATE_VISIT` when its result was already delivered; a symptom check started a second time answers 200 `success` with `data` = `success`, ids, `company_id`, `source` 3 and `symptom_flag` false; every other answer is `{response:{code:0,message}}` only: 422 (`Invalid payload: <where>: <what>`), 404 VISIT_NOT_FOUND, 409 SYMPTOM_CHECKER_CLOSED, 413 too large, 401 bad key, 500 error. |
-| `POST /api/v1/patient360/ai-results` | From the Function app: one AI answer record per call (headers `X-Source`, `X-Blob-Path`, optional `Idempotency-Key`; the body is the file content, or one JSONL line). | 200 `{"outcome": ...}` (saved, blocked, duplicate, unknown_visit, source_mismatch, invalid_output or ignored), 400 bad headers, 401 bad key, 413 too large, 500 error (the Function retries). |
+| `POST /api/v1/patient360/ai-results` | From the Function app: one AI answer record per call (headers `X-Source`, `X-Blob-Path`, optional `Idempotency-Key`; the body is the file content, or one JSONL line). | 200 `{"outcome": ...}` (saved, blocked, duplicate, unknown_visit, source_mismatch, invalid_output, failed or ignored), 400 bad headers, 401 bad key, 413 too large, 500 error (the Function retries). |
 | `GET /health` | Checks that the database answers a simple query. | 200 status "ok", or 503 "database_unavailable". |
 
 ### `runtime.py`

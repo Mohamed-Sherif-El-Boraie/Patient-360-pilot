@@ -135,6 +135,12 @@ def test_the_whole_service_from_an_incoming_visit_to_the_delivered_symptom_resul
     assert visit_row["stage"] == "delivered_symptom" and visit_row["tier"] == "MILD"
     statuses = seed.fetch(rig.db, "SELECT analysis, status FROM record_processing ORDER BY analysis")
     assert [(r["analysis"], r["status"]) for r in statuses] == [("symptom", "delivered"), ("visit", "delivered")]
+    timings = seed.fetch(rig.db, "SELECT analysis, phase, duration_ms FROM record_phase_timings")
+    wanted = {"process", "queue_wait", "aws_round_trip", "deliver"}
+    assert {(t["analysis"], t["phase"]) for t in timings} == {(a, p) for a in ("visit", "symptom") for p in wanted}
+    assert all(t["duration_ms"] >= 0 for t in timings)
+    attempts = seed.fetch(rig.db, "SELECT started_at, finished_at FROM record_processing_attempts")
+    assert attempts and all(a["started_at"] <= a["finished_at"] for a in attempts)
 
 
 def test_the_function_sending_the_same_answer_again_is_a_200_duplicate_and_the_result_is_sent_once(rig):
