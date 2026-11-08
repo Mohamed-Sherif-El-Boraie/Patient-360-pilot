@@ -71,5 +71,4 @@ def build_services(
         receiver=OutputReceiver(
             store, catalogue, {source: build_output_store(url) for source, url in settings.output_container_urls}),
         sender=ResultSender(store, backend, _now) if backend is not None else None,
-        backend=backend,
     )

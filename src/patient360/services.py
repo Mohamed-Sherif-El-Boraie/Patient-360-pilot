@@ -13,7 +13,7 @@ from patient360.flow.process import Processor
 from patient360.flow.results import OutputReceiver
 from patient360.flow.send_result import ResultSender
 from patient360.flow.symptom import SymptomProcessor
-from patient360.ports import BackendClient, VisitStore
+from patient360.ports import VisitStore
 
 
 @dataclass(frozen=True)
@@ -28,4 +28,3 @@ class Services:
     dispatcher: Dispatcher
     receiver: OutputReceiver
     sender: ResultSender | None           # None when the Backend settings are not given: nothing is delivered
-    backend: BackendClient | None = None  # the same client, for the best-effort "failed" message of a rejected payload

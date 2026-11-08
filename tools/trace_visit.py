@@ -3,6 +3,7 @@
     python /app/tools/trace_visit.py             # the 5 latest visits, one line each
     python /app/tools/trace_visit.py 1795782760780   # one visit in full: stage, processing, attempts, answer, payloads
     python /app/tools/trace_visit.py rejected    # the 3 latest 422 payloads: errors and the start of what arrived
+    python /app/tools/trace_visit.py batches     # batch visits waiting, by stage, and the latest batches
 """
 import sys
 
@@ -59,6 +60,21 @@ def main() -> None:
                 "SELECT rejected_id, received_at, source_id, blob_path, errors, length(raw_text) AS chars, "
                 "left(raw_text, 700) AS raw_start FROM rejected_payloads_readable "
                 "ORDER BY rejected_id DESC LIMIT 3").fetchall())
+            return
+        if sys.argv[1] == "batches":       # did the 120 batch visits make a batch?
+            show("batch visits waiting for a batch (a batch is made when a lane has BATCH_SIZE of them)",
+                 conn.execute("SELECT v.lane, v.tier, count(*) AS visits FROM visits v "
+                              "JOIN record_processing rp ON rp.visit_id = v.visit_id AND rp.analysis = 'visit' "
+                              "AND rp.step = 'upload' AND rp.status = 'pending' "
+                              "WHERE v.source_id = 2 AND v.batch_id IS NULL GROUP BY v.lane, v.tier "
+                              "ORDER BY v.lane, v.tier").fetchall())
+            show("batch visits by stage", conn.execute(
+                "SELECT lane, stage, count(*) AS visits, count(batch_id) AS in_a_batch FROM visits "
+                "WHERE source_id = 2 GROUP BY lane, stage ORDER BY lane, stage").fetchall())
+            show("latest batches", conn.execute(
+                "SELECT b.batch_id, b.status, b.read_from, b.attempts, b.last_error, b.created_at, "
+                "(SELECT count(*) FROM visits v WHERE v.batch_id = b.batch_id) AS visits FROM batches b "
+                "ORDER BY b.created_at DESC LIMIT 5").fetchall())
             return
         visit_id = int(sys.argv[1])
         for title, sql in ONE.items():
