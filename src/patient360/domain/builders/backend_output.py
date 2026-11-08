@@ -13,13 +13,18 @@ SYMPTOM_SOURCE = 3
 SYMPTOM_AI_KEYS = ("note", "recommendations", "packages")      # what a symptom-check result sends in ``ai``
 
 
+def critical_direction_text(direction: str | None) -> str | None:
+    """``critical_low`` -> ``critical low`` for the Backend (the database and the AI input keep the underscore)."""
+    return direction.replace("_", " ") if direction else None
+
+
 def group_by_test(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     tests: dict[int, list[dict[str, Any]]] = {}
     for row in rows:
         result = {"parameter_id": row["parameter_id"], "value": row["value"], "status": row["status"],
                   "result_date": row["result_date"], "unit": row["unit"],
                   "critical": {"low": None, "high": None, "range_text": None, **(row.get("critical") or {}),
-                               "direction": row["critical_direction"]},
+                               "direction": critical_direction_text(row["critical_direction"])},
                   "history": [{"date": p["history_date"], "value": p["history_value"], "unit": row["unit"]}
                               for p in row["history"]]}
         tests.setdefault(row["test_id"], []).append(result)
@@ -29,7 +34,7 @@ def group_by_test(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
 def build_backend_output(
     *, patient_id: int, visit_id: int, source: int, rows: Sequence[Mapping[str, Any]],
     ai: Mapping[str, Any], packages: Sequence[Mapping[str, Any]] | None = None, html: Mapping[str, Any] | None = None,
-    arabic_test_names: Mapping[str, str] | None = None, html_reasons: bool = False, symptom_flag: bool = False,
+    arabic_test_names: Mapping[str, str] | None = None, symptom_flag: bool = False,
     html_symptom: tuple[str, str] | None = None, company_id: int | None = None,
 ) -> dict[str, Any]:
     """``rows`` come from ``build_ai_input``. Descriptive results are not part of this result.
@@ -53,7 +58,7 @@ def build_backend_output(
     }
     output["ai"] = ai_out
     output["html"] = (dict(html) if html is not None
-                      else build_html(ai_out, arabic_test_names, html_reasons, html_symptom))
+                      else build_html(ai_out, arabic_test_names, html_symptom))
     return output
 
 

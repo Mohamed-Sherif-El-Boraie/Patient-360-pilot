@@ -216,7 +216,7 @@ class OutputReceiver:
             source=SYMPTOM_CHECKER_ID if symptom else stored.source_id, rows=built.rows,
             ai=ai, packages=None if blocked else self._packages(raw["patient"], ai),
             arabic_test_names=self._catalogue.test_names_ar(),
-            html_reasons=symptom, symptom_flag=symptom or symptom_checker_open(tier, blocked),
+            symptom_flag=symptom or symptom_checker_open(tier, blocked),
             html_symptom=self._symptom_for_html(stored.visit_id) if symptom else None)
 
     def _symptom_for_html(self, visit_id: int) -> tuple[str, str] | None:

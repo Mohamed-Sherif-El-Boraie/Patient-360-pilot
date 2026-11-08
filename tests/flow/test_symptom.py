@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from patient360.domain.builders.blocked import BLOCKED_MESSAGES
-from patient360.domain.builders.html_report import FOOTER, SYMPTOM_MESSAGE, VISIT_MESSAGE
+from patient360.domain.builders.html_report import FOOTER, FOOTER_HTML, SYMPTOM_MESSAGE
 from patient360.domain.builders.model_input import single_visit_file
 from patient360.domain.rules.packages import Package
 from patient360.domain.rules.retrieval import CatalogueTest
@@ -170,12 +170,11 @@ def test_the_whole_way_the_visit_result_and_the_symptom_result_are_two_posts(wor
     assert symptom_post["ai"]["recommendations"][0]["change_type"] == both("kept")
     assert symptom_post["ai"]["recommendations"][0]["explanation"] == both("still applies")
     assert "because" in symptom_post["html"]["en"] and "AR-because" in symptom_post["html"]["ar"]
-    assert "because" not in visit_post["html"]["en"]                                 # the visit html has no reasons
     assert "criticalTests" in visit_post and "summary" in visit_post["ai"] and "criticalTests" not in symptom_post
     assert world.visit["stage"] == "delivered" and world.store.symptom_checks[VISIT_ID]["stage"] == "delivered_symptom"
 
 
-def test_the_symptom_html_ends_with_the_symptom_and_its_date_in_the_saved_result_and_the_post(world):
+def test_the_symptom_html_has_the_symptom_and_its_date_in_the_saved_result_and_the_post(world):
     world.give_the_visit_its_result()
     world.receive_the_symptom_check("<b>cough</b> & fever")
     calls = []
@@ -190,30 +189,31 @@ def test_the_symptom_html_ends_with_the_symptom_and_its_date_in_the_saved_result
     for html in (saved, posted):
         for lang in ("en", "ar"):
             message = SYMPTOM_MESSAGE[lang].format(date="2026-10-24", symptom="&lt;b&gt;cough&lt;/b&gt; &amp; fever")
-            assert html[lang].index("</ul>") < html[lang].index(message)
-            assert html[lang].endswith(f"<p>{message}</p><p><small>{FOOTER[lang]}</small></p></div>")
+            assert html[lang].index("<h2") < html[lang].index(message) < html[lang].index("1.</span>")
+            assert html[lang].endswith(f"{FOOTER_HTML.format(FOOTER[lang])}</div>")
     assert calls == [VISIT_ID]
 
 
-def test_the_visit_html_ends_with_the_visit_message_and_never_reads_the_symptom_check(world):
+def test_the_visit_html_ends_with_the_footer_and_never_reads_the_symptom_check(world):
     world.receive_the_symptom_check("a secret symptom")
     calls = []
     world.store.stored_symptom_check = lambda visit_id: calls.append(visit_id)
     world.give_the_visit_its_result()
     html = world.visit["public_output"]["html"]
     for lang in ("en", "ar"):
-        assert html[lang].endswith(f"<p>{VISIT_MESSAGE[lang]}</p><p><small>{FOOTER[lang]}</small></p></div>")
+        assert html[lang].endswith(f"{FOOTER_HTML.format(FOOTER[lang])}</div>")
+        assert html[lang].count(FOOTER[lang]) == 1
         assert "a secret symptom" not in html[lang]
     assert calls == []
 
 
-def test_a_blocked_visit_html_has_no_message(world):
+def test_a_blocked_visit_html_has_no_tests(world):
     blocked = aws_record(world.key, answer(), **{"amazon-bedrock-guardrailAction": "INTERVENED"})
     path = f"normal/2026/10/24/{world.key}/05-output-merged.json"
     world.out["urgent"].files[path] = json.dumps(blocked).encode()
     world.receiver().receive("urgent", path)
     html = world.visit["public_output"]["html"]
-    assert all(VISIT_MESSAGE[lang] not in html[lang] and "<ul>" not in html[lang] for lang in ("en", "ar"))
+    assert all("1.</span>" not in html[lang] for lang in ("en", "ar"))             # no numbered test
     assert all(FOOTER[lang] in html[lang] for lang in ("en", "ar"))      # the footer is always there
 
 

@@ -25,7 +25,7 @@ def test_the_output_has_ids_status_unit_direction_and_history_per_parameter_and_
     results = [r for t in out["tests"] for r in t["results"]]
     calcium = next(r for r in results if r["status"] == "critical")
     assert list(calcium) == ["parameter_id", "value", "status", "result_date", "unit", "critical", "history"]
-    assert calcium["critical"]["direction"] in ("critical_low", "critical_high")
+    assert calcium["critical"]["direction"] in ("critical low", "critical high")      # no underscore for the Backend
     assert all(set(r["critical"]) == {"low", "high", "range_text", "direction"} for r in results)   # always an object
     assert all("alert" not in r for r in results)
     assert [t["test_id"] for t in out["tests"]] == list(dict.fromkeys(r["test_id"] for r in rows))
@@ -43,7 +43,7 @@ def test_a_history_point_gets_the_unit_of_its_result_and_no_history_is_an_empty_
     out = build_backend_output(patient_id=1, visit_id=2, source=1, rows=rows, ai=AI)
     first, second = out["tests"][0]["results"]
     assert (first["unit"], first["critical"]) == (
-        "mg/dL", {"low": None, "high": None, "range_text": None, "direction": "critical_high"})
+        "mg/dL", {"low": None, "high": None, "range_text": None, "direction": "critical high"})
     assert first["history"] == [{"date": "2026-01-01", "value": "5.1", "unit": "mg/dL"},
                                 {"date": "2025-06-01", "value": "4", "unit": "mg/dL"}]
     assert (second["unit"], second["critical"]["direction"], second["history"]) == (None, None, [])
@@ -78,7 +78,8 @@ def test_only_the_critical_parameters_of_the_tests_that_have_one_are_sent():
     sent = for_wrapper(out)["criticalTests"]
     assert [(t["Testid"], [r["parameterid"] for r in t["results"]]) for t in sent] == [(1, [6]), (3, [9])]
     assert sent[0]["results"][0] == {"parameterid": 6, "critical": {
-        "low": None, "high": None, "range_text": None, "direction": "critical_high"}}
+        "low": None, "high": None, "range_text": None, "direction": "critical high"}}
+    assert sent[1]["results"][0]["critical"]["direction"] == "critical low"
     assert [t["test_id"] for t in out["tests"]] == [1, 2, 3] and len(out["tests"][0]["results"]) == 3   # saved whole
 
 
@@ -127,7 +128,7 @@ def test_packages_and_html_are_added_and_the_ai_input_is_not_changed():
         "package_name": {"en": "Kidney check", "ar": "فحص الكلى"},
         "tests": [{"test_name": {"en": "Urea", "ar": "اليوريا"}},
                   {"test_name": {"en": "Creatinine", "ar": "الكرياتينين"}}]}]
-    assert out["html"]["en"].startswith('<div lang="en">') and AI == before
+    assert out["html"]["en"].startswith('<div lang="en" style="') and AI == before
     assert "packages" not in build_backend_output(patient_id=1, visit_id=2, source=1, rows=[], ai=AI)["ai"]
 
 
@@ -177,7 +178,8 @@ def test_the_arabic_test_names_come_from_the_database_names_given():
     ai = {"summary": {"en": "s", "ar": "ص"}, "recommendations": [{"test_name": "Urea"}]}
     names = {"Urea": "اليوريا"}
     out = build_backend_output(patient_id=1, visit_id=2, source=1, rows=[], ai=ai, arabic_test_names=names)
-    assert "<li>اليوريا</li>" in out["html"]["ar"] and "<li>Urea</li>" in out["html"]["en"]
+    assert " اليوريا</strong>" in out["html"]["ar"]
+    assert " Urea</strong>" in out["html"]["en"]
 
 
 def test_a_given_html_replaces_the_built_one():
