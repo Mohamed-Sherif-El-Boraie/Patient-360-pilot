@@ -117,10 +117,13 @@ def build_ai_input(raw: Mapping[str, Any]) -> AiInput:
         if not results and test.get("results"):
             continue
         tests.append({"test_name": test.get("test_name"), "test_remark": test.get("test_remark"), "results": results})
+    # A descriptive result with no text (or only blank HTML) has nothing to judge: not sent to the AI, not counted in
+    # the tier. It still counts as performed, and the database keeps the row.
+    written = [d for d in raw.get("descriptive_results") or [] if html_to_plain_text(d.get("text"))]
     descriptive = [
         {"test_name": d.get("test_name"), "result_date": d.get("result_date"),
          "text": html_to_plain_text(d.get("text")), "history": _history(d.get("history"), plain_text=True)}
-        for d in raw.get("descriptive_results") or []
+        for d in written
     ]
     answers = [{"preparation_name": a.get("preparation_name"), "answer": a.get("answer")}
                for a in raw.get("visit_answer_list") or []]
@@ -139,6 +142,6 @@ def build_ai_input(raw: Mapping[str, Any]) -> AiInput:
     ))
     descriptive_rows = [{"test_id": d.get("test_id"), "test_name": d.get("test_name"), "status": "text",
                          "text_value": html_to_plain_text(d.get("text"))}
-                        for d in raw.get("descriptive_results") or []]
+                        for d in written]
     return AiInput(
         ai_json=ai_json, rows=rows, descriptive_rows=descriptive_rows, performed_test_names=performed)

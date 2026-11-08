@@ -294,7 +294,8 @@ The front door for incoming data: turns raw bytes into either a good payload or 
 | `Invalid` | Holds the list of errors. It never contains the patient's values. | an object with `errors` |
 | `_error(loc, msg, kind)` | (helper) Builds one error entry: where it is, what is wrong, and its type. | A dictionary with `loc`, `msg`, `type`. |
 | `_reject_constant(name)` | (helper) Called when the JSON contains NaN or Infinity, which are not allowed. | nothing returned; always raises an error |
-| `validate_payload(raw)` | Reads the bytes as JSON, picks the shape by `source`, and checks it strictly. | A `Valid` object, or an `Invalid` object with the errors. |
+| `validate_payload(raw)` | Reads the bytes as JSON, picks the shape by `source`, and checks it strictly. A blank text is null first; a descriptive result with no `text` is accepted (the Backend's mistake): it is not sent to the AI and not counted in the tier, only stored with an empty text. | A `Valid` object, or an `Invalid` object with the errors (each has `loc`, `msg`, `type` and a readable `message`). |
+| `explain(obj, loc, kind, msg)` | The readable sentence of one problem, found by the ids in the payload (never an input value): `tests, test_id 262, parameter_id 141: value must be text or a number`, `descriptive_results, test_id 2758: text is required`, `visit_answer_list is required (send [] if there are none)`, `test_id 262 appears twice`, `unknown field "xyz"`. The 422 answer joins up to 5 of them (each told once): `Invalid payload: ...`. | A text. |
 
 ### `domain/payload/values.py`
 Small helpers for reading numbers and cleaning text.

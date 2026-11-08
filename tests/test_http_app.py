@@ -193,7 +193,7 @@ def test_invalid_json_and_a_wrong_field_are_422_with_code_0_and_one_message_and_
     response = rig.post(visit)
     body = response.json()
     assert response.status_code == 422 and list(body) == ["response"] and body["response"]["code"] == 0
-    assert body["response"]["message"].startswith("Invalid payload: patient_id: ")
+    assert body["response"]["message"].startswith("Invalid payload: patient_id must be a whole number")
     assert "SECRET-PATIENT-ID" not in response.text
 
 

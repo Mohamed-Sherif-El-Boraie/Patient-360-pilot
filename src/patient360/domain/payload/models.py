@@ -69,7 +69,7 @@ class DescriptiveResult(Strict):
     test_id: SmallId
     test_name: str
     result_date: Date | None
-    text: str
+    text: str | None   # a blank arrives as null: no report written yet (the Backend's mistake); the visit is accepted
     history: list[HistoryPoint] | None = None
 
 

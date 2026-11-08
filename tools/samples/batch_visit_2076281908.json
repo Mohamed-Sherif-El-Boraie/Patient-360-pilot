@@ -1,0 +1,966 @@
+{
+  "source": 2,
+  "patient_id": 2137850042,
+  "visit_id": 2076281908,
+  "company_id": 10,
+  "patient": {
+    "age_days": 28516,
+    "sex": 1
+  },
+  "tests": [
+    {
+      "test_id": 26,
+      "test_name": "BUN",
+      "test_remark": "",
+      "results": [
+        {
+          "parameter_id": 53,
+          "parameter_name": "BUN",
+          "result_date": "2026-10-31",
+          "value": "19",
+          "unit": "mg/dL",
+          "reference": {
+            "low": "8",
+            "high": "23",
+            "range": "8 - 23"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": "",
+          "history": []
+        }
+      ]
+    },
+    {
+      "test_id": 66,
+      "test_name": "CRP (Quantitative)",
+      "test_remark": "",
+      "results": [
+        {
+          "parameter_id": 1788,
+          "parameter_name": "CRP (Quantitative)",
+          "result_date": "2026-10-31",
+          "value": "5.6",
+          "unit": "mg/L",
+          "reference": {
+            "low": "0",
+            "high": "5",
+            "range": "0 - 5"
+          },
+          "lab_flag": "H",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": "",
+          "history": []
+        }
+      ]
+    },
+    {
+      "test_id": 231,
+      "test_name": "Complete Blood Picture (CBC)",
+      "test_remark": "",
+      "results": [
+        {
+          "parameter_id": 285,
+          "parameter_name": "Haemoglobin",
+          "result_date": "2026-10-31",
+          "value": "14.9",
+          "unit": "g/dL",
+          "reference": {
+            "low": "12.5",
+            "high": "17.5",
+            "range": "12.5 - 17.5"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "6",
+            "high": "",
+            "range_text": "6 - "
+          },
+          "parameter_remark": "RBCs show mild anisocytosis.",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "15.3"
+            }
+          ]
+        },
+        {
+          "parameter_id": 286,
+          "parameter_name": "RBCs Count",
+          "result_date": "2026-10-31",
+          "value": "5.28",
+          "unit": "Millions / cmm",
+          "reference": {
+            "low": "4.5",
+            "high": "5.9",
+            "range": "4.5 - 5.9"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": " ",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "5.28"
+            }
+          ]
+        },
+        {
+          "parameter_id": 287,
+          "parameter_name": "Haematocrit (PCV)",
+          "result_date": "2026-10-31",
+          "value": "47.3",
+          "unit": "%",
+          "reference": {
+            "low": "41",
+            "high": "52",
+            "range": "41 - 52"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": " ",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "46.5"
+            }
+          ]
+        },
+        {
+          "parameter_id": 288,
+          "parameter_name": "Mean Cell Volume (MCV)",
+          "result_date": "2026-10-31",
+          "value": "89.6",
+          "unit": "fl",
+          "reference": {
+            "low": "80",
+            "high": "100",
+            "range": "80 - 100"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": " ",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "88.1"
+            }
+          ]
+        },
+        {
+          "parameter_id": 289,
+          "parameter_name": "Mean Cell Haemoglobin (MCH)",
+          "result_date": "2026-10-31",
+          "value": "28.2",
+          "unit": "pg",
+          "reference": {
+            "low": "27",
+            "high": "33",
+            "range": "27 - 33"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": " ",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "29.0"
+            }
+          ]
+        },
+        {
+          "parameter_id": 290,
+          "parameter_name": "Mean Cell Haemoglobin Concentration (MCHC)",
+          "result_date": "2026-10-31",
+          "value": "31.5",
+          "unit": "g/dL",
+          "reference": {
+            "low": "31",
+            "high": "37",
+            "range": "31 - 37"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": " ",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "32.9"
+            }
+          ]
+        },
+        {
+          "parameter_id": 291,
+          "parameter_name": "Red Cell Distribution Width (RDW)",
+          "result_date": "2026-10-31",
+          "value": "15.3",
+          "unit": "%",
+          "reference": {
+            "low": "11.5",
+            "high": "15",
+            "range": "11.5 - 15"
+          },
+          "lab_flag": "H",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": " ",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "14.9"
+            }
+          ]
+        },
+        {
+          "parameter_id": 292,
+          "parameter_name": "Total Leucocytic Count",
+          "result_date": "2026-10-31",
+          "value": "7.4",
+          "unit": "Thousands / cmm",
+          "reference": {
+            "low": "4",
+            "high": "11",
+            "range": "4 - 11"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "1",
+            "high": "",
+            "range_text": "1 - "
+          },
+          "parameter_remark": " ",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "7.8"
+            }
+          ]
+        },
+        {
+          "parameter_id": 293,
+          "parameter_name": "Lymphocytes (Absolute Count)",
+          "result_date": "2026-10-31",
+          "value": "3.01",
+          "unit": "x10^9/L",
+          "reference": {
+            "low": "1",
+            "high": "4.8",
+            "range": "1 - 4.8"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": " ",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "2.94"
+            }
+          ]
+        },
+        {
+          "parameter_id": 294,
+          "parameter_name": "Monocytes (Absolute Count)",
+          "result_date": "2026-10-31",
+          "value": "0.41",
+          "unit": "x10^9/L",
+          "reference": {
+            "low": "0.2",
+            "high": "1",
+            "range": "0.2 - 1"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": " ",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "0.45"
+            }
+          ]
+        },
+        {
+          "parameter_id": 295,
+          "parameter_name": "Neutrophils (Absolute Count)",
+          "result_date": "2026-10-31",
+          "value": "3.57",
+          "unit": "x10^9/L",
+          "reference": {
+            "low": "2",
+            "high": "7",
+            "range": "2 - 7"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "500",
+            "high": "",
+            "range_text": "500 - "
+          },
+          "parameter_remark": " ",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "4.04"
+            }
+          ]
+        },
+        {
+          "parameter_id": 296,
+          "parameter_name": "Eosinophils (Absolute Count)",
+          "result_date": "2026-10-31",
+          "value": "0.36",
+          "unit": "x10^9/L",
+          "reference": {
+            "low": "0.1",
+            "high": "0.45",
+            "range": "0.1 - 0.45"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": " ",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "0.32"
+            }
+          ]
+        },
+        {
+          "parameter_id": 297,
+          "parameter_name": "Basophils (Absolute Count)",
+          "result_date": "2026-10-31",
+          "value": "0.04",
+          "unit": "x10^9/L",
+          "reference": {
+            "low": "0",
+            "high": "0.1",
+            "range": "0 - 0.1"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": " ",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "0.05"
+            }
+          ]
+        },
+        {
+          "parameter_id": 299,
+          "parameter_name": "Platelet Count",
+          "result_date": "2026-10-31",
+          "value": "239",
+          "unit": "Thousands / cmm",
+          "reference": {
+            "low": "150",
+            "high": "450",
+            "range": "150 - 450"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "30",
+            "high": "",
+            "range_text": "30 - "
+          },
+          "parameter_remark": " ",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "220"
+            }
+          ]
+        },
+        {
+          "parameter_id": 1561,
+          "parameter_name": " Lymphocytes %",
+          "result_date": "2026-10-31",
+          "value": "40.7",
+          "unit": "%",
+          "reference": {
+            "low": "20",
+            "high": "45",
+            "range": "20 - 45"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": " ",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "37.7"
+            }
+          ]
+        },
+        {
+          "parameter_id": 1562,
+          "parameter_name": "Neutrophils %",
+          "result_date": "2026-10-31",
+          "value": "48.4",
+          "unit": " %",
+          "reference": {
+            "low": "40",
+            "high": "75",
+            "range": "40 - 75"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": " ",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "51.8"
+            }
+          ]
+        },
+        {
+          "parameter_id": 1565,
+          "parameter_name": "Monocytes %",
+          "result_date": "2026-10-31",
+          "value": "5.5",
+          "unit": " %",
+          "reference": {
+            "low": "1",
+            "high": "10",
+            "range": "1 - 10"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": " ",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "5.8"
+            }
+          ]
+        },
+        {
+          "parameter_id": 1566,
+          "parameter_name": "Eosinophils %",
+          "result_date": "2026-10-31",
+          "value": "4.9",
+          "unit": " %",
+          "reference": {
+            "low": "1",
+            "high": "6",
+            "range": "1 - 6"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": " ",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "4.1"
+            }
+          ]
+        },
+        {
+          "parameter_id": 1567,
+          "parameter_name": "Basophils %",
+          "result_date": "2026-10-31",
+          "value": "0.5",
+          "unit": " %",
+          "reference": {
+            "low": "0",
+            "high": "1",
+            "range": "0 - 1"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": " ",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "0.6"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "test_id": 30,
+      "test_name": "Creatinine, serum",
+      "test_remark": "",
+      "results": [
+        {
+          "parameter_id": 54,
+          "parameter_name": "CREATININE (serum)",
+          "result_date": "2026-10-31",
+          "value": "1.03",
+          "unit": "mg/dL",
+          "reference": {
+            "low": "0.7",
+            "high": "1.3",
+            "range": "0.7 - 1.3"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "",
+            "high": "6",
+            "range_text": " - 6"
+          },
+          "parameter_remark": "",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "0.79"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "test_id": 1926,
+      "test_name": "Haemoglobin A1C",
+      "test_remark": "",
+      "results": [
+        {
+          "parameter_id": 2078,
+          "parameter_name": "Haemoglobin A1C",
+          "result_date": "2026-10-31",
+          "value": "5.74",
+          "unit": "%",
+          "reference": {
+            "low": "3.8",
+            "high": "5.7",
+            "range": "Normal: Less than 5.7\r\nPrediabetes: 5.7 - 6.4\r\nDiabetes: More than 6.4"
+          },
+          "lab_flag": "H",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": "",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "6.31"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "test_id": 2245,
+      "test_name": "Lipid Profile(Chol,Tri,HDL,LDL)",
+      "test_remark": "",
+      "results": [
+        {
+          "parameter_id": 17,
+          "parameter_name": "LDL - C",
+          "result_date": "2026-10-31",
+          "value": "78",
+          "unit": "mg/dL",
+          "reference": {
+            "low": "0",
+            "high": "100",
+            "range": "0 - 100"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": "",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "93"
+            }
+          ]
+        },
+        {
+          "parameter_id": 38,
+          "parameter_name": "Serum Total Cholesterol",
+          "result_date": "2026-10-31",
+          "value": "140",
+          "unit": "mg/dL",
+          "reference": {
+            "low": "0",
+            "high": "200",
+            "range": "Normal: Up to 200\nBorderline Risk: 200 - 240\nHigh Risk: > 240"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": "",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "149"
+            }
+          ]
+        },
+        {
+          "parameter_id": 39,
+          "parameter_name": "Triglyceride",
+          "result_date": "2026-10-31",
+          "value": "86",
+          "unit": "mg/dL",
+          "reference": {
+            "low": "0",
+            "high": "150",
+            "range": "0 - 150"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": "",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "93"
+            }
+          ]
+        },
+        {
+          "parameter_id": 40,
+          "parameter_name": "HDL CHOLESTEROL",
+          "result_date": "2026-10-31",
+          "value": "46",
+          "unit": "mg/dL",
+          "reference": {
+            "low": "40",
+            "high": "60",
+            "range": "Low risk factor for CHD : >= 60\nHigh risk factor for CHD : < 40"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": "",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "39"
+            }
+          ]
+        },
+        {
+          "parameter_id": 41,
+          "parameter_name": "VLDL",
+          "result_date": "2026-10-31",
+          "value": "16",
+          "unit": "mg/dL",
+          "reference": {
+            "low": "0",
+            "high": "30",
+            "range": "0 - 30"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": "",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "18"
+            }
+          ]
+        },
+        {
+          "parameter_id": 1279,
+          "parameter_name": "HDL RISK FACTOR (Chol/HDL)",
+          "result_date": "2026-10-31",
+          "value": "3.0",
+          "unit": " ",
+          "reference": {
+            "low": "0",
+            "high": "4.4",
+            "range": "Mild risk: 4.4\r\nModerate risk: 7.1\r\nHigh risk: 11.0"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": "",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "3.83"
+            }
+          ]
+        },
+        {
+          "parameter_id": 6112,
+          "parameter_name": "Non-HDL cholesterol",
+          "result_date": "2026-10-31",
+          "value": "94",
+          "unit": "mg/dL",
+          "reference": {
+            "low": "0",
+            "high": "130",
+            "range": "0 - 130"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": "",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "110"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "test_id": 36,
+      "test_name": "SGOT (AST)",
+      "test_remark": "",
+      "results": [
+        {
+          "parameter_id": 49,
+          "parameter_name": "SGOT (AST)",
+          "result_date": "2026-10-31",
+          "value": "22",
+          "unit": "U/L",
+          "reference": {
+            "low": "0",
+            "high": "40",
+            "range": "0 - 40"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": "",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "17"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "test_id": 37,
+      "test_name": "SGPT (ALT)",
+      "test_remark": "",
+      "results": [
+        {
+          "parameter_id": 50,
+          "parameter_name": "SGPT (ALT)",
+          "result_date": "2026-10-31",
+          "value": "21",
+          "unit": "U/L",
+          "reference": {
+            "low": "0",
+            "high": "41",
+            "range": "0 - 41"
+          },
+          "lab_flag": "",
+          "critical": {
+            "low": "",
+            "high": "",
+            "range_text": " - "
+          },
+          "parameter_remark": "",
+          "history": [
+            {
+              "history_visit_id": 2066549403,
+              "history_date": "2025-12-01",
+              "history_value": "8"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "descriptive_results": [],
+  "visit_answer_list": [
+    {
+      "preparation_id": 50,
+      "preparation_name": "عدد ساعات الصيام",
+      "answer": "12"
+    },
+    {
+      "preparation_id": 205,
+      "preparation_name": "هل يؤخذ علاج كيماوى",
+      "answer": "no"
+    },
+    {
+      "preparation_id": 256,
+      "preparation_name": "هل يوجد نزيف أو بقع زرقاء تحت الجلد",
+      "answer": "no"
+    },
+    {
+      "preparation_id": 288,
+      "preparation_name": "هل المريض مصاب بامراض الكبد او القلب او الرئة ؟",
+      "answer": "no"
+    },
+    {
+      "preparation_id": 483,
+      "preparation_name": "  علاج للدهون او الكوليسترول؟",
+      "answer": "no"
+    },
+    {
+      "preparation_id": 262,
+      "preparation_name": "هل يوجد نقص بالصفائح الدموية؟",
+      "answer": "no"
+    },
+    {
+      "preparation_id": 486,
+      "preparation_name": " مريض كبد",
+      "answer": "no"
+    },
+    {
+      "preparation_id": 491,
+      "preparation_name": " مريض كلى - غسيل كلى - زرع كلى",
+      "answer": "no"
+    },
+    {
+      "preparation_id": 492,
+      "preparation_name": "مريض سكر - علاج سكر -  اعراض سكر",
+      "answer": "no"
+    },
+    {
+      "preparation_id": 668,
+      "preparation_name": "   هل تم نقل دم او يأخذ علاج حديد؟",
+      "answer": "no"
+    },
+    {
+      "preparation_id": 926,
+      "preparation_name": " هل يأخذ علاج للانيميا؟",
+      "answer": "no"
+    },
+    {
+      "preparation_id": 927,
+      "preparation_name": "هل هناك  زيادة فى الهيموجلوبين ؟",
+      "answer": "no"
+    },
+    {
+      "preparation_id": 928,
+      "preparation_name": "هل المريض مدخن ؟",
+      "answer": "no"
+    },
+    {
+      "preparation_id": 929,
+      "preparation_name": "هل تم التبرع بالدم ؟ و منذ متى؟",
+      "answer": "no"
+    },
+    {
+      "preparation_id": 903,
+      "preparation_name": "سؤال عن أنيميا حادة أو نزيف أو أجراء جراحى ؟\r\n",
+      "answer": "no"
+    }
+  ]
+}

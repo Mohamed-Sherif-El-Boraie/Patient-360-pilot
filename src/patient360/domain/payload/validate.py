@@ -8,10 +8,9 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from patient360.domain.common.compat import frozendict
+from patient360.domain.payload.explain import MAX_LOC_PART, explain
 from patient360.domain.payload.models import SymptomPayload, VisitPayload
 from patient360.domain.payload.values import as_whole_number, blank_to_none
-
-MAX_LOC_PART = 60   # an unknown key name is sender-chosen text; keep what we store and return short
 
 MODELS = frozendict({1: VisitPayload, 2: VisitPayload, 3: SymptomPayload, 4: VisitPayload})   # source id -> model
 
@@ -27,8 +26,9 @@ class Invalid:
     errors: list[dict[str, Any]] = field(default_factory=list)
 
 
-def _error(loc: list[Any], msg: str, kind: str) -> dict[str, Any]:
-    return {"loc": loc, "msg": msg, "type": kind}
+def _error(loc: list[Any], msg: str, kind: str, message: str | None = None) -> dict[str, Any]:
+    """``message`` is the readable sentence (see ``explain``); without it the answer shows ``loc: msg``."""
+    return {"loc": loc, "msg": msg, "type": kind} | ({"message": message} if message else {})
 
 
 def _reject_constant(name: str) -> None:
@@ -49,5 +49,6 @@ def validate_payload(raw: bytes) -> Valid | Invalid:
         payload = model.model_validate(obj, strict=True)
     except ValidationError as exc:
         errors = exc.errors(include_url=False, include_context=False, include_input=False)
-        return Invalid([_error([str(part)[:MAX_LOC_PART] for part in e["loc"]], e["msg"], e["type"]) for e in errors])
+        return Invalid([_error([str(part)[:MAX_LOC_PART] for part in e["loc"]], e["msg"], e["type"],
+                               explain(obj, e["loc"], e["type"], e["msg"])) for e in errors])
     return Valid(payload)

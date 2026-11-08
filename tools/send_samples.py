@@ -2,8 +2,9 @@
 
     python tools/send_samples.py --url http://127.0.0.1:8000 --fresh
 
-The visit routes need no API key (sent only if INBOUND_API_KEY is set, never printed). There is one sample for now,
-tools/samples/urgent_source.json (source 1); the batch copies are the same visit with source 2.
+The visit routes need no API key (sent only if INBOUND_API_KEY is set, never printed). The urgent sample is
+tools/samples/urgent_source.json (source 1); the batch copies are tools/samples/batch_visit_2076281908.json (source 2),
+each with its own visit and patient id.
 
   --only urgent,batch   send only these (default: both, in this order)
   --fresh        new visit and patient ids on every run (a second run with the same ids is a duplicate, answered 200)
@@ -23,7 +24,7 @@ import urllib.request
 from pathlib import Path
 
 SAMPLES = Path(__file__).resolve().parent / "samples"
-FILES = {"urgent": "urgent_source.json", "batch": "urgent_source.json"}      # one sample for now; batch is source 2
+FILES = {"urgent": "urgent_source.json", "batch": "batch_visit_2076281908.json"}      # batch is source 2
 SOURCE_ID = {"urgent": 1, "batch": 2}
 PATHS: dict[str, str] = {}                                           # every sample goes to /visits
 ORDER = ("urgent", "batch")

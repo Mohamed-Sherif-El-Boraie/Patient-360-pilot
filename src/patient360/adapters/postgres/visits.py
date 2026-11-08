@@ -64,9 +64,9 @@ class VisitsMixin:
                                           statuses[(test_id, result["parameter_id"])])
             for item in sent["descriptive_results"]:
                 test_id = item["test_id"]
+                text = descriptive_text.get(test_id, "")      # "" = the Backend sent no text
                 conn.execute("INSERT INTO descriptive_results (visit_id, test_id, result_date, text_value, status) "
-                             "VALUES (%s, %s, %s, %s, 'text')", (visit_id, test_id, item["result_date"],
-                                                                 descriptive_text[test_id]))
+                             "VALUES (%s, %s, %s, %s, 'text')", (visit_id, test_id, item["result_date"], text))
                 for point in item.get("history") or []:
                     conn.execute(
                         "INSERT INTO descriptive_result_history (visit_id, test_id, company_id, history_visit_id, "

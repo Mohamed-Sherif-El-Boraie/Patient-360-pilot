@@ -44,11 +44,12 @@ def reply(status: int, message: str, code: int = ERROR_CODE, **more: Any) -> JSO
 
 
 def invalid_message(errors: list[dict[str, Any]]) -> str:
-    """One readable line for the 422, so the answer keeps to code and message: where each problem is and what it is.
-    The errors never hold the input values (see ``validate_payload``)."""
-    shown = [f"{'.'.join(e['loc']) or 'body'}: {e['msg']}" for e in errors[:MAX_ERROR_ITEMS]]
-    more = f" (+{len(errors) - MAX_ERROR_ITEMS} more)" if len(errors) > MAX_ERROR_ITEMS else ""
-    return f"Invalid payload: {'; '.join(shown)}{more}"[:MAX_ERROR_CHARS]
+    """One readable line for the 422, so the answer keeps to code and message: where each problem is (test_id,
+    parameter_id) and what it is. The errors never hold the input values (see ``validate_payload``). The same problem
+    is told once (a ``str | int | float`` value fails three times)."""
+    problems = list(dict.fromkeys(e.get("message") or f"{'.'.join(e['loc']) or 'body'}: {e['msg']}" for e in errors))
+    more = f" (+{len(problems) - MAX_ERROR_ITEMS} more)" if len(problems) > MAX_ERROR_ITEMS else ""
+    return f"Invalid payload: {'; '.join(problems[:MAX_ERROR_ITEMS])}{more}"[:MAX_ERROR_CHARS]
 
 
 class _Stop(Exception):
