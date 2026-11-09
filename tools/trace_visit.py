@@ -4,6 +4,7 @@
     python /app/tools/trace_visit.py 1795782760780   # one visit in full: stage, processing, attempts, answer, payloads
     python /app/tools/trace_visit.py rejected    # the 3 latest 422 payloads: errors and the start of what arrived
     python /app/tools/trace_visit.py batches     # batch visits waiting, by stage, and the latest batches
+    python /app/tools/trace_visit.py batch normal_000002   # one batch (no id: the latest): AWS answers, failures
 """
 import sys
 
@@ -38,6 +39,23 @@ ONE = {
     "recommendations / alerts":
         "SELECT (SELECT count(*) FROM ai_recommendations WHERE visit_id = %s) AS recommendations, "
         "(SELECT count(*) FROM ai_critical_alerts WHERE visit_id = %s) AS critical_alerts",
+}
+BATCH = {
+    "batch {}": "SELECT batch_id, aws_job_id, status, read_from, attempts, last_error, created_at FROM batches "
+                "WHERE batch_id = %s",
+    "visits of the batch, by stage": "SELECT stage, count(*) AS visits FROM visits WHERE batch_id = %s "
+                                     "GROUP BY stage ORDER BY stage",
+    "their queue (record_processing)":
+        "SELECT rp.step, rp.status, count(*) AS visits, max(rp.attempts) AS max_attempts, "
+        "max(rp.last_error) AS last_error FROM record_processing rp JOIN visits v USING (visit_id) "
+        "WHERE v.batch_id = %s AND rp.analysis = 'visit' GROUP BY rp.step, rp.status ORDER BY rp.step, rp.status",
+    "answers from AWS (ai_outputs)":
+        "SELECT o.status, o.aws_review_status, count(*) AS visits, max(o.generated_at) AS last_answer "
+        "FROM ai_outputs o JOIN visits v USING (visit_id) WHERE v.batch_id = %s AND o.analysis = 'visit' "
+        "GROUP BY o.status, o.aws_review_status",
+    "failures from AWS (ai_failures)":
+        "SELECT failed_step, left(error, 120) AS error, count(*) AS visits FROM ai_failures WHERE batch_id = %s "
+        "GROUP BY failed_step, left(error, 120)",
 }
 
 
@@ -75,6 +93,12 @@ def main() -> None:
                 "SELECT b.batch_id, b.status, b.read_from, b.attempts, b.last_error, b.created_at, "
                 "(SELECT count(*) FROM visits v WHERE v.batch_id = b.batch_id) AS visits FROM batches b "
                 "ORDER BY b.created_at DESC LIMIT 5").fetchall())
+            return
+        if sys.argv[1] == "batch":         # one batch: has AWS answered, and did the answers reach the Backend?
+            batch_id = sys.argv[2] if len(sys.argv) > 2 else conn.execute(
+                "SELECT batch_id FROM batches ORDER BY created_at DESC LIMIT 1").fetchone()["batch_id"]
+            for title, sql in BATCH.items():
+                show(title.format(batch_id), conn.execute(sql, (batch_id,) * sql.count("%s")).fetchall())
             return
         visit_id = int(sys.argv[1])
         for title, sql in ONE.items():

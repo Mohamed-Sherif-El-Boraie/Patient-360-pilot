@@ -9,6 +9,7 @@ from patient360.config.settings import Settings
 from patient360.flow.batching import BatchTrigger
 from patient360.flow.dispatch import Dispatcher
 from patient360.flow.intake import Intake
+from patient360.flow.parked import ParkedRecovery
 from patient360.flow.process import Processor
 from patient360.flow.results import OutputReceiver
 from patient360.flow.send_result import ResultSender
@@ -28,3 +29,4 @@ class Services:
     dispatcher: Dispatcher
     receiver: OutputReceiver
     sender: ResultSender | None           # None when the Backend settings are not given: nothing is delivered
+    parked: ParkedRecovery | None = None  # saves the payloads kept in Blob when a step of ours failed while receiving

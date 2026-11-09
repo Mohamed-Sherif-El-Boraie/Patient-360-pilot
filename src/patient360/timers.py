@@ -40,6 +40,8 @@ def run_job_cycle(services: Services, now: datetime) -> None:
 
 def run_work_cycle(services: Services, now: datetime) -> None:
     jobs: list[Callable[[], Any]] = [services.dispatcher.run]
+    if services.parked is not None:
+        jobs.insert(0, services.parked.run)      # first: a saved visit is uploaded in the same cycle
     if services.sender is not None:
         jobs.append(services.sender.run)
     _run_each(jobs)

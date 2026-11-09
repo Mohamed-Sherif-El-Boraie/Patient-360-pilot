@@ -23,16 +23,16 @@ FILE = f"{KEY}.json"
 
 def test_the_file_is_named_by_the_full_32_character_key():
     assert len(KEY) == 32
-    assert raw_path("urgent", DAY, KEY) == f"urgent/2026/10/24/{FILE}"
+    assert raw_path("urgent", DAY, KEY) == f"raw-jsons/urgent/2026/10/24/{FILE}"
 
 
 def test_raw_files_are_grouped_by_source_and_day():
-    assert raw_path("symptom-checker", DAY, KEY) == f"symptom-checker/2026/10/24/{FILE}"
-    assert raw_path("batch", DAY, KEY) == f"batch/2026/10/24/{FILE}"
+    assert raw_path("symptom-checker", DAY, KEY) == f"raw-jsons/symptom-checker/2026/10/24/{FILE}"
+    assert raw_path("batch", DAY, KEY) == f"raw-jsons/batch/2026/10/24/{FILE}"
 
 
 def test_months_and_days_have_two_digits():
-    assert raw_path("on-demand", date(2026, 1, 5), KEY) == f"on-demand/2026/01/05/{FILE}"
+    assert raw_path("on-demand", date(2026, 1, 5), KEY) == f"raw-jsons/on-demand/2026/01/05/{FILE}"
 
 
 def test_a_rejected_payload_is_named_by_its_visit_id():
@@ -93,7 +93,7 @@ def test_a_time_without_a_zone_is_refused():
 def test_all_files_of_one_visit_share_the_day_it_was_received():
     received = datetime(2026, 10, 24, 23, 59, tzinfo=UTC)
     day = blob_day(received)   # still used at 00:10 the next day, when the result is saved
-    assert raw_path("urgent", day, KEY).split("/")[1:4] == ["2026", "10", "24"]
+    assert raw_path("urgent", day, KEY).split("/")[2:5] == ["2026", "10", "24"]
     assert merged_output_path("normal", day, KEY).split("/")[1:4] == ["2026", "10", "24"]
 
 

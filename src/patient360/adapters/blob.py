@@ -38,6 +38,22 @@ class AzureBlobStore:
             log.warning("blob_unavailable", error_type=type(error).__name__)
             raise BlobUnavailable from error
 
+    def list(self, prefix: str) -> list[str]:
+        try:
+            return [blob.name for blob in self._container.list_blobs(name_starts_with=prefix)]
+        except AzureError as error:
+            log.warning("blob_unavailable", error_type=type(error).__name__)
+            raise BlobUnavailable from error
+
+    def delete(self, path: str) -> None:
+        try:
+            self._container.delete_blob(path)
+        except ResourceNotFoundError:
+            return
+        except AzureError as error:
+            log.warning("blob_unavailable", error_type=type(error).__name__)
+            raise BlobUnavailable from error
+
 
 def build_blob_stores(account_url: str, input_container: str, credential: Any = None) -> AzureBlobStore:
     """Blob 1. Signs in with the App Service's managed identity (or the developer's ``az login``) unless a credential

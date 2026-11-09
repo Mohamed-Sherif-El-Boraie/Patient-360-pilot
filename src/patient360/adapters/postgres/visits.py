@@ -9,10 +9,11 @@ from typing import Any, Literal
 from psycopg.types.json import Jsonb
 
 from patient360.adapters.postgres.db import Database, insert_payload, set_stage
+from patient360.adapters.postgres.work import WorkMixin
 from patient360.domain.builders.ai_input import build_ai_input
 from patient360.domain.payload.values import html_to_plain_text
 from patient360.domain.rules.logic import lab_flag_status
-from patient360.ports import StoredSymptomCheck, StoredVisit
+from patient360.ports import Prepared, StoredSymptomCheck, StoredVisit
 
 
 def _text(value: Any) -> str | None:
@@ -27,10 +28,11 @@ class VisitsMixin:
             return conn.execute("SELECT 1 FROM visits WHERE visit_id = %s", (visit_id,)).fetchone() is not None
 
     def save_visit(self, payload: dict[str, Any], raw: bytes, idempotency_key: str, received_at: datetime,
-                   read_from: Literal["blob", "postgresql"]) -> None:
+                   read_from: Literal["blob", "postgresql"], processed: Prepared | None = None) -> None:
         """Write everything the Backend sent in one transaction. ``read_from`` is not used: the raw bytes are always
         kept in PostgreSQL. An unknown company, test or parameter is added (tests and parameters inactive) instead of
-        failing, so a new catalogue entry never loses a visit."""
+        failing, so a new catalogue entry never loses a visit. ``processed``: saved in the same transaction (the tier,
+        the Bedrock request, the pending work row, stage ``processed``)."""
         # Numbers parsed as Decimal keep their text as sent ("5.10" stays "5.10"); the AI input needs plain numbers.
         sent = json.loads(raw, parse_float=Decimal)
         ai = build_ai_input(json.loads(raw))
@@ -78,6 +80,9 @@ class VisitsMixin:
                              "VALUES (%s, %s, %s, %s)",
                              (visit_id, answer["preparation_id"], answer["preparation_name"], answer["answer"]))
             insert_payload(conn, visit_id, "visit", "raw", json.loads(raw), raw_bytes=raw)
+            if processed is not None:
+                conn.execute("UPDATE visits SET tier = %s WHERE visit_id = %s", (processed.tier, visit_id))
+                WorkMixin._save_processed(conn, visit_id, "visit", processed.model_input, processed.read_from)
 
     @staticmethod
     def _save_lab_result(conn: Any, visit_id: int, company_id: int, test_id: int, result: dict[str, Any],

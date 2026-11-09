@@ -9,16 +9,14 @@ from structlog.testing import capture_logs
 
 from patient360 import http_app
 from patient360.config.settings import load_settings
-from patient360.domain.builders.backend_output import build_failed_output
 from patient360.flow.dispatch import Dispatcher
 from patient360.flow.intake import Intake
 from patient360.flow.process import Processor
 from patient360.flow.results import OutputReceiver, Received
 from patient360.flow.symptom import SymptomProcessor
 from patient360.http_app import create_app
-from patient360.ports import BackendUnavailable
 from patient360.services import Services
-from tests.fakes import FakeBackend, FakeBlobs, FakeCatalogue, FakeS3, FakeStore
+from tests.fakes import FakeBlobs, FakeCatalogue, FakeS3, FakeStore
 
 NOW = datetime(2026, 10, 24, 9, 0, tzinfo=UTC)
 GOOD_ENV = {
@@ -251,11 +249,31 @@ def test_without_an_api_key_setting_nothing_is_checked(rig, sample):
     assert rig.post(sample("urgent_mild"), headers={"X-Api-Key": "anything"}).status_code == 202
 
 
-def test_a_database_failure_in_intake_is_500_never_202(rig, sample):
+def test_a_database_failure_while_receiving_is_ours_to_handle_so_the_sender_gets_202(rig, sample):
     rig.store.fail_on_save = True
-    response = rig.post(sample("urgent_mild"))
+    visit = sample("urgent_mild")
+    with capture_logs() as logs:
+        response = rig.post(visit)
+    assert response.status_code == 202
+    assert response.json() == {"response": {"code": -1, "message": "success"}, "data": {"visit_id": visit["visit_id"]}}
+    [parked] = [entry for entry in logs if entry["event"] == "visit_parked"]
+    assert parked["step"] == "saving the visit in the database" and parked["error_type"] == "RuntimeError"
+    assert any(name.startswith("_pending/") for name in rig.blobs.files)      # kept, saved later by the recovery
+
+
+def test_with_neither_the_database_nor_blob_nothing_is_safe_so_the_sender_gets_500_and_resends(rig, sample):
+    rig.store.fail_on_save = True
+    rig.blobs.down = True
+    visit = sample("urgent_mild")
+    with capture_logs() as logs:
+        response = rig.post(visit)
     assert response.status_code == 500
-    assert response.json() == {"response": {"code": 0, "message": "Internal error"}}
+    assert response.json() == {"response": {"code": 0, "message": (
+        f"Internal error while saving the visit in the database: RuntimeError (visit_id {visit['visit_id']})")}}
+    [failed] = [entry for entry in logs if entry["event"] == "request_failed"]
+    assert (failed["step"], failed["error_type"], failed["visit_id"]) == (
+        "saving the visit in the database", "RuntimeError", visit["visit_id"])
+    assert "fakes.py" in failed["where"]            # the place in our code that raised, to trace it
 
 
 def test_a_background_failure_does_not_break_the_response(rig, sample):
@@ -314,9 +332,13 @@ def test_a_receiver_failure_answers_500_so_the_function_retries_and_logs_only_th
     rig.spy_receiver.error = RuntimeError("boom with PATIENT-DATA")
     with capture_logs() as logs:
         response = rig.client.post(AI_RESULTS, content=b"{}", headers=SOURCE_HEADERS)
-    assert response.status_code == 500 and response.json() == {"response": {"code": 0, "message": "Internal error"}}
-    assert {"event": "request_failed", "error_type": "RuntimeError", "log_level": "error"} in logs
-    assert "PATIENT-DATA" not in str(logs)
+    assert response.status_code == 500
+    assert response.json()["response"]["message"] == (
+        "Internal error while saving the AI result: RuntimeError (source urgent, file "
+        f"{SOURCE_HEADERS['X-Blob-Path']})")
+    [failed] = [entry for entry in logs if entry["event"] == "request_failed"]
+    assert (failed["step"], failed["error_type"]) == ("saving the AI result", "RuntimeError")
+    assert "PATIENT-DATA" not in str(logs) and "PATIENT-DATA" not in response.text      # never the exception message
 
 
 @pytest.mark.parametrize("source, path", [
@@ -355,44 +377,19 @@ def test_a_failed_file_is_answered_200_failed_and_the_visit_is_failed(sample):
     assert rig.store.visits[visit["visit_id"]]["stage"] == "failed"
 
 
-def rejected_rig(sample, backend):
+def test_a_rejected_payload_is_only_answered_422_and_the_corrected_visit_sent_again_is_accepted(sample):
+    """Only the sender hears about the 422. Nothing goes to the wrapper (it would save the patient as failed), and
+    no visit row exists, so the Backend's corrected resend of the same visit is not a duplicate."""
     rig = Rig(sample)
-    rig.services = replace(rig.services, backend=backend)
-    rig.client = TestClient(create_app(rig.services))
     visit = sample("urgent_mild")
-    visit["status"] = "high"            # fails validation, ids stay usable
-    return rig, visit
-
-
-def test_a_rejected_payload_with_usable_ids_tells_the_backend_the_patient_failed_once(sample):
-    backend = FakeBackend()
-    rig, visit = rejected_rig(sample, backend)
-    response = rig.post(visit)
+    broken = visit | {"status": "high"}
+    response = rig.post(broken)
     assert response.status_code == 422 and response.json()["response"]["code"] == 0
     assert response.json()["response"]["message"].startswith("Invalid payload: ")
-    assert backend.posts == [build_failed_output(patient_id=visit["patient_id"], visit_id=visit["visit_id"], source=1,
-                                                 company_id=visit["company_id"])]
-
-
-def test_a_rejected_payload_without_usable_ids_or_without_a_backend_sends_nothing(sample):
-    backend = FakeBackend()
-    rig, visit = rejected_rig(sample, backend)
-    assert rig.post(visit | {"patient_id": "x"}).status_code == 422
-    assert rig.post(b"{not json").status_code == 422
-    assert backend.posts == []
-    rig_without, visit = rejected_rig(sample, None)
-    assert rig_without.post(visit).status_code == 422
-
-
-def test_a_backend_error_while_telling_about_a_rejected_payload_is_swallowed_and_logged(sample):
-    backend = FakeBackend()
-    backend.raises = BackendUnavailable
-    rig, visit = rejected_rig(sample, backend)
-    with capture_logs() as logs:
-        response = rig.post(visit)
-    assert response.status_code == 422
-    assert {"event": "rejected_failed_message_not_sent", "error_type": "BackendUnavailable",
-            "log_level": "warning"} in logs
+    assert not hasattr(rig.services, "backend") and visit["visit_id"] not in rig.store.visits
+    again = rig.post(visit)
+    assert again.status_code == 202 and again.json()["response"]["code"] == -1
+    assert visit["visit_id"] in rig.store.visits
 
 
 def test_health_ok_and_database_unavailable(sample):
@@ -402,3 +399,15 @@ def test_health_ok_and_database_unavailable(sample):
     down = Rig(sample, db=StubDb(down=True))
     response = down.client.get("/health")
     assert response.status_code == 503 and response.json() == {"status": "database_unavailable"}
+
+
+def test_a_visit_saved_already_processed_is_not_processed_again_in_the_background():
+    from types import SimpleNamespace
+
+    from patient360.flow.intake import Accepted
+    calls = []
+    services = SimpleNamespace(processor=SimpleNamespace(process=calls.append),
+                               batch_trigger=SimpleNamespace(run=lambda: calls.append("batch")))
+    http_app._process(services, Accepted(1, "k", 2, processed=True))
+    http_app._process(services, Accepted(2, "k", 2))
+    assert calls == ["batch", 2, "batch"]

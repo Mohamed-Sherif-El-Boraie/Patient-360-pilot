@@ -102,6 +102,10 @@ class WorkMixin:
         with self._db.transaction() as conn:
             return self._batch_visits(conn, batch_id)
 
+    def batch_visit_ids(self, batch_id: str) -> list[int]:
+        with self._db.transaction() as conn:
+            return self._batch_visit_ids(conn, batch_id)
+
     # ---- claiming -------------------------------------------------------------------------------
     def claim_next_work(self, now: datetime) -> WorkUnit | None:
         with self._db.transaction() as conn:

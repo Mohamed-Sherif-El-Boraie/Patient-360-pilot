@@ -101,6 +101,19 @@ def test_the_backend_body_is_kept_next_to_the_answer_and_the_record_is_kept_as_r
     assert visit["internal_raw"] == text.encode()
 
 
+@pytest.mark.parametrize("sample_name, lane", [("batch_normal", "normal"), ("batch_critical", "critical")])
+def test_a_batch_visit_backend_body_is_kept_inside_its_batch_folder_in_both_lanes(world, sample_name, lane):
+    visits = world.add(sample_name, 100, count=2)
+    [batch] = BatchTrigger(world.store, world.blobs, 2).run()
+    assert batch.batch_id.startswith(lane)
+    kept = FakeBlobs()
+    receiver = OutputReceiver(world.store, world.catalogue, {"batch": kept})
+    for v in visits:                    # the Function app posts one line at a time
+        receiver.receive_record("batch", bpath(batch), json.dumps(record(v["idempotency_key"])))
+    assert sorted(kept.files) == sorted(
+        f"{lane}/2026/10/25/{batch.batch_id}/{v['idempotency_key']}/06-backend-output.json" for v in visits)
+
+
 def test_a_blob_problem_while_keeping_the_backend_body_does_not_lose_the_answer(world):
     [visit] = world.add("urgent_mild", 1)
     key = visit["idempotency_key"]

@@ -54,10 +54,14 @@ def _batch_rules(source: str, batch_id: str | None) -> None:
         raise ValueError("only a batch file has a batch_id")
 
 
+# p360-raw has three main folders: raw-jsons (a folder per source inside), _rejected and processed.
+RAW_FOLDER = "raw-jsons"
+
+
 def raw_path(source: str, day: date, idempotency_key: str) -> str:
-    """Azure Blob 1: the JSON exactly as the Backend sent it."""
+    """Azure Blob 1: the JSON exactly as the Backend sent it, in the folder of its source."""
     _check(source)
-    return f"{source}/{_day(day)}/{_key(idempotency_key)}.json"
+    return f"{RAW_FOLDER}/{source}/{_day(day)}/{_key(idempotency_key)}.json"
 
 
 def rejected_path(source: str, day: date, visit_id: int) -> str:
@@ -71,6 +75,17 @@ def rejected_path(source: str, day: date, visit_id: int) -> str:
 def rejected_unknown_path(day: date, raw_sha256_hex: str) -> str:
     """Azure Blob 1: a rejected payload with no usable source or visit id; named by a hash of its bytes."""
     return f"_rejected/unknown/{_day(day)}/unknown_{_name(raw_sha256_hex[:16], 'hash')}.json"
+
+
+PENDING_PREFIX = "_pending/"
+
+
+def pending_path(day: date, visit_id: int, raw_sha256_hex: str) -> str:
+    """Azure Blob 1: a valid payload that could not be saved in the database. It waits here until the recovery saves it.
+    The same bytes sent again make the same name, so a resend never makes a second file."""
+    if not isinstance(visit_id, int) or isinstance(visit_id, bool) or visit_id < 1:
+        raise ValueError("visit_id must be a positive whole number")
+    return f"{PENDING_PREFIX}{_day(day)}/{visit_id}-{_name(raw_sha256_hex[:16], 'hash')}.json"
 
 
 def processed_path(source: str, lane: str, day: date, idempotency_key: str, batch_id: str | None = None) -> str:
@@ -105,10 +120,14 @@ def merged_output_jsonl_path(lane: str, day: date, batch_id: str) -> str:
     return f"{lane}-jsonls/{_day(day)}/{_name(batch_id, 'batch_id')}/{OUTPUT_FILE}.jsonl"
 
 
-def backend_output_path(lane: str, day: date, idempotency_key: str) -> str:
-    """The body we send to the Backend, kept next to the answer it was built from (same container, same folder)."""
+def backend_output_path(lane: str, day: date, idempotency_key: str, batch_id: str | None = None) -> str:
+    """The body we send to the Backend, in the output container of its source. A batch visit sits inside its batch
+    folder (AWS writes its own per-visit file outside it, which we do not control)."""
     _check("batch", lane)
-    return f"{lane}/{_day(day)}/{_key(idempotency_key)}/06-backend-output.json"
+    folder = f"{lane}/{_day(day)}"
+    if batch_id is not None:
+        folder += f"/{_name(batch_id, 'batch_id')}"
+    return f"{folder}/{_key(idempotency_key)}/06-backend-output.json"
 
 
 @dataclass(frozen=True)

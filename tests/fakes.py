@@ -65,6 +65,16 @@ class FakeBlobs:
             raise BlobUnavailable
         return self.files.get(path)
 
+    def list(self, prefix: str) -> list[str]:
+        if self.down:
+            raise BlobUnavailable
+        return sorted(name for name in self.files if name.startswith(prefix))
+
+    def delete(self, path: str) -> None:
+        if self.down:
+            raise BlobUnavailable
+        self.files.pop(path, None)
+
 
 class FunctionApp:
     """Plays the Function app: reads a file from the fake output container of ``source`` and hands each record (the
@@ -125,11 +135,13 @@ class FakeStore:
     def visit_exists(self, visit_id):
         return visit_id in self.visits
 
-    def save_visit(self, payload, raw, idempotency_key, received_at, read_from):
+    def save_visit(self, payload, raw, idempotency_key, received_at, read_from, processed=None):
         if self.fail_on_save:
             raise RuntimeError("database down")
         self.visits[payload["visit_id"]] = {"payload": payload, "raw": raw, "idempotency_key": idempotency_key,
                                             "received_at": received_at, "read_from": read_from, "stage": "received"}
+        if processed is not None:
+            self.save_processed(payload["visit_id"], processed.tier, processed.model_input, processed.read_from)
 
     def visits_waiting_for_processing(self, received_before):
         waiting = [(v["received_at"], visit_id) for visit_id, v in self.visits.items()
@@ -214,6 +226,9 @@ class FakeStore:
     def batch_model_inputs(self, batch_id):
         return [BatchVisit(self.visits[i]["idempotency_key"], self.visits[i]["model_input"])
                 for i in self.batches[batch_id]["visit_ids"]]
+
+    def batch_visit_ids(self, batch_id):
+        return list(self.batches[batch_id]["visit_ids"])
 
     def _set_stage(self, unit, stage):
         if unit.batch_id:

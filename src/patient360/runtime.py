@@ -22,6 +22,7 @@ from patient360.config.settings import Settings
 from patient360.flow.batching import BatchTrigger
 from patient360.flow.dispatch import Dispatcher
 from patient360.flow.intake import Intake
+from patient360.flow.parked import ParkedRecovery
 from patient360.flow.process import Processor
 from patient360.flow.results import OutputReceiver
 from patient360.flow.send_result import ResultSender
@@ -61,10 +62,13 @@ def build_services(
     if backend is None:
         log.warning("backend_not_configured")
     store, catalogue = PostgresStore(db), PostgresCatalogue(db)
+    processor = Processor(store, catalogue, blob)
+    intake = Intake(store, blob, settings.idempotency_key_secret.encode(), _now, settings.max_request_bytes,
+                    prepare=processor.prepare)
     return Services(
         settings=settings, db=db, store=store,
-        intake=Intake(store, blob, settings.idempotency_key_secret.encode(), _now, settings.max_request_bytes),
-        processor=Processor(store, catalogue, blob),
+        intake=intake, parked=ParkedRecovery(intake, blob),
+        processor=processor,
         symptom_processor=SymptomProcessor(store, blob),
         batch_trigger=BatchTrigger(store, blob, settings.batch_size),
         dispatcher=Dispatcher(store, blob, s3, _now),

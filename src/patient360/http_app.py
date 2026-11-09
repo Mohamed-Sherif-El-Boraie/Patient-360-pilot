@@ -11,12 +11,13 @@ import structlog
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, Request
 from fastapi.responses import JSONResponse
 
-from patient360.domain.builders.backend_output import build_failed_output
 from patient360.domain.common.blob_paths import SOURCES
+from patient360.failure import error_name, report, where
 from patient360.flow.intake import (
     SYMPTOM_CHECKER,
     Accepted,
     Duplicate,
+    Parked,
     Rejected,
     Retry,
     SymptomAgain,
@@ -65,25 +66,13 @@ def _process(services: Services, accepted: Accepted) -> None:
         if accepted.source_id == SYMPTOM_CHECKER:
             services.symptom_processor.process(accepted.visit_id)
             return
-        services.processor.process(accepted.visit_id)
+        if not accepted.processed:      # saved already processed: only a visit saved without it is processed here
+            services.processor.process(accepted.visit_id)
         if accepted.source_id == BATCH:
             services.batch_trigger.run()
     except Exception as error:
-        log.warning("background_failed", error_type=type(error).__name__)
-
-
-def _tell_backend_rejected(services: Services, rejected: Rejected) -> None:
-    """After the 422: the payload is in Blob 1 ``_rejected``, so tell the Backend this patient failed. Best effort: no
-    visit row exists, so the delivery queue cannot hold it and nothing is retried."""
-    if services.backend is None:
-        log.info("rejected_failed_message_skipped", reason="backend_not_configured")
-        return
-    try:
-        services.backend.post_result(build_failed_output(
-            patient_id=rejected.patient_id, visit_id=rejected.visit_id, source=rejected.source_id,
-            company_id=rejected.company_id))
-    except Exception as error:
-        log.warning("rejected_failed_message_not_sent", error_type=type(error).__name__)
+        log.warning("background_failed", step="processing the visit after the 202", visit_id=accepted.visit_id,
+                    error_type=error_name(error), where=where(error))
 
 
 def create_app(services: Services, lifespan=None) -> FastAPI:
@@ -120,11 +109,12 @@ def create_app(services: Services, lifespan=None) -> FastAPI:
     def accept(background: BackgroundTasks, raw: bytes, symptom_check: bool) -> JSONResponse:
         try:
             outcome = services.intake.receive(raw, symptom_check=symptom_check)
-        except Exception as error:
-            log.error("request_failed", error_type=type(error).__name__)
-            return reply(500, "Internal error")             # no 202 without a safe save: the caller resends
+        except Exception as error:      # the answer says the step and the exception class (never its message)
+            return reply(500, report(log, "receiving the visit", error))     # no 202 without a safe save: it resends
         if isinstance(outcome, Accepted):
             background.add_task(_process, services, outcome)
+            return reply(202, "success", SUCCESS_CODE, data={"visit_id": outcome.visit_id})
+        if isinstance(outcome, Parked):                      # a step of ours failed: kept in Blob, saved later
             return reply(202, "success", SUCCESS_CODE, data={"visit_id": outcome.visit_id})
         if isinstance(outcome, Retry):                       # we have it, its result was not delivered: sent again
             return reply(200, "success", SUCCESS_CODE, data={"visit_id": outcome.visit_id})
@@ -132,10 +122,8 @@ def create_app(services: Services, lifespan=None) -> FastAPI:
             return reply(409, "DUPLICATE_VISIT")
         if isinstance(outcome, SymptomAgain):                # started again by the wrapper: the checker is closed now
             return reply(200, "success", SUCCESS_CODE, data=outcome.data)
-        if isinstance(outcome, Rejected):
-            if None not in (outcome.patient_id, outcome.visit_id, outcome.source_id):
-                background.add_task(_tell_backend_rejected, services, outcome)
-            return reply(422, invalid_message(outcome.errors))
+        if isinstance(outcome, Rejected):     # only the sender is told (this answer): the wrapper hears nothing, so the
+            return reply(422, invalid_message(outcome.errors))     # corrected visit sent again is a new visit
         if isinstance(outcome, VisitNotFound):
             return reply(404, "VISIT_NOT_FOUND")
         if isinstance(outcome, SymptomCheckerClosed):
@@ -170,8 +158,8 @@ def create_app(services: Services, lifespan=None) -> FastAPI:
             results = services.receiver.receive_record(x_source, x_blob_path, raw.decode(errors="replace"),
                                                        x_visit_key)
         except Exception as error:
-            log.error("request_failed", error_type=type(error).__name__)
-            return reply(500, "Internal error")
+            return reply(500, report(log, "saving the AI result", error,
+                                     detail=f"source {x_source}, file {x_blob_path[:150]}"))
         if results[0].outcome == "unreadable":
             return reply(400, "Failed line without a visit key")
         return JSONResponse({"outcome": results[0].outcome})

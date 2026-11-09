@@ -4,10 +4,12 @@ from datetime import UTC, datetime
 import pytest
 
 from patient360.domain.common.ids import make_idempotency_key
+from patient360.failure import StepFailed
 from patient360.flow.intake import (
     Accepted,
     Duplicate,
     Intake,
+    Parked,
     Rejected,
     Retry,
     SymptomAgain,
@@ -15,7 +17,8 @@ from patient360.flow.intake import (
     TooLarge,
     VisitNotFound,
 )
-from tests.fakes import FakeBlobs, FakeStore
+from patient360.flow.process import Processor
+from tests.fakes import FakeBlobs, FakeCatalogue, FakeStore
 
 SECRET = b"a-long-test-secret-value"
 NOW = datetime(2026, 10, 24, 9, 0, tzinfo=UTC)
@@ -43,7 +46,7 @@ def test_a_valid_visit_is_saved_raw_in_blob_and_in_the_database_and_accepted(par
     outcome = intake.receive(body)
     key = key_of(visit)
     assert outcome == Accepted(visit["visit_id"], key, visit["source"])
-    assert blobs.files[f"urgent/2026/10/24/{key}.json"] == body
+    assert blobs.files[f"raw-jsons/urgent/2026/10/24/{key}.json"] == body
     saved = store.visits[visit["visit_id"]]
     assert saved["raw"] == body and saved["idempotency_key"] == key and saved["read_from"] == "blob"
     assert saved["received_at"] == NOW and saved["payload"]["tests"][0]["test_id"] == visit["tests"][0]["test_id"]
@@ -77,7 +80,7 @@ def test_a_batch_visit_goes_to_the_batch_raw_folder(parts, sample):
     intake, _, blobs = parts
     visit = sample("batch_normal")
     intake.receive(raw(visit))
-    assert f"batch/2026/10/24/{key_of(visit)}.json" in blobs.files
+    assert f"raw-jsons/batch/2026/10/24/{key_of(visit)}.json" in blobs.files
 
 
 def test_an_invalid_payload_is_rejected_saved_in_blob_and_database_and_never_becomes_a_visit(parts, sample):
@@ -150,17 +153,36 @@ def test_when_blob_is_down_a_rejection_is_still_saved_in_the_database_without_a_
 def test_a_file_that_is_already_in_blob_does_not_stop_the_visit(parts, sample):
     intake, store, blobs = parts
     visit = sample("urgent_mild")
-    blobs.files[f"urgent/2026/10/24/{key_of(visit)}.json"] = b"an earlier attempt"
+    blobs.files[f"raw-jsons/urgent/2026/10/24/{key_of(visit)}.json"] = b"an earlier attempt"
     assert isinstance(intake.receive(raw(visit)), Accepted)
     assert store.visits[visit["visit_id"]]["read_from"] == "blob"
 
 
-def test_if_the_database_fails_nothing_is_acknowledged(parts, sample):
-    intake, store, _ = parts
+def test_if_the_database_fails_the_payload_is_parked_in_blob_and_the_sender_is_told_it_is_accepted(parts, sample):
+    intake, store, blobs = parts
     store.fail_on_save = True
-    with pytest.raises(RuntimeError):
-        intake.receive(raw(sample("urgent_mild")))
+    visit = sample("urgent_mild")
+    assert intake.receive(raw(visit)) == Parked(visit["visit_id"])
     assert store.visits == {}
+    [path] = [name for name in blobs.files if name.startswith("_pending/")]
+    assert blobs.files[path] == raw(visit)
+
+
+def test_if_the_database_and_blob_both_fail_nothing_is_safe_and_the_failure_is_raised(parts, sample):
+    intake, store, blobs = parts
+    store.fail_on_save, blobs.down = True, True
+    with pytest.raises(StepFailed) as failed:
+        intake.receive(raw(sample("urgent_mild")))
+    assert failed.value.step == "saving the visit in the database" and isinstance(failed.value.error, RuntimeError)
+    assert store.visits == {}
+
+
+def test_a_rejected_payload_is_answered_even_if_its_copy_cannot_be_saved(parts, sample):
+    intake, store, _ = parts
+    store.save_rejected = lambda *args: (_ for _ in ()).throw(RuntimeError("database down"))
+    bad = sample("urgent_mild")
+    bad["patient_id"] = "x"
+    assert isinstance(intake.receive(raw(bad)), Rejected)
 
 
 def symptom_for(visit, sample):
@@ -212,7 +234,7 @@ def test_a_symptom_check_for_a_stored_visit_is_accepted_once(parts, sample):
     symptom = symptom_for(visit, sample)
     body = raw(symptom)
     assert intake.receive(body) == Accepted(visit["visit_id"], key_of(visit), 3)      # source 3: the symptom checker
-    assert blobs.files[f"symptom-checker/2026/10/24/{key_of(visit)}.json"] == body
+    assert blobs.files[f"raw-jsons/symptom-checker/2026/10/24/{key_of(visit)}.json"] == body
     assert store.symptom_checks[visit["visit_id"]]["read_from"] == "blob"
     assert isinstance(intake.receive(body), SymptomAgain)
 
@@ -258,3 +280,24 @@ def test_no_size_limit_by_default_and_a_set_limit_refuses_a_bigger_body_without_
 
     exact = Intake(store, blobs, SECRET, lambda: NOW, max_bytes=len(body))
     assert isinstance(exact.receive(body), Accepted)
+
+
+def test_a_visit_is_saved_already_processed_in_one_database_write(sample):
+    store, blobs = FakeStore(), FakeBlobs()
+    intake = Intake(store, blobs, SECRET, lambda: NOW, prepare=Processor(store, FakeCatalogue(), blobs).prepare)
+    visit = sample("urgent_mild")
+    outcome = intake.receive(raw(visit))
+    assert outcome == Accepted(visit["visit_id"], key_of(visit), visit["source"], processed=True)
+    saved = store.visits[visit["visit_id"]]
+    assert saved["stage"] == "processed" and saved["tier"] and saved["model_input"]
+    assert any(name.startswith("processed/") for name in blobs.files)      # the file AWS reads is in Blob too
+
+
+def test_a_visit_whose_processing_failed_is_still_accepted_and_left_for_the_background(sample):
+    store, blobs = FakeStore(), FakeBlobs()
+
+    def broken(*_):
+        raise RuntimeError("catalogue down")
+    outcome = Intake(store, blobs, SECRET, lambda: NOW, prepare=broken).receive(raw(sample("urgent_mild")))
+    assert isinstance(outcome, Accepted) and outcome.processed is False
+    assert store.visits[outcome.visit_id]["stage"] == "received"

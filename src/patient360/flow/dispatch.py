@@ -9,10 +9,14 @@ from typing import Literal
 
 import structlog
 
+from patient360.domain.builders.ai_input import build_ai_input
+from patient360.domain.builders.backend_output import build_failed_output
 from patient360.domain.builders.model_input import single_visit_file
 from patient360.domain.common.blob_paths import batch_jsonl_path, blob_day, processed_path, s3_processed_key
 from patient360.domain.rules.dispatch import retry_after
+from patient360.failure import error_name, where
 from patient360.flow.batching import build_jsonl
+from patient360.flow.intake import SYMPTOM_CHECKER
 from patient360.ports import BlobStore, BlobUnavailable, S3Store, S3Unavailable, VisitStore, WorkUnit
 
 log = structlog.get_logger()
@@ -52,7 +56,25 @@ class Dispatcher:
         self._store.mark_failed_attempt(unit, type(error).__name__, None if delay is None else self._now() + delay)
         log.warning("s3_upload_failed", source=unit.source, attempt=attempt, error_type=type(error).__name__,
                     status="failed" if delay is None else "retry")
+        if delay is None:
+            self._tell_failed(unit)
         return Dispatched(unit, "failed" if delay is None else "retry")
+
+    def _tell_failed(self, unit: WorkUnit) -> None:
+        """The upload gave up, so AWS will never answer: the Backend gets ``success`` false (as when AWS fails), for the
+        visit, or for every visit of the batch. One visit failing here never stops the others."""
+        visit_ids = self._store.batch_visit_ids(unit.batch_id) if unit.batch_id else [unit.visit_id]
+        for visit_id in visit_ids:
+            try:
+                stored = self._store.stored_visit(visit_id)
+                raw = json.loads(stored.raw)
+                self._store.save_failed_output(visit_id, build_failed_output(
+                    patient_id=raw["patient_id"], visit_id=visit_id, company_id=raw["company_id"],
+                    source=SYMPTOM_CHECKER if unit.analysis == "symptom" else stored.source_id,
+                    rows=build_ai_input(raw).rows), unit.analysis)
+            except Exception as error:
+                log.warning("failed_result_not_saved", step="telling the Backend the upload failed", visit_id=visit_id,
+                            error_type=error_name(error), where=where(error))
 
     def _load(self, unit: WorkUnit, day) -> bytes:
         """The file to upload: from Blob when that is where it was saved, else rebuilt from PostgreSQL (and put back in

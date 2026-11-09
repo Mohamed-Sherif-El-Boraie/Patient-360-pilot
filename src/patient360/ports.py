@@ -18,6 +18,12 @@ class BlobStore(Protocol):
     def put(self, path: str, data: bytes) -> bool:
         """Create the file. ``False`` if it already exists ("already stored"). Raises ``BlobUnavailable``."""
 
+    def list(self, prefix: str) -> list[str]:
+        """The names of the files under ``prefix``. ``BlobUnavailable`` when Blob cannot be reached."""
+
+    def delete(self, path: str) -> None:
+        """Remove a file (nothing happens if it is not there). ``BlobUnavailable`` when Blob cannot be reached."""
+
     def get(self, path: str) -> bytes | None:
         """The file, or ``None`` if it is not there. Raises ``BlobUnavailable``."""
 
@@ -60,6 +66,14 @@ class StoredVisit:
     source_id: int
     received_at: datetime
     raw: bytes
+
+
+@dataclass(frozen=True)
+class Prepared:
+    """A visit processed in memory (tier and the Bedrock request), so it is saved together with the visit."""
+    tier: str
+    model_input: dict[str, Any]
+    read_from: Literal["blob", "postgresql"]
 
 
 @dataclass(frozen=True)
@@ -132,8 +146,9 @@ class VisitStore(Protocol):
         pending work row."""
 
     def save_visit(self, payload: dict[str, Any], raw: bytes, idempotency_key: str, received_at: datetime,
-                   read_from: Literal["blob", "postgresql"]) -> None:
-        """Save the visit, its tests, results and the raw bytes in one transaction."""
+                   read_from: Literal["blob", "postgresql"], processed: Prepared | None = None) -> None:
+        """Save the visit, its tests, results and the raw bytes in one transaction. With ``processed``, the same
+        transaction also saves what ``save_processed`` would (one database write per visit)."""
 
     def claim_batch(self, lane: Literal["normal", "critical"], size: int) -> ClaimedBatch | None:
         """One transaction: if ``size`` processed batch visits of the lane wait, take the oldest ``size`` (rows locked,
@@ -156,6 +171,9 @@ class VisitStore(Protocol):
 
     def mark_failed_attempt(self, unit: WorkUnit, error_type: str, retry_at: datetime | None) -> None:
         """Count the failure and release the unit for ``retry_at``; ``None`` = give up: stage ``failed``."""
+
+    def batch_visit_ids(self, batch_id: str) -> list[int]:
+        """The visits of a batch, oldest first."""
 
     def visits_waiting_for_processing(self, received_before: datetime) -> list[int]:
         """Ids of visits still at stage ``received`` that arrived before ``received_before``, oldest first. These are

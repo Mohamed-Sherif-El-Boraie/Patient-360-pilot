@@ -189,9 +189,9 @@ scenarios with real values: `urgent/9_scenario_guardrail_blocked_urgent.jsonc`, 
   failed through `06-failed` (not for any other kind of failure), it is saved and post-processed, the visit leaves
   `failed`, and its success body is queued: the wrapper sees the failure, then the success. This is intended. A failed
   record for a visit that already has an answer, or already failed, is a `duplicate`. `ai_failures` keeps its row.
-- **A payload in Blob 1 `_rejected`.** When the ids can still be read, the app posts the failed message to the wrapper
-  right after the 422. This is best effort: no visit exists to hold a retry, so a Backend error is only logged. A
-  rejected payload with unusable ids sends nothing.
+- **A payload in Blob 1 `_rejected`.** Only the sender is told: the 422 answer (`code` 0 and the readable message). The
+  wrapper hears nothing, because it would save the patient as failed, and the problem is the Backend's to fix. No visit
+  row is made, so the corrected visit sent again is a new visit (not a duplicate) and is accepted.
 
 ## Outside the code (assumed in place)
 
@@ -634,7 +634,8 @@ Turns a received visit into the full request for the AI model, picks its urgency
 | `Processed` | Class: the result of processing one visit. | An object with visit_id, tier (urgency level), lane, and read_from. |
 | `write_model_input(blobs, path, record_id, model_input)` | Saves the file AWS reads to Blob, flat (`recordId` beside `anthropic_version`, `max_tokens`, `system` with `cache_control` 1h, `messages`, `output_config`; no guardrail key, Bedrock refuses it in the body); only a batch line is wrapped as `{recordId, modelInput}`. The database keeps the bare request; if Blob is down the database copy is used instead. | The text "blob" or "postgresql". |
 | `Processor.__init__(store, catalogue, blobs, prompts)` | Keeps the database, test catalogue, file storage and the prompts for each source. | Nothing returned. |
-| `Processor.process(visit_id)` | Builds AI input, decides tier and lane, adds suggested tests, builds the AI request and saves it. | A Processed object; the request is saved in the database (and Blob, except for batch visits). |
+| `Processor.prepare(raw, source_id, key, received_at)` | Builds AI input, decides tier and lane, adds suggested tests, builds the AI request, writes its Blob file (not for batch visits). No database write: intake passes the result to `save_visit`, so a visit costs one database read and one database write before the 202. | A `Prepared` (tier, request, read_from). |
+| `Processor.process(visit_id)` | The recovery path, for a visit saved without its processing (processing failed at intake, or the app restarted): loads it, runs `prepare`, saves it. | A Processed object. |
 | `process_stuck_visits(store, processor, now)` | Every 5 minutes, processes visits that were accepted but never processed. Safe to run twice. | A list of Processed objects. |
 
 ### `flow/batching.py`

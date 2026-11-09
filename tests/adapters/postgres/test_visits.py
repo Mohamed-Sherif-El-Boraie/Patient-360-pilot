@@ -258,3 +258,18 @@ def test_save_rejected(db, store):
     rows = seed.fetch(db, "SELECT source_id, raw_bytes, errors, blob_path FROM rejected_payloads ORDER BY rejected_id")
     assert [(r["source_id"], bytes(r["raw_bytes"]), r["errors"], r["blob_path"]) for r in rows] == [
         (4, b"{bad", errors, "rejected/x.json"), (None, b"\xff", errors, None)]
+
+
+def test_save_visit_with_its_processing_writes_everything_in_one_transaction(db, store, sample):
+    from patient360.ports import Prepared
+    payload = sample("urgent_mild")
+    vid = payload["visit_id"]
+    raw = json.dumps(payload).encode()
+    store.save_visit(payload, raw, f"key-{vid}", NOW, "blob", Prepared("MILD", {"a": 1}, "blob"))
+    [visit] = seed.fetch(db, "SELECT tier, stage FROM visits WHERE visit_id = %s", (vid,))
+    assert (visit["tier"], visit["stage"]) == ("MILD", "processed")
+    [work] = seed.fetch(db, "SELECT step, status, read_from FROM record_processing WHERE visit_id = %s", (vid,))
+    assert (work["step"], work["status"], work["read_from"]) == ("upload", "pending", "blob")
+    assert [r["kind"] for r in seed.fetch(
+        db, "SELECT kind FROM record_payloads WHERE visit_id = %s ORDER BY kind", (vid,))] == ["processed", "raw"]
+    assert store.visits_waiting_for_processing(NOW + timedelta(hours=1)) == []      # nothing is left for the sweep

@@ -126,8 +126,24 @@ def test_a_failed_upload_waits_longer_each_time_and_after_five_tries_gives_up(wo
         world.clock += timedelta(hours=1)
     assert waits == [timedelta(seconds=s) for s in (10, 30, 120, 600)] + [None]
     assert visit["stage"] == "failed" and visit["attempts"] == 5 and visit["last_error"] == "S3Unavailable"
+    told = visit["public_output"]                  # the Backend is told, as when AWS fails: success false, no answer
+    assert (told["success"], told["visit_id"], told["source"], told["ai"], told["html"]) == (
+        False, 1, 1, None, None)
     world.s3.down = False
     assert world.dispatcher().run() == [] and not world.s3.uploads    # a failed visit is not tried again
+
+
+def test_a_batch_whose_upload_gives_up_tells_the_backend_about_every_visit_in_it(world):
+    world.add("batch_normal", 100, count=3)
+    [batch] = BatchTrigger(world.store, world.blobs, 3).run()
+    world.s3.down = True
+    for _ in range(5):
+        world.dispatcher().run()
+        world.clock += timedelta(hours=1)
+    visits = [world.store.visits[i] for i in world.store.batches[batch.batch_id]["visit_ids"]]
+    assert [v["stage"] for v in visits] == ["failed"] * 3
+    assert [v["public_output"]["success"] for v in visits] == [False] * 3
+    assert sorted(v["public_output"]["visit_id"] for v in visits) == [100, 101, 102]
 
 
 def test_an_upload_that_works_on_the_second_try_is_sent(world):

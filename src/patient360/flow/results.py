@@ -187,12 +187,12 @@ class OutputReceiver:
         log.info("output_saved", source=found.source, stage="post_processing")
 
     def _keep_backend_output(self, found: MergedOutput, stored: StoredVisit, body: dict[str, Any]) -> None:
-        """Keep the body we send to the Backend next to the answer (``06-backend-output.json``). The database is the
-        record, so a Blob problem is only logged."""
+        """Keep the body we send to the Backend (``06-backend-output.json``; a batch visit under its batch id). The
+        database is the record, so a Blob problem is only logged."""
         if (store := self._outputs.get(found.source)) is None:
             return
         try:
-            store.put(backend_output_path(found.lane, found.day, stored.idempotency_key),
+            store.put(backend_output_path(found.lane, found.day, stored.idempotency_key, found.batch_id),
                       json.dumps(for_wrapper(body), ensure_ascii=False).encode())
         except BlobUnavailable:
             log.warning("backend_output_not_kept", source=found.source)
