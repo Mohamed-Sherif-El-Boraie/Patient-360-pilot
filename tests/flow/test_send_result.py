@@ -56,18 +56,19 @@ def test_results_are_sent_urgent_then_symptom_checker_then_on_demand_then_batch(
     assert world.store.symptom_checks[300]["stage"] == "delivered_symptom"
 
 
-def test_a_busy_backend_is_retried_with_growing_waits_and_after_five_tries_the_result_fails(world):
+def test_a_busy_backend_is_retried_every_15_minutes_and_after_ten_tries_the_result_fails(world):
     visit, _ = world.add("urgent_mild", 1)
     world.backend.raises = BackendUnavailable
     waits = []
-    for expected in ("retry", "retry", "retry", "retry", "failed"):
+    for expected in ["retry"] * 9 + ["failed"]:
         [done] = world.sender().run()
         assert done.outcome == expected
         waits.append(visit["delivery_retry_at"] and visit["delivery_retry_at"] - world.clock)
+        world.clock += timedelta(minutes=14)
         assert world.sender().run() == []                              # not before its time
-        world.clock += timedelta(hours=1)
-    assert waits == [timedelta(seconds=s) for s in (10, 30, 120, 600)] + [None]
-    assert visit["stage"] == "failed" and visit["delivery_attempts"] == 5
+        world.clock += timedelta(minutes=1)
+    assert waits == [timedelta(minutes=15)] * 9 + [None]
+    assert visit["stage"] == "failed" and visit["delivery_attempts"] == 10
     assert visit["delivery_error"] == "BackendUnavailable"
     world.backend.raises = None
     assert world.sender().run() == [] and not world.backend.posts      # a failed result is not tried again
@@ -85,7 +86,7 @@ def test_a_result_sent_on_the_second_try_is_delivered(world):
     world.backend.raises = BackendUnavailable
     assert world.sender().run()[0].outcome == "retry"
     world.backend.raises = None
-    world.clock += timedelta(seconds=10)
+    world.clock += timedelta(minutes=15)
     assert world.sender().run()[0].outcome == "delivered" and world.backend.posts == [body]
     assert visit["stage"] == "delivered"
 

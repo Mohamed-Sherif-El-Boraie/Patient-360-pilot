@@ -9,7 +9,7 @@ from typing import Literal
 import structlog
 
 from patient360.domain.builders.backend_output import for_wrapper
-from patient360.domain.rules.dispatch import retry_after
+from patient360.domain.rules.dispatch import delivery_retry_after
 from patient360.ports import BackendClient, BackendRejected, BackendUnavailable, DeliveryUnit, VisitStore
 
 log = structlog.get_logger()
@@ -44,7 +44,7 @@ class ResultSender:
         return Delivered(unit, "delivered")
 
     def _retry_time(self, unit: DeliveryUnit) -> datetime | None:
-        delay = retry_after(unit.attempts + 1)
+        delay = delivery_retry_after(unit.attempts + 1)
         return None if delay is None else self._now() + delay
 
     def _fail(self, unit: DeliveryUnit, error: Exception, retry_at: datetime | None) -> Delivered:
