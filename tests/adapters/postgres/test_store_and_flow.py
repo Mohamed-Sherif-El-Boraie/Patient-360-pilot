@@ -219,5 +219,5 @@ def test_a_failed_upload_and_a_failed_delivery_are_retried_later(world):
     from patient360.ports import BackendUnavailable
     world.backend.raises = BackendUnavailable
     assert [d.outcome for d in world.send()] == ["retry"]
-    world.backend.raises, world.clock = None, world.clock + timedelta(minutes=15)
+    world.backend.raises, world.clock = None, world.clock + timedelta(seconds=10)
     assert [d.outcome for d in world.send()] == ["delivered"]

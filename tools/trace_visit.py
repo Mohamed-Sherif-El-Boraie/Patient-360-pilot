@@ -5,6 +5,7 @@
     python /app/tools/trace_visit.py rejected    # the 3 latest 422 payloads: errors and the start of what arrived
     python /app/tools/trace_visit.py batches     # batch visits waiting, by stage, and the latest batches
     python /app/tools/trace_visit.py batch normal_000002   # one batch (no id: the latest): AWS answers, failures
+    python /app/tools/trace_visit.py stuck       # what is waiting: deliveries, failed uploads, no AWS answer, _pending
 """
 import sys
 
@@ -59,6 +60,45 @@ BATCH = {
 }
 
 
+STUCK = {
+    "results waiting to be delivered to the wrapper (it keeps failing: retried every 15 minutes, no limit)":
+        "SELECT v.visit_id, rp.analysis, rp.attempts, rp.next_retry_at, left(rp.last_error, 120) AS last_error "
+        "FROM record_processing rp JOIN visits v USING (visit_id) WHERE rp.step = 'deliver' AND rp.status = 'pending' "
+        "AND rp.attempts > 0 ORDER BY rp.attempts DESC, v.visit_id LIMIT 20",
+    "results the wrapper refused for good (not retried)":
+        "SELECT v.visit_id, rp.analysis, rp.attempts, left(rp.last_error, 160) AS last_error, rp.updated_at "
+        "FROM record_processing rp JOIN visits v USING (visit_id) WHERE rp.step = 'deliver' AND rp.status = 'failed' "
+        "ORDER BY rp.updated_at DESC LIMIT 20",
+    "uploads to S3 that gave up (the Backend was told success false)":
+        "SELECT v.visit_id, rp.analysis, rp.attempts, rp.last_error, rp.updated_at FROM record_processing rp "
+        "JOIN visits v USING (visit_id) WHERE rp.step = 'upload' AND rp.status = 'failed' "
+        "ORDER BY rp.updated_at DESC LIMIT 20",
+    "sent to AWS more than 1 hour ago and no answer yet (by source)":
+        "SELECT s.source_name, count(*) AS visits, min(v.updated_at) AS oldest FROM visits v "
+        "JOIN sources s USING (source_id) WHERE v.stage IN ('sent_to_aws', 'sent_to_aws_symptom') "
+        "AND v.updated_at < now() - interval '1 hour' GROUP BY s.source_name ORDER BY oldest",
+    "visits saved but never processed (the 5-minute sweep should take them)":
+        "SELECT v.visit_id, v.source_id, v.created_at FROM visits v WHERE v.created_at < now() - interval '15 minutes' "
+        "AND NOT EXISTS (SELECT 1 FROM record_processing p WHERE p.visit_id = v.visit_id AND p.analysis = 'visit') "
+        "ORDER BY v.created_at LIMIT 20",
+}
+
+
+def parked(settings) -> None:
+    """The payloads kept in Blob (``_pending``) because a step of ours failed while receiving them."""
+    from patient360.domain.common.blob_paths import PENDING_PREFIX
+    from patient360.runtime import raw_store
+    print("\n== parked payloads waiting in p360-raw/_pending (saved by the recovery when the database works)")
+    try:
+        names = raw_store(settings).list(PENDING_PREFIX)
+    except Exception as error:
+        print(f"  could not list them ({type(error).__name__}): check with az storage blob list --prefix _pending")
+        return
+    print(f"  ({len(names)})")
+    for name in names[:20]:
+        print("  " + name)
+
+
 def show(title, rows):
     print(f"\n== {title}  ({len(rows)})")
     for row in rows:
@@ -93,6 +133,11 @@ def main() -> None:
                 "SELECT b.batch_id, b.status, b.read_from, b.attempts, b.last_error, b.created_at, "
                 "(SELECT count(*) FROM visits v WHERE v.batch_id = b.batch_id) AS visits FROM batches b "
                 "ORDER BY b.created_at DESC LIMIT 5").fetchall())
+            return
+        if sys.argv[1] == "stuck":         # everything that is waiting on us or on someone else, in one look
+            for title, sql in STUCK.items():
+                show(title, conn.execute(sql).fetchall())
+            parked(s)
             return
         if sys.argv[1] == "batch":         # one batch: has AWS answered, and did the answers reach the Backend?
             batch_id = sys.argv[2] if len(sys.argv) > 2 else conn.execute(

@@ -118,14 +118,17 @@ def test_a_failed_upload_waits_longer_each_time_and_after_five_tries_gives_up(wo
     visit = world.add("urgent_mild", 1)
     world.s3.down = True
     waits = []
-    for expected in ("retry", "retry", "retry", "retry", "failed"):
+    for expected in ["retry"] * 14 + ["failed"]:
         [done] = world.dispatcher().run()
         assert done.outcome == expected
-        waits.append(visit["next_retry_at"] and visit["next_retry_at"] - world.clock)
-        assert world.dispatcher().run() == []                         # not before its time
-        world.clock += timedelta(hours=1)
-    assert waits == [timedelta(seconds=s) for s in (10, 30, 120, 600)] + [None]
-    assert visit["stage"] == "failed" and visit["attempts"] == 5 and visit["last_error"] == "S3Unavailable"
+        wait = visit["next_retry_at"] and visit["next_retry_at"] - world.clock
+        waits.append(wait)
+        if wait:
+            world.clock += wait - timedelta(seconds=1)
+            assert world.dispatcher().run() == []                     # not before its time
+            world.clock += timedelta(seconds=1)
+    assert waits == [timedelta(seconds=s) for s in (10, 30, 120, 600)] + [timedelta(minutes=15)] * 10 + [None]
+    assert visit["stage"] == "failed" and visit["attempts"] == 15 and visit["last_error"] == "S3Unavailable"
     told = visit["public_output"]                  # the Backend is told, as when AWS fails: success false, no answer
     assert (told["success"], told["visit_id"], told["source"], told["ai"], told["html"]) == (
         False, 1, 1, None, None)
@@ -137,7 +140,7 @@ def test_a_batch_whose_upload_gives_up_tells_the_backend_about_every_visit_in_it
     world.add("batch_normal", 100, count=3)
     [batch] = BatchTrigger(world.store, world.blobs, 3).run()
     world.s3.down = True
-    for _ in range(5):
+    for _ in range(15):
         world.dispatcher().run()
         world.clock += timedelta(hours=1)
     visits = [world.store.visits[i] for i in world.store.batches[batch.batch_id]["visit_ids"]]

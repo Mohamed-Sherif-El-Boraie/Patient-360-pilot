@@ -7,25 +7,28 @@ from patient360.domain.common.compat import frozendict
 
 # Smaller number = sent first.
 SOURCE_PRIORITY = frozendict({"urgent": 0, "symptom-checker": 1, "on-demand": 2, "batch": 3})
-RETRY_DELAYS_S = (10, 30, 120, 600)     # after the 1st, 2nd, 3rd, 4th failed try; the 5th failed try gives up
-
-
-DELIVERY_RETRY_DELAY = timedelta(minutes=15)     # sending a result to the wrapper: the same wait every time ...
-DELIVERY_TRIES = 10                              # ... and the 10th failed try gives up
+QUICK_RETRIES_S = (10, 30, 120, 600)          # after the 1st, 2nd, 3rd and 4th failed try
+REPEAT_EVERY = timedelta(minutes=15)          # then the same wait again and again
+UPLOAD_REPEATS = 10                           # the S3 upload repeats it 10 times, then gives up
 
 
 def retry_after(failed_attempts: int) -> timedelta | None:
-    """The S3 upload: how long to wait after ``failed_attempts`` failures in a row; ``None`` = give up and mark the
-    work failed."""
+    """The S3 upload: 10 s, 30 s, 2 min, 10 min, then 10 tries 15 minutes apart. ``None`` after the 15th failed try
+    (about 2 hours 43 minutes): give up and mark the work failed."""
     if failed_attempts < 1:
         raise ValueError("failed_attempts counts failures, so it starts at 1")
-    if failed_attempts > len(RETRY_DELAYS_S):
-        return None
-    return timedelta(seconds=RETRY_DELAYS_S[failed_attempts - 1])
+    if failed_attempts <= len(QUICK_RETRIES_S):
+        return timedelta(seconds=QUICK_RETRIES_S[failed_attempts - 1])
+    if failed_attempts <= len(QUICK_RETRIES_S) + UPLOAD_REPEATS:
+        return REPEAT_EVERY
+    return None
 
 
-def delivery_retry_after(failed_attempts: int) -> timedelta | None:
-    """Sending a result to the wrapper: wait 15 minutes after each failed try; ``None`` after the 10th = give up."""
+def delivery_retry_after(failed_attempts: int) -> timedelta:
+    """Sending a result to the wrapper: 10 s, 30 s, 2 min, 10 min, then every 15 minutes with no limit, until the
+    wrapper accepts it. (A result the wrapper refuses for good is not retried at all: see ``BackendRejected``.)"""
     if failed_attempts < 1:
         raise ValueError("failed_attempts counts failures, so it starts at 1")
-    return None if failed_attempts >= DELIVERY_TRIES else DELIVERY_RETRY_DELAY
+    if failed_attempts <= len(QUICK_RETRIES_S):
+        return timedelta(seconds=QUICK_RETRIES_S[failed_attempts - 1])
+    return REPEAT_EVERY

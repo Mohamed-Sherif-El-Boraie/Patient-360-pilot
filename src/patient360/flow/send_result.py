@@ -43,9 +43,8 @@ class ResultSender:
         log.info("delivered", source=unit.source, attempt=unit.attempts + 1)
         return Delivered(unit, "delivered")
 
-    def _retry_time(self, unit: DeliveryUnit) -> datetime | None:
-        delay = delivery_retry_after(unit.attempts + 1)
-        return None if delay is None else self._now() + delay
+    def _retry_time(self, unit: DeliveryUnit) -> datetime:
+        return self._now() + delivery_retry_after(unit.attempts + 1)
 
     def _fail(self, unit: DeliveryUnit, error: Exception, retry_at: datetime | None) -> Delivered:
         reason = str(error) or type(error).__name__      # the adapter's readable message, saved as last_error

@@ -1,6 +1,8 @@
 import json
 from datetime import UTC, datetime
 
+from structlog.testing import capture_logs
+
 from patient360.flow.intake import Intake, Parked
 from patient360.flow.parked import ParkedRecovery
 from tests.fakes import FakeBlobs, FakeStore
@@ -42,6 +44,24 @@ def test_a_parked_visit_that_was_saved_meanwhile_is_only_a_duplicate_and_its_fil
     [done] = recovery.run()
     assert done.outcome in ("Retry", "Duplicate") and pending(blobs) == []
     assert len(store.visits) == 1
+
+
+def test_a_parked_visit_stuck_for_15_minutes_is_told_as_an_error_then_every_15_minutes_not_every_run(sample):
+    store, blobs, intake, _ = world()
+    now = [0.0]
+    recovery = ParkedRecovery(intake, blobs, clock=lambda: now[0])
+    visit = sample("urgent_mild")
+    store.fail_on_save = True
+    intake.receive(json.dumps(visit).encode())
+    with capture_logs() as logs:
+        for minutes in (0, 1, 5, 14, 15, 16, 29, 30, 31):
+            now[0] = minutes * 60
+            recovery.run()
+    events = [(e["event"], e.get("minutes_waiting")) for e in logs]
+    assert events == [("parked_not_saved_yet", None), ("parked_stuck", 15), ("parked_stuck", 30)]
+    [stuck] = [e for e in logs if e.get("minutes_waiting") == 15]
+    assert stuck["log_level"] == "error" and stuck["visit_id"] == visit["visit_id"]
+    assert stuck["step"] == "saving the visit in the database" and stuck["path"].startswith("_pending/")
 
 
 def test_nothing_parked_means_nothing_to_do_and_blob_down_is_not_an_error():

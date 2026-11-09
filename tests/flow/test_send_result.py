@@ -56,22 +56,22 @@ def test_results_are_sent_urgent_then_symptom_checker_then_on_demand_then_batch(
     assert world.store.symptom_checks[300]["stage"] == "delivered_symptom"
 
 
-def test_a_busy_backend_is_retried_every_15_minutes_and_after_ten_tries_the_result_fails(world):
-    visit, _ = world.add("urgent_mild", 1)
+def test_a_busy_backend_is_retried_10s_30s_2min_10min_then_every_15_minutes_with_no_limit_until_it_accepts(world):
+    visit, body = world.add("urgent_mild", 1)
     world.backend.raises = BackendUnavailable
     waits = []
-    for expected in ["retry"] * 9 + ["failed"]:
+    for _ in range(40):                                                # far more than any old limit
         [done] = world.sender().run()
-        assert done.outcome == expected
-        waits.append(visit["delivery_retry_at"] and visit["delivery_retry_at"] - world.clock)
-        world.clock += timedelta(minutes=14)
+        assert done.outcome == "retry"
+        wait = visit["delivery_retry_at"] - world.clock
+        waits.append(wait)
+        world.clock += wait - timedelta(seconds=1)
         assert world.sender().run() == []                              # not before its time
-        world.clock += timedelta(minutes=1)
-    assert waits == [timedelta(minutes=15)] * 9 + [None]
-    assert visit["stage"] == "failed" and visit["delivery_attempts"] == 10
-    assert visit["delivery_error"] == "BackendUnavailable"
+        world.clock += timedelta(seconds=1)
+    assert waits == [timedelta(seconds=s) for s in (10, 30, 120, 600)] + [timedelta(minutes=15)] * 36
+    assert visit["stage"] != "failed" and visit["delivery_error"] == "BackendUnavailable"
     world.backend.raises = None
-    assert world.sender().run() == [] and not world.backend.posts      # a failed result is not tried again
+    assert world.sender().run()[0].outcome == "delivered" and world.backend.posts == [body]      # it still gets there
 
 
 def test_a_result_the_backend_refuses_is_not_retried(world):
@@ -86,7 +86,7 @@ def test_a_result_sent_on_the_second_try_is_delivered(world):
     world.backend.raises = BackendUnavailable
     assert world.sender().run()[0].outcome == "retry"
     world.backend.raises = None
-    world.clock += timedelta(minutes=15)
+    world.clock += timedelta(seconds=10)
     assert world.sender().run()[0].outcome == "delivered" and world.backend.posts == [body]
     assert visit["stage"] == "delivered"
 

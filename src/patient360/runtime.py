@@ -37,6 +37,16 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+def raw_store(settings: Settings) -> BlobStore:
+    """Blob 1 (``p360-raw``), the way the settings say. Also used by ``tools/trace_visit.py`` to list ``_pending``."""
+    if settings.blob_raw_url:
+        return build_output_store(settings.blob_raw_url)
+    if settings.azure_storage_connection_string:
+        return build_blob_stores_from_connection_string(
+            settings.azure_storage_connection_string, settings.blob_input_container)
+    return build_blob_stores(settings.azure_storage_account_url, settings.blob_input_container)
+
+
 def build_services(
     settings: Settings, *, db: Database | None = None,
     blob: BlobStore | None = None, s3: S3Store | None = None, backend: BackendClient | None = None,
@@ -47,13 +57,7 @@ def build_services(
             password=settings.pg_password, sslmode=settings.pg_ssl_mode,
             options=f"-c search_path={settings.pg_schema}" if settings.pg_schema else None))
     if blob is None:
-        if settings.blob_raw_url:
-            blob = build_output_store(settings.blob_raw_url)
-        elif settings.azure_storage_connection_string:
-            blob = build_blob_stores_from_connection_string(
-                settings.azure_storage_connection_string, settings.blob_input_container)
-        else:
-            blob = build_blob_stores(settings.azure_storage_account_url, settings.blob_input_container)
+        blob = raw_store(settings)
     if s3 is None:
         s3 = S3Uploader(build_s3_client(settings.aws_region, settings.aws_endpoint_url), dict(settings.s3_buckets))
     if backend is None and settings.backend is not None:
