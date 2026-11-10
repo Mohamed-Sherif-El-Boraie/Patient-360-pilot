@@ -181,6 +181,15 @@ def test_a_symptom_check_started_again_is_success_with_the_ids_and_the_flag_fals
         "company_id": visit["company_id"], "source": 3, "symptom_flag": False}}
 
 
+def test_a_visit_id_that_belongs_to_another_patient_is_422_code_0_and_not_a_duplicate(rig, sample):
+    visit = sample("urgent_mild")
+    assert rig.post(visit, VISITS).status_code == 202
+    response = rig.post({**visit, "patient_id": visit["patient_id"] + 1}, VISITS)
+    assert response.status_code == 422 and response.json() == {"response": {
+        "code": 0, "message": "Invalid payload: patient_id: this visit_id already exists for a different patient_id"}}
+    assert rig.post(visit, VISITS).status_code == 200               # the real patient asking again: unchanged
+
+
 def test_a_visit_with_no_tests_and_no_descriptive_results_is_code_0_with_the_agreed_message(rig, sample):
     visit = sample("urgent_mild")
     visit["tests"], visit["descriptive_results"] = [], []

@@ -148,7 +148,8 @@ class Catalogue(Protocol):
 
 
 class VisitStore(Protocol):
-    def visit_exists(self, visit_id: int) -> bool: ...
+    def visit_patient_id(self, visit_id: int) -> int | None:
+        """The patient the stored visit belongs to, or ``None`` when we have no such visit."""
 
     def stored_visit(self, visit_id: int) -> StoredVisit:
         """The visit as received, with its raw bytes."""

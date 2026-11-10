@@ -65,6 +65,21 @@ def test_the_same_visit_again_is_a_retry_until_its_result_is_delivered_and_a_dup
     assert blobs.files == files_before and len(store.visits) == 1
 
 
+def test_the_same_visit_id_for_a_different_patient_is_refused_and_the_stored_visit_is_untouched(parts, sample):
+    intake, store, blobs = parts
+    visit = sample("urgent_mild")
+    intake.receive(raw(visit))
+    stored_before, files_before = dict(store.visits[visit["visit_id"]]), dict(blobs.files)
+    other = {**visit, "patient_id": visit["patient_id"] + 1}
+    outcome = intake.receive(raw(other))
+    assert isinstance(outcome, Rejected) and outcome.errors[0]["loc"] == ["patient_id"]
+    assert outcome.errors[0]["type"] == "visit_patient_mismatch"
+    assert str(visit["patient_id"]) not in json.dumps(outcome.errors)      # never names the other patient
+    assert store.visits[visit["visit_id"]] == stored_before and len(store.visits) == 1
+    assert [name for name in blobs.files if name not in files_before] == [
+        f"_rejected/urgent/2026/10/24/{visit['visit_id']}.json"]
+
+
 def test_a_retry_puts_a_result_whose_delivery_gave_up_back_on_the_queue(parts, sample):
     intake, store, _ = parts
     visit = sample("urgent_mild")

@@ -178,10 +178,10 @@ def test_duplicate_visit_is_refused(store, sample):
 
 def test_visit_exists_stored_visit_and_find_visit(store, sample):
     payload = sample("urgent_mild")
-    assert not store.visit_exists(payload["visit_id"])
+    assert store.visit_patient_id(payload["visit_id"]) is None
     raw = _save(store, payload, key="the-key")
 
-    assert store.visit_exists(payload["visit_id"])
+    assert store.visit_patient_id(payload["visit_id"]) == payload["patient_id"]
     stored = store.stored_visit(payload["visit_id"])
     assert (stored.visit_id, stored.idempotency_key, stored.source_id) == (payload["visit_id"], "the-key", 1)
     assert (stored.received_at, stored.raw) == (NOW, raw)

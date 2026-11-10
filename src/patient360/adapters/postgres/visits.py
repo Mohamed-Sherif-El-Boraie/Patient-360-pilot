@@ -23,9 +23,10 @@ def _text(value: Any) -> str | None:
 class VisitsMixin:
     _db: Database
 
-    def visit_exists(self, visit_id: int) -> bool:
+    def visit_patient_id(self, visit_id: int) -> int | None:
         with self._db.transaction() as conn:
-            return conn.execute("SELECT 1 FROM visits WHERE visit_id = %s", (visit_id,)).fetchone() is not None
+            row = conn.execute("SELECT patient_id FROM visits WHERE visit_id = %s", (visit_id,)).fetchone()
+        return row["patient_id"] if row else None
 
     def save_visit(self, payload: dict[str, Any], raw: bytes, idempotency_key: str, received_at: datetime,
                    read_from: Literal["blob", "postgresql"], processed: Prepared | None = None) -> None:

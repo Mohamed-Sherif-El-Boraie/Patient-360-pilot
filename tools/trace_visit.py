@@ -17,11 +17,11 @@ from psycopg.rows import dict_row
 
 from patient360.config.settings import load_settings
 
-LATEST = ("SELECT visit_id, source_id, tier, lane, stage, symptom_flag, created_at, updated_at "
+LATEST = ("SELECT visit_id, idempotency_key, source_id, tier, lane, stage, symptom_flag, created_at, updated_at "
           "FROM visits ORDER BY created_at DESC LIMIT 5")
 ONE = {
-    "visits": "SELECT visit_id, patient_id, company_id, source_id, tier, lane, stage, symptom_flag, "
-              "used_symptom_checker, created_at, updated_at FROM visits WHERE visit_id = %s",
+    "visits": "SELECT visit_id, idempotency_key, patient_id, company_id, source_id, tier, lane, stage, symptom_flag, "
+              "used_symptom_checker, symptom_received_at, created_at, updated_at FROM visits WHERE visit_id = %s",
     "record_processing (the queue: upload to S3, then deliver)":
         "SELECT analysis, step, status, attempts, claimed_by, next_retry_at, last_error, updated_at "
         "FROM record_processing WHERE visit_id = %s ORDER BY analysis",

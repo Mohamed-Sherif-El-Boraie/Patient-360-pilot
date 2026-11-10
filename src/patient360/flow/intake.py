@@ -169,8 +169,12 @@ class Intake:
                 return SymptomCheckerClosed(visit_id)
         else:
             with step("checking in the database whether the visit already exists", visit_id):
-                exists = self._store.visit_exists(visit_id)
-            if exists:
+                owner = self._store.visit_patient_id(visit_id)
+            if owner is not None and owner != patient_id:      # one visit belongs to one patient: nothing is touched
+                return self._reject(raw, [{
+                    "loc": ["patient_id"], "type": "visit_patient_mismatch",
+                    "msg": "this visit_id already exists for a different patient_id"}], received_at)
+            if owner is not None:
                 with step("answering a visit that came again", visit_id):
                     return self._visit_again(visit_id)
         # A symptom check has no company_id: it keeps the key its stored visit already got.

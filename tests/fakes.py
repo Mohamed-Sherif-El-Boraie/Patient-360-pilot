@@ -136,8 +136,9 @@ class FakeStore:
         self.batch_numbers = {"normal": 0, "critical": 0}
         self.batch_created_at = datetime(2026, 10, 25, 0, 30, tzinfo=UTC)   # the database time of a new batch
 
-    def visit_exists(self, visit_id):
-        return visit_id in self.visits
+    def visit_patient_id(self, visit_id):
+        visit = self.visits.get(visit_id)
+        return visit["payload"]["patient_id"] if visit else None
 
     def save_visit(self, payload, raw, idempotency_key, received_at, read_from, processed=None):
         if self.fail_on_save:
