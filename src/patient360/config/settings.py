@@ -19,7 +19,8 @@ RAW_URL = "BLOB_OUTPUT_URL_RAW"      # or only this: the SAS URL of Blob 1 (read
 OPTIONAL = (
     "APP_ENV", "TELEMETRY_ENABLED", "LOG_LEVEL", "LOG_FORMAT", "PGPORT", "PGSSLMODE", "AWS_REGION", "AWS_ROLE_ARN",
     "AWS_ENDPOINT_URL_S3", "BACKEND_CONNECT_TIMEOUT_S", "BACKEND_READ_TIMEOUT_S", "MAX_REQUEST_BYTES", "BATCH_SIZE",
-    "INBOUND_API_KEY", "JOB_INTERVAL_S", "WORK_INTERVAL_S", "PGSCHEMA", "DB_POOL_MAX_SIZE",
+    "INBOUND_API_KEY", "JOB_INTERVAL_S", "WORK_INTERVAL_S", "PGSCHEMA", "DB_POOL_MAX_SIZE", "AWS_ANSWER_TIMEOUT_S",
+    "AWS_CHECK_INTERVAL_S",
 )
 BACKEND_SETTINGS = (          # the wrapper: all six or none
     "BACKEND_BASE_URL", "BACKEND_CALLER_SOURCE", "BACKEND_CALLER_SOURCE_KEY", "BACKEND_CALLER_USER_NAME",
@@ -33,6 +34,8 @@ DEFAULT_BATCH_SIZE = 120
 MIN_BATCH_SIZE, MAX_BATCH_SIZE = 100, 50_000       # the limits of one Bedrock batch inference job in our project
 DEFAULT_DB_POOL_MAX_SIZE = 15                      # connections the app may hold open; Postgres allows far more
 MAX_DB_POOL_SIZE = 100
+DEFAULT_AWS_ANSWER_TIMEOUT_S = 5 * 60 * 60         # no AWS answer this long after the upload: the visit is failed
+DEFAULT_AWS_CHECK_INTERVAL_S = 60 * 60             # how often the database is asked for visits past that time
 DEFAULT_JOB_INTERVAL_S = 300                     # the batch trigger and the sweeps run every 5 minutes
 DEFAULT_WORK_INTERVAL_S = 5                        # uploading to S3 and delivering to the Backend run every 5 seconds
 
@@ -84,6 +87,8 @@ class Settings:
     job_interval_s: float = DEFAULT_JOB_INTERVAL_S
     work_interval_s: float = DEFAULT_WORK_INTERVAL_S
     db_pool_max_size: int = DEFAULT_DB_POOL_MAX_SIZE
+    aws_answer_timeout_s: float = DEFAULT_AWS_ANSWER_TIMEOUT_S
+    aws_check_interval_s: float = DEFAULT_AWS_CHECK_INTERVAL_S
 
 
 S3_SETTINGS = {
@@ -144,6 +149,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     job_interval = number("JOB_INTERVAL_S", DEFAULT_JOB_INTERVAL_S)
     work_interval = number("WORK_INTERVAL_S", DEFAULT_WORK_INTERVAL_S)
     db_pool_max_size = number("DB_POOL_MAX_SIZE", DEFAULT_DB_POOL_MAX_SIZE, int, high=MAX_DB_POOL_SIZE)
+    aws_answer_timeout = number("AWS_ANSWER_TIMEOUT_S", DEFAULT_AWS_ANSWER_TIMEOUT_S)
+    aws_check_interval = number("AWS_CHECK_INTERVAL_S", DEFAULT_AWS_CHECK_INTERVAL_S)
     if values["PGSCHEMA"] and not re.fullmatch(r"[a-z_][a-z0-9_]{0,62}", values["PGSCHEMA"]):
         problems.append("PGSCHEMA must be a lower-case name of letters, digits and underscores")
     secret = values["IDEMPOTENCY_KEY_SECRET"]
@@ -178,4 +185,5 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         blob_raw_url=values[RAW_URL] or None, pg_schema=values["PGSCHEMA"] or None,
         output_container_urls=tuple((s, values[n]) for s, n in OUTPUT_CONTAINER_SETTINGS.items() if values[n]),
         job_interval_s=job_interval, work_interval_s=work_interval, db_pool_max_size=db_pool_max_size,
+        aws_answer_timeout_s=aws_answer_timeout, aws_check_interval_s=aws_check_interval,
     )

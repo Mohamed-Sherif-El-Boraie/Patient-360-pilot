@@ -68,6 +68,19 @@ class StoredVisit:
     raw: bytes
 
 
+NO_ANSWER = "no_answer"     # ai_failures.aws_status of a visit we failed because AWS did not answer in time
+
+
+@dataclass(frozen=True)
+class Unanswered:
+    """A visit (or symptom check) uploaded to AWS that has no answer yet."""
+    visit_id: int
+    analysis: Literal["visit", "symptom"]
+    source: str                         # urgent, on-demand, symptom-checker or batch
+    lane: str
+    batch_id: str | None
+
+
 @dataclass(frozen=True)
 class Prepared:
     """A visit processed in memory (tier and the Bedrock request), so it is saved together with the visit."""
@@ -206,6 +219,14 @@ class VisitStore(Protocol):
     def failed_by_aws(self, visit_id: int, analysis: Literal["visit", "symptom"] = "visit") -> bool:
         """Is the only output of this analysis a failure AWS reported (a row in ``ai_failures``)? A late answer may
         still replace it: ``save_output`` then saves the answer and queues a new delivery."""
+
+    def visits_without_answer(self, sent_before: datetime, limit: int = 2000) -> list[Unanswered]:
+        """Visits and symptom checks still at stage ``sent_to_aws`` (``_symptom``) since before ``sent_before``, oldest
+        first: AWS has not answered them."""
+
+    def failed_by_timeout(self, visit_id: int, analysis: Literal["visit", "symptom"] = "visit") -> bool:
+        """Was this analysis failed by us because AWS did not answer in time (``ai_failures.aws_status`` is
+        ``no_answer``)? An answer that comes later is not delivered."""
 
     def stored_symptom_check(self, visit_id: int) -> StoredSymptomCheck:
         """The symptom check of a visit as received, with its raw bytes."""

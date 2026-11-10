@@ -130,6 +130,16 @@ def backend_output_path(lane: str, day: date, idempotency_key: str, batch_id: st
     return f"{folder}/{_key(idempotency_key)}/06-backend-output.json"
 
 
+QUARANTINE_FOLDER = "quarantine/late-answers"     # 7 parts deep: the Function app never forwards a file in here
+
+
+def quarantine_path(lane: str, day: date, idempotency_key: str) -> str:
+    """An answer that came after we had told the Backend the visit failed (no AWS answer in time): kept, never sent.
+    In the output container of its source."""
+    _check("batch", lane)
+    return f"{QUARANTINE_FOLDER}/{lane}/{_day(day)}/{_key(idempotency_key)}.json"
+
+
 @dataclass(frozen=True)
 class MergedOutput:
     """An answer file in an output container, read back from its path."""

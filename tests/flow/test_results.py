@@ -11,6 +11,7 @@ from patient360.flow.intake import Intake
 from patient360.flow.process import Processor
 from patient360.flow.results import OutputReceiver
 from patient360.flow.send_result import ResultSender
+from patient360.flow.unanswered import fail_unanswered
 from patient360.ports import BackendUnavailable
 from tests.fakes import FakeBackend, FakeBlobs, FakeCatalogue, FakeStore, FunctionApp
 
@@ -214,6 +215,128 @@ def test_a_batch_is_completed_only_when_every_visit_has_its_output(world):
         assert status() == expected
     receiver.receive_record("batch", path, json.dumps(record(visits[0]["idempotency_key"])))      # a resend
     assert status() == "completed"
+
+
+def test_a_failure_line_inside_the_merged_batch_file_is_handled_as_a_06_failed_line(world):
+    visits = world.add("batch_normal", 100, count=3)
+    [batch] = BatchTrigger(world.store, world.blobs, 3).run()
+    keys = [v["idempotency_key"] for v in visits]
+    path = world.write("batch", bpath(batch), record(keys[0]), failed_line(keys[1]), record(keys[2]))
+    assert [r.outcome for r in world.receiver().receive("batch", path)] == ["saved", "failed", "saved"]
+    assert [v["stage"] for v in visits] == ["post_processing", "failed", "post_processing"]
+    row = world.store.ai_failures[(101, "visit")]                    # the second visit added (ids start at 100)
+    assert row["failed_step"] == "output_guardrail" and row["aws_status"] == "failed" and row["batch_id"]
+    assert visits[1]["public_output"]["success"] is False and visits[0]["public_output"]["success"] is True
+    assert world.store.batches[batch.batch_id]["status"] == "partially_completed"      # as with any failed visit
+
+
+def test_a_merged_file_of_one_visit_with_status_failed_is_handled_as_a_06_failed_file(world):
+    [visit] = world.add("urgent_mild", 1)
+    key = visit["idempotency_key"]
+    path = world.write("urgent", vpath(key), failed_line(key))
+    assert [r.outcome for r in world.receiver().receive("urgent", path)] == ["failed"]
+    assert visit["stage"] == "failed" and visit["public_output"]["success"] is False
+    assert world.store.ai_failures[(1, "visit")]["failed_step"] == "output_guardrail"
+
+
+def test_a_merged_answer_with_status_failed_is_a_failure_even_when_it_has_a_model_answer(world):
+    [visit] = world.add("urgent_mild", 1)
+    key = visit["idempotency_key"]
+    path = world.write("urgent", vpath(key), {**record(key), "status": "failed"})
+    assert [r.outcome for r in world.receiver().receive("urgent", path)] == ["failed"]
+    assert visit["public_output"]["success"] is False
+
+
+FIVE_HOURS = 5 * 3600
+
+
+def sent_to_aws(visit, minutes_ago):
+    """The fake keeps no clock: the test says when the visit was uploaded."""
+    visit.update(stage="sent_to_aws", sent_at=NOW - timedelta(minutes=minutes_ago))
+
+
+def sweep(world, receiver):
+    return fail_unanswered(world.store, receiver, NOW, FIVE_HOURS)
+
+
+def test_a_visit_with_no_answer_after_5_hours_is_failed_and_the_wrapper_is_told_nothing_is_sent_again(world):
+    [old, recent] = world.add("urgent_mild", 1, count=2)
+    sent_to_aws(old, 6 * 60)
+    sent_to_aws(recent, 4 * 60)                                         # 4 hours: still waiting
+    kept = FakeBlobs()
+    receiver = OutputReceiver(world.store, world.catalogue, {"urgent": kept})
+    assert [i.visit_id for i in sweep(world, receiver)] == [1]
+    assert old["stage"] == "failed" and old["public_output"]["success"] is False
+    assert recent["stage"] == "sent_to_aws"
+    row = world.store.ai_failures[(1, "visit")]
+    assert row["aws_status"] == "no_answer" and row["failed_step"] is None and row["lane"] == "normal"
+    backend = FakeBackend()
+    ResultSender(world.store, backend, lambda: NOW).run()
+    assert [(p["success"], p["visit_id"]) for p in backend.posts] == [(False, 1)]
+    assert any(path.endswith("06-backend-output.json") for path in kept.files)
+    assert sweep(world, receiver) == []                                 # told once, not every sweep
+
+
+def test_every_unanswered_visit_of_a_batch_is_failed_after_5_hours_and_an_answered_one_is_left(world):
+    visits = world.add("batch_normal", 100, count=3)
+    [batch] = BatchTrigger(world.store, world.blobs, 3).run()
+    receiver = OutputReceiver(world.store, world.catalogue)
+    answered = world.write("batch", bpath(batch), record(visits[0]["idempotency_key"]))
+    assert [r.outcome for r in world.receiver().receive("batch", answered)] == ["saved"]
+    sent_to_aws(visits[1], 6 * 60)
+    sent_to_aws(visits[2], 6 * 60)
+    assert [i.visit_id for i in sweep(world, receiver)] == [101, 102]
+    assert [v["stage"] for v in visits] == ["post_processing", "failed", "failed"]
+    assert world.store.ai_failures[(101, "visit")]["source"] == "batch"
+    assert world.store.ai_failures[(101, "visit")]["batch_id"] == batch.batch_id
+    assert world.store.batches[batch.batch_id]["status"] == "partially_completed"
+
+
+def test_an_answer_that_comes_before_5_hours_is_saved_and_never_failed(world):
+    [visit] = world.add("urgent_mild", 1)
+    key = visit["idempotency_key"]
+    sent_to_aws(visit, 4 * 60)
+    receiver = OutputReceiver(world.store, world.catalogue)
+    assert [r.outcome for r in receiver.receive_record("urgent", vpath(key), json.dumps(record(key)))] == ["saved"]
+    sent_to_aws(visit, 6 * 60)
+    visit["stage"] = "post_processing"                                  # the answer moved it on: not unanswered
+    assert sweep(world, receiver) == [] and visit["public_output"]["success"] is True
+
+
+def test_a_late_answer_after_the_no_answer_failure_is_quarantined_and_never_sent(world):
+    [visit] = world.add("urgent_mild", 1)
+    key = visit["idempotency_key"]
+    sent_to_aws(visit, 6 * 60)
+    kept = FakeBlobs()
+    receiver = OutputReceiver(world.store, world.catalogue, {"urgent": kept})
+    sweep(world, receiver)
+    late = json.dumps(record(key))
+    assert [r.outcome for r in receiver.receive_record("urgent", vpath(key), late)] == ["quarantined"]
+    assert kept.files[f"quarantine/late-answers/normal/2026/10/24/{key}.json"] == late.encode()
+    assert visit["stage"] == "failed" and visit["public_output"]["success"] is False
+    backend = FakeBackend()
+    ResultSender(world.store, backend, lambda: NOW).run()
+    assert [p["success"] for p in backend.posts] == [False]                  # the answer was not delivered
+
+
+def test_a_late_failure_file_after_the_no_answer_failure_changes_nothing(world):
+    [visit] = world.add("urgent_mild", 1)
+    key = visit["idempotency_key"]
+    sent_to_aws(visit, 6 * 60)
+    receiver = OutputReceiver(world.store, world.catalogue)
+    sweep(world, receiver)
+    assert [r.outcome for r in receiver.receive_record("urgent", failed_path(key), json.dumps(AWS_FAILED))] == [
+        "duplicate"]
+    assert world.store.ai_failures[(1, "visit")]["aws_status"] == "no_answer"
+
+
+def test_an_answer_after_a_failure_aws_reported_is_still_delivered(world):
+    [visit] = world.add("urgent_mild", 1)
+    key = visit["idempotency_key"]
+    receiver = OutputReceiver(world.store, world.catalogue)
+    receiver.receive_record("urgent", failed_path(key), json.dumps(AWS_FAILED))
+    assert [r.outcome for r in receiver.receive_record("urgent", vpath(key), json.dumps(record(key)))] == ["saved"]
+    assert visit["public_output"]["success"] is True
 
 
 def test_one_bad_answer_in_a_batch_fails_only_that_visit(world):

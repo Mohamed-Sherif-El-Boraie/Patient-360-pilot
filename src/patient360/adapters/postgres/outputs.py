@@ -17,7 +17,7 @@ from patient360.adapters.postgres.db import (
     source_priority_sql,
 )
 from patient360.domain.builders.blocked import is_blocked_ai
-from patient360.ports import DeliveryUnit
+from patient360.ports import NO_ANSWER, DeliveryUnit, Unanswered
 
 BATCH_SOURCE_ID = 2
 ADVISORY_LEVELS = {"none", "discuss_with_doctor", "seek_care_promptly"}
@@ -30,7 +30,8 @@ _UNIT_RECEIVED = "(CASE WHEN rp.analysis = 'symptom' THEN v.symptom_received_at 
 
 # an output that is only a failure AWS reported: status error and a row in ai_failures
 _AWS_FAILED = ("SELECT 1 FROM ai_outputs o JOIN ai_failures f ON f.visit_id = o.visit_id AND f.analysis = o.analysis "
-               "WHERE o.visit_id = %s AND o.analysis = %s AND o.status = 'error'")
+               "WHERE o.visit_id = %s AND o.analysis = %s AND o.status = 'error' "
+               f"AND f.aws_status IS DISTINCT FROM '{NO_ANSWER}'")
 
 
 def _stage(name: str, analysis: Analysis) -> str:
@@ -166,6 +167,22 @@ class OutputsMixin:
     def failed_by_aws(self, visit_id: int, analysis: Analysis = "visit") -> bool:
         with self._db.transaction() as conn:
             return conn.execute(_AWS_FAILED, (visit_id, analysis)).fetchone() is not None
+
+    def failed_by_timeout(self, visit_id: int, analysis: Analysis = "visit") -> bool:
+        with self._db.transaction() as conn:
+            return conn.execute("SELECT 1 FROM ai_failures WHERE visit_id = %s AND analysis = %s AND aws_status = %s",
+                                (visit_id, analysis, NO_ANSWER)).fetchone() is not None
+
+    def visits_without_answer(self, sent_before: datetime, limit: int = 2000) -> list[Unanswered]:
+        with self._db.transaction() as conn:
+            rows = conn.execute(
+                "SELECT v.visit_id, v.stage = 'sent_to_aws_symptom' AS symptom, s.source_name, v.lane, v.batch_id "
+                "FROM visits v JOIN sources s USING (source_id) "
+                "WHERE v.stage IN ('sent_to_aws', 'sent_to_aws_symptom') AND v.updated_at < %s "
+                "ORDER BY v.updated_at LIMIT %s", (sent_before, limit)).fetchall()
+        return [Unanswered(r["visit_id"], "symptom" if r["symptom"] else "visit",
+                           "symptom-checker" if r["symptom"] else r["source_name"], r["lane"] or "normal",
+                           r["batch_id"]) for r in rows]
 
     def save_failed_output(self, visit_id: int, public_output: dict[str, Any], analysis: Analysis = "visit",
                            failure: dict[str, Any] | None = None) -> None:

@@ -14,6 +14,7 @@ from patient360.flow.process import Processor
 from patient360.flow.results import OutputReceiver
 from patient360.flow.send_result import ResultSender
 from patient360.flow.symptom import SymptomProcessor
+from patient360.flow.unanswered import UnansweredSweep
 from patient360.ports import VisitStore
 
 
@@ -30,3 +31,4 @@ class Services:
     receiver: OutputReceiver
     sender: ResultSender | None           # None when the Backend settings are not given: nothing is delivered
     parked: ParkedRecovery | None = None  # saves the payloads kept in Blob when a step of ours failed while receiving
+    unanswered: UnansweredSweep | None = None   # fails the visits AWS did not answer in time, once an hour

@@ -8,6 +8,7 @@ from patient360.domain.common.ids import format_batch_id
 from patient360.domain.rules.classify import LANE_BY_TIER
 from patient360.domain.rules.dispatch import SOURCE_PRIORITY
 from patient360.ports import (
+    NO_ANSWER,
     BatchVisit,
     BlobUnavailable,
     ClaimedBatch,
@@ -15,8 +16,11 @@ from patient360.ports import (
     S3Unavailable,
     StoredSymptomCheck,
     StoredVisit,
+    Unanswered,
     WorkUnit,
 )
+
+NO_TIME = datetime(1970, 1, 1, tzinfo=UTC)
 
 
 class FakeCatalogue:
@@ -269,7 +273,19 @@ class FakeStore:
 
     def failed_by_aws(self, visit_id, analysis="visit"):
         record = self._analysis_record(visit_id, analysis)
-        return "failed_output" in record and (visit_id, analysis) in self.ai_failures
+        row = self.ai_failures.get((visit_id, analysis))
+        return "failed_output" in record and row is not None and row["aws_status"] != NO_ANSWER
+
+    def failed_by_timeout(self, visit_id, analysis="visit"):
+        row = self.ai_failures.get((visit_id, analysis))
+        return row is not None and row["aws_status"] == NO_ANSWER
+
+    def visits_without_answer(self, sent_before, limit=2000):
+        """The visits at stage ``sent_to_aws`` whose test sets ``sent_at`` (the fake keeps no clock of its own)."""
+        return [Unanswered(visit_id, "visit", SOURCE_NAMES[v["payload"]["source"]], LANE_BY_TIER[v["tier"]],
+                           v.get("batch_id"))
+                for visit_id, v in sorted(self.visits.items(), key=lambda item: item[1].get("sent_at") or NO_TIME)
+                if v.get("stage") == "sent_to_aws" and v.get("sent_at") and v["sent_at"] < sent_before][:limit]
 
     def save_output(self, visit_id, internal_output, public_output, analysis="visit", internal_raw=None):
         record = self._analysis_record(visit_id, analysis)

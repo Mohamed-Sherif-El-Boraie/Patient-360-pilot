@@ -1,8 +1,9 @@
 """The background loops of the running service.
 
-The job loop (every ``job_interval_s``, 5 minutes) picks up what a restart cut short and starts the batches. The work
-loop (every ``work_interval_s``, 5 seconds) uploads to S3 and delivers to the Backend. A cycle is plain synchronous code
-so tests can call it; one failing job is logged and never stops the next.
+The job loop (every ``job_interval_s``, 5 minutes) picks up what a restart cut short and starts the batches; once an
+hour, inside it, the visits AWS did not answer in time are failed (``UnansweredSweep``). The work loop (every
+``work_interval_s``, 5 seconds) uploads to S3 and delivers to the Backend. A cycle is plain synchronous code so tests
+can call it; one failing job is logged and never stops the next.
 """
 from __future__ import annotations
 
@@ -31,11 +32,14 @@ def _run_each(jobs: list[Callable[[], Any]]) -> None:
 
 
 def run_job_cycle(services: Services, now: datetime) -> None:
-    _run_each([
+    jobs: list[Callable[[], Any]] = [
         lambda: process_stuck_visits(services.store, services.processor, now),
         lambda: process_waiting_symptoms(services.store, services.symptom_processor, now),
         services.batch_trigger.run,
-    ])
+    ]
+    if services.unanswered is not None:
+        jobs.append(lambda: services.unanswered.run(now))
+    _run_each(jobs)
 
 
 def run_work_cycle(services: Services, now: datetime) -> None:

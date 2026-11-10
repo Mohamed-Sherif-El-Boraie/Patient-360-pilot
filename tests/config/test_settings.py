@@ -152,6 +152,16 @@ def test_the_inbound_key_and_the_two_intervals():
             load_settings(env(**{name: "0"}))
 
 
+def test_the_aws_timeout_defaults_to_5_hours_checked_every_hour_and_both_must_be_positive():
+    default = load_settings(env())
+    assert (default.aws_answer_timeout_s, default.aws_check_interval_s) == (5 * 3600, 3600)
+    custom = load_settings(env(AWS_ANSWER_TIMEOUT_S="600", AWS_CHECK_INTERVAL_S="60"))
+    assert (custom.aws_answer_timeout_s, custom.aws_check_interval_s) == (600, 60)
+    for name in ("AWS_ANSWER_TIMEOUT_S", "AWS_CHECK_INTERVAL_S"):
+        with pytest.raises(SettingsError, match=name):
+            load_settings(env(**{name: "0"}))
+
+
 def test_the_database_pool_size_defaults_to_15_and_is_limited():
     assert load_settings(env()).db_pool_max_size == 15
     assert load_settings(env(DB_POOL_MAX_SIZE="30")).db_pool_max_size == 30

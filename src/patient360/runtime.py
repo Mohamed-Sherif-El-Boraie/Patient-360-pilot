@@ -27,6 +27,7 @@ from patient360.flow.process import Processor
 from patient360.flow.results import OutputReceiver
 from patient360.flow.send_result import ResultSender
 from patient360.flow.symptom import SymptomProcessor
+from patient360.flow.unanswered import UnansweredSweep
 from patient360.ports import BackendClient, BlobStore, S3Store
 from patient360.services import Services
 
@@ -70,6 +71,8 @@ def build_services(
     processor = Processor(store, catalogue, blob)
     intake = Intake(store, blob, settings.idempotency_key_secret.encode(), _now, settings.max_request_bytes,
                     prepare=processor.prepare)
+    receiver = OutputReceiver(
+        store, catalogue, {source: build_output_store(url) for source, url in settings.output_container_urls})
     return Services(
         settings=settings, db=db, store=store,
         intake=intake, parked=ParkedRecovery(intake, blob),
@@ -77,7 +80,7 @@ def build_services(
         symptom_processor=SymptomProcessor(store, blob),
         batch_trigger=BatchTrigger(store, blob, settings.batch_size),
         dispatcher=Dispatcher(store, blob, s3, _now),
-        receiver=OutputReceiver(
-            store, catalogue, {source: build_output_store(url) for source, url in settings.output_container_urls}),
+        receiver=receiver,
         sender=ResultSender(store, backend, _now) if backend is not None else None,
+        unanswered=UnansweredSweep(store, receiver, settings.aws_answer_timeout_s, settings.aws_check_interval_s),
     )

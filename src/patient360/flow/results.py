@@ -15,12 +15,12 @@ from pydantic import ValidationError
 from patient360.domain.builders.ai_input import SOURCE_NAMES, build_ai_input
 from patient360.domain.builders.backend_output import build_backend_output, build_failed_output, for_wrapper
 from patient360.domain.builders.blocked import blocked_ai, is_blocked
-from patient360.domain.common.blob_paths import MergedOutput, backend_output_path, parse_output_path
+from patient360.domain.common.blob_paths import MergedOutput, backend_output_path, parse_output_path, quarantine_path
 from patient360.domain.payload.ai_answer import AiAnswer
 from patient360.domain.payload.values import as_whole_number
 from patient360.domain.rules.classify import decide_tier, symptom_checker_open
 from patient360.domain.rules.packages import normalize_name, package_entries, select_packages
-from patient360.ports import BlobStore, BlobUnavailable, Catalogue, StoredVisit, VisitStore
+from patient360.ports import NO_ANSWER, BlobStore, BlobUnavailable, Catalogue, StoredVisit, Unanswered, VisitStore
 
 log = structlog.get_logger()
 
@@ -28,10 +28,11 @@ SYMPTOM_CHECKER = "symptom-checker"
 SYMPTOM_CHECKER_ID = 3
 Analysis = Literal["visit", "symptom"]
 Outcome = Literal["saved", "blocked", "duplicate", "unknown_visit", "source_mismatch", "invalid_output", "ignored",
-                  "failed", "unreadable"]
+                  "failed", "unreadable", "quarantined"]
 _KEY = re.compile(r"[A-Za-z0-9_-]{1,100}")      # a visit key, as the Function app checks it too
 _STEP_NAME = re.compile(r"[a-z0-9_]{1,40}")    # the AWS step in a 06-failed.json, kept only if it looks like a name
-AWS_STATUS_KEY = "status"                # AWS's own check of the record (ok, needs_review, failed): analysis only
+NO_ANSWER_TEXT = "No answer from AWS within the allowed time."
+AWS_STATUS_KEY = "status"              # AWS's own check of the record (ok, needs_review, failed): analysis only
 AWS_REVIEW_STATUS_KEY = "aws_review_status"   # its name here, so it is not mixed up with our own ``status``
 
 
@@ -143,6 +144,32 @@ class OutputReceiver:
         self._keep_backend_output(found, stored, failed)
         log.warning(reason, source=found.source, status="failed", **fields)
 
+    def fail_unanswered(self, item: Unanswered, now: datetime) -> None:
+        """AWS did not answer in time: the Backend is told the visit failed, as for an AWS failure. The failure is kept
+        in ``ai_failures`` with ``aws_status`` ``no_answer``, which makes a later answer go to the quarantine."""
+        stored = self._store.stored_visit(item.visit_id)
+        # a symptom check has the visit's key: its folder is the one AWS would have used
+        found = MergedOutput("failed", item.source, item.lane, now.date(), key=stored.idempotency_key,
+                             batch_id=item.batch_id)
+        failure = {"source": item.source, "lane": item.lane, "batch_id": item.batch_id, "failed_step": None,
+                   "error": NO_ANSWER_TEXT, "failed_at": now, "aws_status": NO_ANSWER,
+                   "record_id": stored.idempotency_key, "details": None}
+        self._fail(found, stored, item.analysis, "aws_no_answer", failure)
+        if item.batch_id:        # as when a failure line of the batch arrives: its visits are not all answered
+            self._store.set_batch_status(item.batch_id, "completed" if self._store.batch_fully_answered(
+                item.batch_id) else "partially_completed")
+
+    def _quarantine(self, found: MergedOutput, stored: StoredVisit, text: str) -> Received:
+        """An answer after the visit was failed for no answer: saved in the ``quarantine`` folder of the output
+        container of its source (a problem with Blob is only logged: nothing else is done with it)."""
+        if (store := self._outputs.get(found.source)) is not None:
+            try:
+                store.put(quarantine_path(found.lane, found.day, stored.idempotency_key), text.encode())
+            except BlobUnavailable:
+                log.warning("late_answer_not_kept", source=found.source)
+        log.warning("late_answer_quarantined", source=found.source, status="quarantined")
+        return Received(stored.idempotency_key, "quarantined")
+
     @staticmethod
     def _analysis(found: MergedOutput) -> Analysis:
         return "symptom" if found.source == SYMPTOM_CHECKER else "visit"
@@ -155,6 +182,9 @@ class OutputReceiver:
             record_id = record["recordId"]
         except (ValueError, KeyError):
             return self._ignore(found, None, "invalid_output")
+        if record.get(AWS_STATUS_KEY) == "failed":      # AWS gave up, in a merged file or a line: same as a 06-failed
+            return self._handle_failed(replace(found, kind="batch_failed" if found.kind == "batch_jsonl" else "failed"),
+                                       text)
         if AWS_STATUS_KEY in record:        # saved with the record under its new name; the Backend never gets it
             record[AWS_REVIEW_STATUS_KEY] = record.pop(AWS_STATUS_KEY)
         stored = self._store.find_visit(record_id) if isinstance(record_id, str) else None
@@ -163,6 +193,8 @@ class OutputReceiver:
         analysis = self._analysis(found)
         if analysis == "visit" and SOURCE_NAMES[stored.source_id] != found.source:
             return self._ignore(found, record_id, "source_mismatch")     # a symptom answer has the visit's key
+        if self._store.failed_by_timeout(stored.visit_id, analysis):     # told failed already: keep it, never send
+            return self._quarantine(found, stored, text)
         if self._store.has_output(stored.visit_id, analysis) and not self._store.failed_by_aws(
                 stored.visit_id, analysis):     # a late answer after an AWS failure is accepted (the wrapper sees both)
             return Received(record_id, "duplicate")
