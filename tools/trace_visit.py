@@ -6,6 +6,9 @@
     python /app/tools/trace_visit.py batches     # batch visits waiting, by stage, and the latest batches
     python /app/tools/trace_visit.py batch normal_000002   # one batch (no id: the latest): AWS answers, failures
     python /app/tools/trace_visit.py stuck       # what is waiting: deliveries, failed uploads, no AWS answer, _pending
+    python /app/tools/trace_visit.py waiting     # waiting for a full batch, or for AWS: visit id + idempotency key
+    python /app/tools/trace_visit.py parked      # the parked payloads with visit id, patient id and idempotency key
+    python /app/tools/trace_visit.py parked 2076319931 --save   # one of them: run the real intake, see the failing step
 """
 import sys
 
@@ -84,6 +87,24 @@ STUCK = {
 }
 
 
+WAITING = {
+    "batch visits waiting for a full batch, per lane (a batch is made at BATCH_SIZE)":
+        "SELECT v.lane, count(*) AS visits, min(v.created_at) AS oldest, max(v.created_at) AS newest "
+        "FROM visits v JOIN record_processing rp ON rp.visit_id = v.visit_id AND rp.analysis = 'visit' "
+        "AND rp.step = 'upload' AND rp.status = 'pending' WHERE v.source_id = 2 AND v.batch_id IS NULL "
+        "GROUP BY v.lane ORDER BY v.lane",
+    "the visits waiting for a full batch (oldest first, 100 shown)":
+        "SELECT v.visit_id, v.idempotency_key, v.lane, v.tier, v.created_at FROM visits v "
+        "JOIN record_processing rp ON rp.visit_id = v.visit_id AND rp.analysis = 'visit' "
+        "AND rp.step = 'upload' AND rp.status = 'pending' WHERE v.source_id = 2 AND v.batch_id IS NULL "
+        "ORDER BY v.created_at LIMIT 100",
+    "sent to AWS, no answer yet (oldest first)":
+        "SELECT v.visit_id, v.idempotency_key, s.source_name, v.lane, v.batch_id, v.stage, v.updated_at "
+        "FROM visits v JOIN sources s USING (source_id) WHERE v.stage IN ('sent_to_aws', 'sent_to_aws_symptom') "
+        "ORDER BY v.updated_at LIMIT 100",
+}
+
+
 def parked(settings) -> None:
     """The payloads kept in Blob (``_pending``) because a step of ours failed while receiving them."""
     from patient360.domain.common.blob_paths import PENDING_PREFIX
@@ -97,6 +118,50 @@ def parked(settings) -> None:
     print(f"  ({len(names)})")
     for name in names[:20]:
         print("  " + name)
+
+
+def parked_visits(settings, conn, visit_id=None, save=False) -> None:
+    """The parked payloads with the visit id and idempotency key (a parked visit is in no table yet). With
+    ``save`` the real intake runs on the one visit and prints the exact failing step: for the owner's console only,
+    the error text may hold data."""
+    import traceback
+
+    from patient360.domain.builders.ai_input import SOURCE_NAMES
+    from patient360.domain.common.blob_paths import PENDING_PREFIX
+    from patient360.domain.common.ids import make_idempotency_key
+    from patient360.domain.payload.validate import Invalid, validate_payload
+    from patient360.failure import StepFailed, error_name, where
+    from patient360.runtime import raw_store
+    blobs = raw_store(settings)
+    names = [n for n in blobs.list(PENDING_PREFIX) if visit_id is None or f"/{visit_id}-" in n]
+    rows = []
+    for name in names[:20]:
+        raw = blobs.get(name)
+        result = validate_payload(raw)
+        if isinstance(result, Invalid):
+            rows.append({"file": name, "invalid": [f"{e['loc']}: {e['msg']}" for e in result.errors][:5]})
+            continue
+        p = result.payload.model_dump()
+        stored = conn.execute("SELECT stage, idempotency_key FROM visits WHERE visit_id = %s",
+                              (p["visit_id"],)).fetchone()
+        key = (stored or {}).get("idempotency_key") if p["source"] == 3 else make_idempotency_key(
+            settings.idempotency_key_secret.encode(), patient_id=p["patient_id"], visit_id=p["visit_id"],
+            company_id=p["company_id"])
+        raw_copy = f"raw-jsons/{SOURCE_NAMES[p['source']]}/{'/'.join(name.split('/')[1:4])}/{key}.json"
+        rows.append({"visit_id": p["visit_id"], "patient_id": p["patient_id"], "company_id": p.get("company_id"),
+                     "source": SOURCE_NAMES[p["source"]], "idempotency_key": key,
+                     "in_database": stored["stage"] if stored else "NO", "file": name,
+                     "raw_copy_in_blob": blobs.get(raw_copy) is not None})
+    show("parked payloads (visit id and key)", rows)
+    if save and len(names) == 1:
+        from patient360.runtime import build_services
+        print("\n== running the real intake on it (it saves the visit when it works)")
+        try:
+            print("  outcome:", type(build_services(settings).intake.receive(blobs.get(names[0]), park=False)).__name__)
+        except StepFailed as failed:
+            print(f"  FAILED step={failed.step!r} error_type={error_name(failed.error)} where={where(failed.error)}")
+            print("  message:", str(failed.error)[:400])
+            traceback.print_exception(failed.error)
 
 
 def show(title, rows):
@@ -138,6 +203,14 @@ def main() -> None:
             for title, sql in STUCK.items():
                 show(title, conn.execute(sql).fetchall())
             parked(s)
+            return
+        if sys.argv[1] == "waiting":       # not stuck, just waiting: for a full batch, or for AWS
+            for title, sql in WAITING.items():
+                show(title, conn.execute(sql).fetchall())
+            return
+        if sys.argv[1] == "parked":        # parked payloads: visit id, patient, idempotency key; --save: why it fails
+            ids = [a for a in sys.argv[2:] if a.isdigit()]
+            parked_visits(s, conn, int(ids[0]) if ids else None, save="--save" in sys.argv)
             return
         if sys.argv[1] == "batch":         # one batch: has AWS answered, and did the answers reach the Backend?
             batch_id = sys.argv[2] if len(sys.argv) > 2 else conn.execute(

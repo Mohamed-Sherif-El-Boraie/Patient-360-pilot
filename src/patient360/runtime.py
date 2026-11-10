@@ -55,7 +55,8 @@ def build_services(
         db = Database.connect(make_conninfo(
             host=settings.pg_host, port=settings.pg_port, dbname=settings.pg_database, user=settings.pg_user,
             password=settings.pg_password, sslmode=settings.pg_ssl_mode,
-            options=f"-c search_path={settings.pg_schema}" if settings.pg_schema else None))
+            options=f"-c search_path={settings.pg_schema}" if settings.pg_schema else None),
+            max_size=settings.db_pool_max_size)
     if blob is None:
         blob = raw_store(settings)
     if s3 is None:

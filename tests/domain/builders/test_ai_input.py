@@ -141,6 +141,16 @@ def test_history_keeps_its_date_and_value_but_not_the_earlier_visit_id(sample):
     assert out["history"] and set(out["history"][0]) == {"history_date", "history_value"}
 
 
+def test_a_blank_repeat_of_an_earlier_visit_is_dropped_whichever_comes_first(sample):
+    raw = sample("batch_critical")
+    result = raw["tests"][3]["results"][0]
+    first = result["history"][0]
+    for points in ([first, {**first, "history_value": ""}], [{**first, "history_value": ""}, first]):
+        result["history"] = points
+        history = build_ai_input(raw).ai_json["tests"][3]["results"][0]["history"]
+        assert len(history) == 1 and history[0]["history_value"] == first["history_value"]
+
+
 def test_performed_test_names_include_numeric_and_descriptive_tests(sample):
     names = build_ai_input(sample("descriptive_only")).performed_test_names
     assert "B -Thalassemia genetic defects by PCR" in names

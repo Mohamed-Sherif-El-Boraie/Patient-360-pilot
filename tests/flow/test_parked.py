@@ -64,8 +64,20 @@ def test_a_parked_visit_stuck_for_15_minutes_is_told_as_an_error_then_every_15_m
     assert stuck["step"] == "saving the visit in the database" and stuck["path"].startswith("_pending/")
 
 
-def test_nothing_parked_means_nothing_to_do_and_blob_down_is_not_an_error():
+def test_nothing_parked_means_nothing_to_do():
     store, blobs, intake, recovery = world()
     assert recovery.run() == []
+
+
+def test_when_the_pending_folder_cannot_be_listed_it_is_told_as_an_error_once_then_every_15_minutes():
+    store, blobs, intake, _ = world()
+    now = [0.0]
+    recovery = ParkedRecovery(intake, blobs, clock=lambda: now[0])
     blobs.down = True
-    assert recovery.run() == []
+    with capture_logs() as logs:
+        for minutes in (0, 1, 14, 15, 16, 30):
+            now[0] = minutes * 60
+            assert recovery.run() == []
+    assert [e["event"] for e in logs] == ["parked_list_failed"] * 3
+    assert logs[0]["log_level"] == "error" and logs[0]["step"] == "listing _pending/ in p360-raw"
+    assert logs[0]["error_type"]

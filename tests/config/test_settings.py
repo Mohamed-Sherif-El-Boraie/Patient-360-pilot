@@ -151,3 +151,11 @@ def test_the_inbound_key_and_the_two_intervals():
         with pytest.raises(SettingsError, match=name):
             load_settings(env(**{name: "0"}))
 
+
+def test_the_database_pool_size_defaults_to_15_and_is_limited():
+    assert load_settings(env()).db_pool_max_size == 15
+    assert load_settings(env(DB_POOL_MAX_SIZE="30")).db_pool_max_size == 30
+    for bad in ("0", "101", "many"):
+        with pytest.raises(SettingsError, match="DB_POOL_MAX_SIZE"):
+            load_settings(env(DB_POOL_MAX_SIZE=bad))
+

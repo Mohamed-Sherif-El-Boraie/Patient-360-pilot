@@ -36,13 +36,15 @@ class ParkedRecovery:
         self._intake, self._blobs, self._clock = intake, blobs, clock
         self._first_seen: dict[str, float] = {}      # path -> when this instance first failed to save it
         self._last_alert: dict[str, float] = {}      # path -> when it was last told as an error
+        self._list_alert: float | None = None        # when "cannot list _pending" was last told as an error
 
     def run(self) -> list[Recovered]:
         """Save every parked payload. One that still fails stays for the next run; a file is removed only after its
         visit is saved (or was already)."""
         try:
             paths = self._blobs.list(PENDING_PREFIX)[:MAX_PER_RUN]
-        except BlobUnavailable:
+        except BlobUnavailable as error:       # no list permission on the SAS, or Blob is down: parked files wait
+            self._cannot_list(error)
             return []
         done = []
         for path in paths:
@@ -63,6 +65,14 @@ class ParkedRecovery:
             log.info("parked_saved", path=path, outcome=type(outcome).__name__)
             done.append(Recovered(path, type(outcome).__name__))
         return done
+
+    def _cannot_list(self, error: BaseException) -> None:
+        """Told as an ERROR the first time and every 15 minutes after, so a missing list permission is not silent."""
+        now = self._clock()
+        if self._list_alert is None or now - self._list_alert >= ALERT_AFTER_S:
+            self._list_alert = now
+            log.error("parked_list_failed", step=f"listing {PENDING_PREFIX} in p360-raw",
+                      error_type=error_name(error), where=where(error))
 
     def _not_saved(self, path: str, step: str, visit_id: int | None, error: BaseException) -> None:
         now = self._clock()

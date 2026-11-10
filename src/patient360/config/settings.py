@@ -19,7 +19,7 @@ RAW_URL = "BLOB_OUTPUT_URL_RAW"      # or only this: the SAS URL of Blob 1 (read
 OPTIONAL = (
     "APP_ENV", "TELEMETRY_ENABLED", "LOG_LEVEL", "LOG_FORMAT", "PGPORT", "PGSSLMODE", "AWS_REGION", "AWS_ROLE_ARN",
     "AWS_ENDPOINT_URL_S3", "BACKEND_CONNECT_TIMEOUT_S", "BACKEND_READ_TIMEOUT_S", "MAX_REQUEST_BYTES", "BATCH_SIZE",
-    "INBOUND_API_KEY", "JOB_INTERVAL_S", "WORK_INTERVAL_S", "PGSCHEMA",
+    "INBOUND_API_KEY", "JOB_INTERVAL_S", "WORK_INTERVAL_S", "PGSCHEMA", "DB_POOL_MAX_SIZE",
 )
 BACKEND_SETTINGS = (          # the wrapper: all six or none
     "BACKEND_BASE_URL", "BACKEND_CALLER_SOURCE", "BACKEND_CALLER_SOURCE_KEY", "BACKEND_CALLER_USER_NAME",
@@ -31,7 +31,9 @@ LOG_FORMATS = ("console", "json")
 MIN_SECRET_LENGTH = 16
 DEFAULT_BATCH_SIZE = 120
 MIN_BATCH_SIZE, MAX_BATCH_SIZE = 100, 50_000       # the limits of one Bedrock batch inference job in our project
-DEFAULT_JOB_INTERVAL_S = 300                       # the batch trigger and the sweeps run every 5 minutes
+DEFAULT_DB_POOL_MAX_SIZE = 15                      # connections the app may hold open; Postgres allows far more
+MAX_DB_POOL_SIZE = 100
+DEFAULT_JOB_INTERVAL_S = 300                     # the batch trigger and the sweeps run every 5 minutes
 DEFAULT_WORK_INTERVAL_S = 5                        # uploading to S3 and delivering to the Backend run every 5 seconds
 
 
@@ -81,6 +83,7 @@ class Settings:
     pg_schema: str | None = None                    # the schema that holds our tables (p360); None = the default one
     job_interval_s: float = DEFAULT_JOB_INTERVAL_S
     work_interval_s: float = DEFAULT_WORK_INTERVAL_S
+    db_pool_max_size: int = DEFAULT_DB_POOL_MAX_SIZE
 
 
 S3_SETTINGS = {
@@ -140,6 +143,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     batch_size = number("BATCH_SIZE", DEFAULT_BATCH_SIZE, int, low=MIN_BATCH_SIZE - 1, high=MAX_BATCH_SIZE)
     job_interval = number("JOB_INTERVAL_S", DEFAULT_JOB_INTERVAL_S)
     work_interval = number("WORK_INTERVAL_S", DEFAULT_WORK_INTERVAL_S)
+    db_pool_max_size = number("DB_POOL_MAX_SIZE", DEFAULT_DB_POOL_MAX_SIZE, int, high=MAX_DB_POOL_SIZE)
     if values["PGSCHEMA"] and not re.fullmatch(r"[a-z_][a-z0-9_]{0,62}", values["PGSCHEMA"]):
         problems.append("PGSCHEMA must be a lower-case name of letters, digits and underscores")
     secret = values["IDEMPOTENCY_KEY_SECRET"]
@@ -173,5 +177,5 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         inbound_api_key=values["INBOUND_API_KEY"] or None,
         blob_raw_url=values[RAW_URL] or None, pg_schema=values["PGSCHEMA"] or None,
         output_container_urls=tuple((s, values[n]) for s, n in OUTPUT_CONTAINER_SETTINGS.items() if values[n]),
-        job_interval_s=job_interval, work_interval_s=work_interval,
+        job_interval_s=job_interval, work_interval_s=work_interval, db_pool_max_size=db_pool_max_size,
     )

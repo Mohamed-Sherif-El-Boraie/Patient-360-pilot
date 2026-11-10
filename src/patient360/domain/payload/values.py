@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections import Counter
 from decimal import Decimal
 from html.parser import HTMLParser
 from typing import Any
@@ -37,6 +38,29 @@ def blank_to_none(value: Any) -> Any:
     if isinstance(value, str) and not value.strip():
         return None
     return value
+
+
+def is_blank(value: Any) -> bool:
+    """No value: null, ``""`` or spaces. ``0`` is a value."""
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
+def clean_history(points: Any) -> list[Any]:
+    """One parameter's history with one point per earlier visit. Where an earlier visit comes more than once, the
+    points without a value are dropped: they are worth nothing. Validation refuses two points that both have a value,
+    so ``first one wins`` only covers a payload saved before that rule. An earlier visit that comes once is kept as
+    sent, with or without a value."""
+    points = list(points or [])
+    counts = Counter(str(p.get("history_visit_id")) for p in points)
+    kept, seen = [], set()
+    for p in points:
+        key = str(p.get("history_visit_id"))
+        if p.get("history_visit_id") is not None and counts[key] > 1:      # no earlier-visit id: nothing to compare
+            if is_blank(p.get("history_value")) or key in seen:
+                continue
+            seen.add(key)
+        kept.append(p)
+    return kept
 
 
 _SPACED_NUMBER = re.compile(r"\s*([-+])?\s*(\d+)\s*(?:\.\s*(\d+))?\s*")

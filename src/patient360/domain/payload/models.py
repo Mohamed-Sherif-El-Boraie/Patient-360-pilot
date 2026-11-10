@@ -1,12 +1,14 @@
 """Strict payload models = the Backend -> AI contract (tests/fixtures/flow). Unknown keys are rejected."""
 from __future__ import annotations
 
+from collections import Counter
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, StringConstraints, model_validator
 
-from patient360.domain.payload.values import as_whole_number
+from patient360.domain.payload.values import as_whole_number, is_blank
 
+NO_RESULTS = "No lab results found: provide tests or descriptive_results"   # a visit with both lists empty
 Date = Annotated[str, StringConstraints(pattern=r"^\d{4}-\d{2}-\d{2}$")]
 Scalar = str | int | float   # a lab value or limit may arrive as text, decimal or integer
 # Every number the Backend sends may arrive as a number or as whole-number text ("123", "123.0"): as_whole_number first
@@ -24,6 +26,19 @@ class HistoryPoint(Strict):
     history_visit_id: BigId
     history_date: Date
     history_value: Scalar | None
+
+
+def _one_value_per_earlier_visit(points: list[HistoryPoint] | None) -> list[HistoryPoint] | None:
+    """An earlier visit may come more than once in one parameter's history only when the repeats have no value (they
+    are dropped later, see ``clean_history``). Two points with a value for one earlier visit cannot both be right."""
+    counts = Counter(p.history_visit_id for p in points or [] if not is_blank(p.history_value))
+    repeated = sorted(visit for visit, number in counts.items() if number > 1)
+    if repeated:
+        raise ValueError(f"earlier visit {', '.join(map(str, repeated))} is sent more than once with a value")
+    return points
+
+
+History = Annotated[list[HistoryPoint] | None, AfterValidator(_one_value_per_earlier_visit)]
 
 
 class Reference(Strict):
@@ -48,7 +63,7 @@ class Result(Strict):
     lab_flag: Literal["H", "L"] | None
     critical: Critical | None
     parameter_remark: str | None
-    history: list[HistoryPoint] | None = None
+    history: History = None
 
 
 class Test(Strict):
@@ -70,7 +85,7 @@ class DescriptiveResult(Strict):
     test_name: str
     result_date: Date | None
     text: str | None   # a blank arrives as null: no report written yet (the Backend's mistake); the visit is accepted
-    history: list[HistoryPoint] | None = None
+    history: History = None
 
 
 class PreparationAnswer(Strict):
@@ -97,6 +112,8 @@ class VisitPayload(Strict):
 
     @model_validator(mode="after")
     def _tests_are_unique(self) -> VisitPayload:
+        if not self.tests and not self.descriptive_results:
+            raise ValueError(NO_RESULTS)
         for group in (self.tests, self.descriptive_results):
             ids = [t.test_id for t in group]
             if len(ids) != len(set(ids)):

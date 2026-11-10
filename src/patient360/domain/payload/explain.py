@@ -57,6 +57,8 @@ def explain(obj: Any, loc: Sequence[Any], kind: str, msg: str) -> str:
         problem = _twice(node)
     elif not field:
         problem = msg.removeprefix("Value error, ")
+    elif kind == "value_error":          # a rule of ours on one field, worded with ids only (for example the history)
+        problem = f"{field}: {msg.removeprefix('Value error, ')}"
     elif kind == "missing":
         problem = f"{field} is required" + (" (send [] if there are none)" if field in LISTS else "")
     elif kind == "extra_forbidden":

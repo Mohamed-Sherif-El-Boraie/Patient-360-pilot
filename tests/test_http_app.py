@@ -181,6 +181,14 @@ def test_a_symptom_check_started_again_is_success_with_the_ids_and_the_flag_fals
         "company_id": visit["company_id"], "source": 3, "symptom_flag": False}}
 
 
+def test_a_visit_with_no_tests_and_no_descriptive_results_is_code_0_with_the_agreed_message(rig, sample):
+    visit = sample("urgent_mild")
+    visit["tests"], visit["descriptive_results"] = [], []
+    response = rig.post(visit)
+    assert response.status_code == 422 and response.json() == {"response": {
+        "code": 0, "message": "Input validation failed: No lab results found: provide tests or descriptive_results."}}
+
+
 def test_invalid_json_and_a_wrong_field_are_422_with_code_0_and_one_message_and_no_echo(rig, sample):
     response = rig.post(b"{not json at all SECRET-PATIENT")
     assert response.status_code == 422 and list(response.json()) == ["response"]

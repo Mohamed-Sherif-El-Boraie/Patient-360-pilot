@@ -9,6 +9,7 @@ from patient360.domain.common.compat import frozendict
 from patient360.domain.payload.values import (
     as_whole_number,
     blank_to_none,
+    clean_history,
     html_to_plain_text,
     remove_empty_values,
     tidy_number,
@@ -37,11 +38,12 @@ class AiInput:
 
 
 def _history(points: Any, *, plain_text: bool = False) -> list[dict[str, Any]]:
-    """History as the AI model gets it. ``plain_text``: the values are texts that may contain HTML tags."""
+    """History as the AI model gets it, one point per earlier visit (see ``clean_history``). ``plain_text``: the
+    values are texts that may contain HTML tags."""
     return [{"history_date": p.get("history_date"),
              "history_value": html_to_plain_text(p.get("history_value")) if plain_text
              else tidy_number(p.get("history_value"))}
-            for p in points or []]
+            for p in clean_history(points)]
 
 
 def _result(test: Mapping[str, Any], raw: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:

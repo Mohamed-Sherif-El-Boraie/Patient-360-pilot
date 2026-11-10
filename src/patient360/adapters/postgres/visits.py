@@ -11,7 +11,7 @@ from psycopg.types.json import Jsonb
 from patient360.adapters.postgres.db import Database, insert_payload, set_stage
 from patient360.adapters.postgres.work import WorkMixin
 from patient360.domain.builders.ai_input import build_ai_input
-from patient360.domain.payload.values import html_to_plain_text
+from patient360.domain.payload.values import clean_history, html_to_plain_text
 from patient360.domain.rules.logic import lab_flag_status
 from patient360.ports import Prepared, StoredSymptomCheck, StoredVisit
 
@@ -69,10 +69,11 @@ class VisitsMixin:
                 text = descriptive_text.get(test_id, "")      # "" = the Backend sent no text
                 conn.execute("INSERT INTO descriptive_results (visit_id, test_id, result_date, text_value, status) "
                              "VALUES (%s, %s, %s, %s, 'text')", (visit_id, test_id, item["result_date"], text))
-                for point in item.get("history") or []:
+                for point in clean_history(item.get("history")):
                     conn.execute(
                         "INSERT INTO descriptive_result_history (visit_id, test_id, company_id, history_visit_id, "
-                        "history_date, history_value) VALUES (%s, %s, %s, %s, %s, %s)",
+                        "history_date, history_value) VALUES (%s, %s, %s, %s, %s, %s) "
+                        "ON CONFLICT DO NOTHING",       # the same earlier visit sent twice: the first one is kept
                         (visit_id, test_id, number, point["history_visit_id"], point["history_date"],
                          _text(html_to_plain_text(point["history_value"]))))      # HTML in, plain text stored
             for answer in sent["visit_answer_list"]:
@@ -98,10 +99,11 @@ class VisitsMixin:
              _text(reference["low"]), _text(reference["high"]), reference["range"], flag.capitalize() if flag else None,
              _text(critical.get("low")), _text(critical.get("high")), critical.get("range_text"),
              judged["critical_direction"], judged["status"], judged["alert"], result["parameter_remark"]))
-        for point in result.get("history") or []:
+        for point in clean_history(result.get("history")):
             conn.execute(
                 "INSERT INTO lab_result_history (visit_id, test_id, parameter_id, company_id, history_visit_id, "
-                "history_date, history_value) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                "history_date, history_value) VALUES (%s, %s, %s, %s, %s, %s, %s) "
+                "ON CONFLICT DO NOTHING",       # the same earlier visit sent twice: the first one is kept
                 (visit_id, test_id, result["parameter_id"], company_id, point["history_visit_id"],
                  point["history_date"], _text(point["history_value"])))
 

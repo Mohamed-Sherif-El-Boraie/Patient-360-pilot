@@ -12,6 +12,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, Header, Request
 from fastapi.responses import JSONResponse
 
 from patient360.domain.common.blob_paths import SOURCES
+from patient360.domain.payload.models import NO_RESULTS
 from patient360.failure import error_name, report, where
 from patient360.flow.intake import (
     SYMPTOM_CHECKER,
@@ -49,6 +50,8 @@ def invalid_message(errors: list[dict[str, Any]]) -> str:
     parameter_id) and what it is. The errors never hold the input values (see ``validate_payload``). The same problem
     is told once (a ``str | int | float`` value fails three times)."""
     problems = list(dict.fromkeys(e.get("message") or f"{'.'.join(e['loc']) or 'body'}: {e['msg']}" for e in errors))
+    if problems == [NO_RESULTS]:          # a visit with nothing to analyse: its own wording, agreed with the senders
+        return f"Input validation failed: {NO_RESULTS}."
     more = f" (+{len(problems) - MAX_ERROR_ITEMS} more)" if len(problems) > MAX_ERROR_ITEMS else ""
     return f"Invalid payload: {'; '.join(problems[:MAX_ERROR_ITEMS])}{more}"[:MAX_ERROR_CHARS]
 

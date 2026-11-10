@@ -1,6 +1,30 @@
 import pytest
 
-from patient360.domain.payload.values import html_to_plain_text, parse_numeric, remove_empty_values, tidy_number
+from patient360.domain.payload.values import (
+    clean_history,
+    html_to_plain_text,
+    is_blank,
+    parse_numeric,
+    remove_empty_values,
+    tidy_number,
+)
+
+
+def test_blank_is_null_empty_text_or_spaces_but_not_zero():
+    assert all(is_blank(v) for v in (None, "", "  "))
+    assert not any(is_blank(v) for v in (0, "0", "x"))
+
+
+def test_clean_history_drops_blank_repeats_and_keeps_a_lone_blank_point():
+    def point(visit, value):
+        return {"history_visit_id": visit, "history_value": value}
+    assert clean_history([point(7, "35"), point(7, "")]) == [point(7, "35")]
+    assert clean_history([point(7, None), point(7, "35")]) == [point(7, "35")]
+    assert clean_history([point(7, ""), point(7, " ")]) == []                      # only blanks: nothing worth keeping
+    assert clean_history([point(7, ""), point(8, "30")]) == [point(7, ""), point(8, "30")]   # not repeated: as sent
+    assert clean_history([point(7, "1"), point(7, "2")]) == [point(7, "1")]       # refused at intake; first wins here
+    assert clean_history([point(None, "1"), point(None, "2")]) == [point(None, "1"), point(None, "2")]   # no id
+    assert clean_history(None) == []
 
 
 @pytest.mark.parametrize(("given", "tidy"), [

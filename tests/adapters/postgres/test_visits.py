@@ -117,6 +117,20 @@ def test_history_rows_carry_the_company_of_their_visit(db, store, sample):
     assert {h["company_id"] for h in seed.fetch(db, "SELECT company_id FROM lab_result_history")} == {15}
 
 
+def test_a_blank_repeat_of_an_earlier_visit_is_not_saved_and_the_real_value_is(db, store, sample):
+    lab = sample("urgent_mild")
+    result = lab["tests"][0]["results"][0]
+    point = {"history_visit_id": 7, "history_date": "2026-01-02", "history_value": "1"}
+    result["history"] = [{**point, "history_value": ""}, point]               # the blank comes first
+    descriptive = sample("descriptive_only")
+    descriptive["descriptive_results"][0]["history"] = [point, {**point, "history_value": ""}]
+    _save(store, lab)
+    _save(store, descriptive)
+    assert [h["history_value"] for h in seed.fetch(
+        db, "SELECT history_value FROM lab_result_history WHERE history_visit_id = 7")] == ["1"]
+    assert len(seed.fetch(db, "SELECT 1 FROM descriptive_result_history WHERE history_visit_id = 7")) == 1
+
+
 def test_unknown_company_test_and_parameter_get_placeholders(db, store, sample):
     payload = sample("urgent_mild")
     payload["company_id"] = 77
