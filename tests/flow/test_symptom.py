@@ -107,8 +107,10 @@ def test_a_symptom_check_makes_its_own_request_from_the_symptoms_the_results_and
     prompt, schema = PROMPT_AND_SCHEMA_BY_SOURCE["symptom-checker"]
     assert saved["model_input"]["system"][0]["text"] == prompt
     assert saved["model_input"]["output_config"]["format"]["schema"] == schema
-    path = f"processed/symptom-checker/normal/2026/10/24/{world.key}.json"
-    assert json.loads(world.blobs.files[path]) == single_visit_file(world.key, saved["model_input"])
+    path = f"normal/2026/10/24/{world.key}/02-processed.json"
+    symptom_container = world.blobs.for_source("symptom-checker").files      # not the visit's container: same key
+    assert json.loads(symptom_container[path]) == single_visit_file(world.key, saved["model_input"])
+    assert world.blobs.for_source("urgent").files[path] != symptom_container[path]     # the visit's own file stays
     assert "recordId" not in saved["model_input"]
 
 
@@ -125,7 +127,7 @@ def test_a_critical_visit_sends_its_symptom_check_to_the_critical_lane(sample):
     world.give_the_visit_its_result()
     world.receive_the_symptom_check()
     assert world.symptom_processor().process(VISIT_ID).lane == "critical"
-    assert f"processed/symptom-checker/critical/2026/10/24/{world.key}.json" in world.blobs.files
+    assert f"critical/2026/10/24/{world.key}/02-processed.json" in world.blobs.for_source("symptom-checker").files
 
 
 def test_without_a_visit_result_the_symptom_check_waits_and_is_picked_up_later(world):

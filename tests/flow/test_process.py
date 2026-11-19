@@ -42,7 +42,7 @@ def test_an_urgent_or_on_demand_visit_is_written_to_its_lane_folder(sample, name
     visit, key, store, blobs = receive(sample, name)
     outcome = Processor(store, catalogue_for(visit), blobs).process(visit["visit_id"])
     assert (outcome.tier, outcome.lane, outcome.read_from) == (tier, lane, "blob")
-    written = json.loads(blobs.files[f"processed/{folder}/{lane}/2026/10/24/{key}.json"])
+    written = json.loads(blobs.for_source(folder).files[f"{lane}/2026/10/24/{key}/02-processed.json"])
     saved = store.visits[visit["visit_id"]]
     assert written == single_visit_file(key, saved["model_input"])      # the file is flat, the database bare
     assert "modelInput" not in written and written["messages"] and written["recordId"] == key
@@ -67,7 +67,7 @@ def test_a_batch_visit_is_saved_in_the_database_only_until_its_batch_exists(samp
     visit, _, store, blobs = receive(sample, "batch_normal")
     outcome = Processor(store, catalogue_for(visit), blobs).process(visit["visit_id"])
     assert outcome.read_from == "postgresql" and store.visits[visit["visit_id"]]["stage"] == "processed"
-    assert not any(path.startswith("processed/") for path in blobs.files)
+    assert not any(c.files for c in blobs.by_source.values())     # a batch visit is written only when its batch exists
 
 
 def test_a_visit_with_only_descriptive_results_goes_to_the_critical_lane(sample):

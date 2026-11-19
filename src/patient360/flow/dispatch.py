@@ -83,14 +83,14 @@ class Dispatcher:
                 else processed_path(unit.source, unit.lane, day, unit.idempotency_key))
         if unit.read_from == "blob":
             try:
-                saved = self._blobs.get(path)
+                saved = self._blobs.for_source(unit.source).get(path)
             except BlobUnavailable:
                 saved = None
             if saved is not None:
                 return saved
         data = self._rebuild(unit)
         try:
-            self._blobs.put(path, data)
+            self._blobs.for_source(unit.source).put(path, data)
         except BlobUnavailable:
             pass
         return data

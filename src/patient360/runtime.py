@@ -10,6 +10,7 @@ import structlog
 from psycopg.conninfo import make_conninfo
 
 from patient360.adapters.blob import (
+    RoutedBlobStore,
     build_blob_stores,
     build_blob_stores_from_connection_string,
     build_output_store,
@@ -58,8 +59,9 @@ def build_services(
             password=settings.pg_password, sslmode=settings.pg_ssl_mode,
             options=f"-c search_path={settings.pg_schema}" if settings.pg_schema else None),
             max_size=settings.db_pool_max_size)
-    if blob is None:
-        blob = raw_store(settings)
+    if blob is None:       # p360-raw, plus the container of each source for the processed file
+        blob = RoutedBlobStore(raw_store(settings),
+                               {s: build_output_store(url) for s, url in settings.output_container_urls})
     if s3 is None:
         s3 = S3Uploader(build_s3_client(settings.aws_region, settings.aws_endpoint_url), dict(settings.s3_buckets))
     if backend is None and settings.backend is not None:

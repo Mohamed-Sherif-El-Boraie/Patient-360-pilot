@@ -52,9 +52,25 @@ class FakeCatalogue:
 
 
 class FakeBlobs:
-    def __init__(self, down: bool = False) -> None:
+    """``p360-raw`` itself; ``for_source(s)`` is the container ``p360-<s>`` (its own files, down when the parent is)."""
+
+    def __init__(self, down: bool = False, parent: FakeBlobs | None = None) -> None:
         self.files: dict[str, bytes] = {}
-        self.down = down
+        self._down, self._parent = down, parent
+        self.by_source: dict[str, FakeBlobs] = {}
+
+    @property
+    def down(self) -> bool:
+        return self._down or (self._parent is not None and self._parent.down)
+
+    @down.setter
+    def down(self, value: bool) -> None:
+        self._down = value
+
+    def for_source(self, source: str) -> FakeBlobs:
+        if self.down:
+            raise BlobUnavailable
+        return self.by_source.setdefault(source, FakeBlobs(parent=self))
 
     def put(self, path: str, data: bytes) -> bool:
         if self.down:

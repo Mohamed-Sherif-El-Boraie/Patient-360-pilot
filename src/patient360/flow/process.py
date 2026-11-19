@@ -27,12 +27,13 @@ class Processed:
     read_from: Literal["blob", "postgresql"]
 
 
-def write_model_input(blobs: BlobStore, path: str, record_id: str,
+def write_model_input(blobs: BlobStore, source: str, path: str, record_id: str,
                       model_input: dict[str, Any]) -> Literal["blob", "postgresql"]:
-    """Save the file AWS reads (the flat single-visit file, with the visit's key) in Blob. ``postgresql`` when Blob is
-    down: the database copy (the bare request) is then the one that is read."""
+    """Save the file AWS reads (the flat single-visit file, with the visit's key) in the Blob container of ``source``.
+    ``postgresql`` when that Blob is down or not configured: the database copy (the bare request) is then read."""
     try:
-        blobs.put(path, json.dumps(single_visit_file(record_id, model_input), ensure_ascii=False).encode())
+        blobs.for_source(source).put(
+            path, json.dumps(single_visit_file(record_id, model_input), ensure_ascii=False).encode())
     except BlobUnavailable:
         return "postgresql"
     return "blob"
@@ -63,8 +64,9 @@ class Processor:
         model_input = build_model_input(system_prompt=system_prompt, output_schema=output_schema,
                                         processed=patient_data)
         # A batch visit is not written here: its file goes inside its batch folder, once the batch exists.
+        source = SOURCE_NAMES[source_id]
         read_from = "postgresql" if source_id == BATCH else write_model_input(
-            self._blobs, processed_path(SOURCE_NAMES[source_id], lane, blob_day(received_at), idempotency_key),
+            self._blobs, source, processed_path(source, lane, blob_day(received_at), idempotency_key),
             idempotency_key, model_input)
         return Prepared(tier, model_input, read_from)
 

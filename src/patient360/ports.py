@@ -27,6 +27,10 @@ class BlobStore(Protocol):
     def get(self, path: str) -> bytes | None:
         """The file, or ``None`` if it is not there. Raises ``BlobUnavailable``."""
 
+    def for_source(self, source: str) -> BlobStore:
+        """The container ``p360-<source>`` (where the processed file and AWS's files live). Raises ``BlobUnavailable``
+        when that container is not configured."""
+
 
 class S3Unavailable(Exception):
     """S3 can not be reached, or refused the file (the dispatcher retries later)."""

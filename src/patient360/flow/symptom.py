@@ -46,7 +46,7 @@ class SymptomProcessor:
         model_input = build_model_input(system_prompt=system_prompt, output_schema=output_schema,
                                         processed=patient_data)
         path = processed_path(SOURCE, lane, blob_day(symptom.received_at), visit.idempotency_key)
-        read_from = write_model_input(self._blobs, path, visit.idempotency_key, model_input)
+        read_from = write_model_input(self._blobs, SOURCE, path, visit.idempotency_key, model_input)
         self._store.save_symptom_processed(visit_id, model_input, read_from)
         return Processed(visit_id, tier, lane, read_from)
 

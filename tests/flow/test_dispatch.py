@@ -47,7 +47,8 @@ def test_an_urgent_visit_goes_to_its_s3_bucket_with_the_same_bytes_as_blob(world
     [done] = world.dispatcher().run()
     assert done.outcome == "sent" and visit["stage"] == "sent_to_aws"
     s3_key = f"normal/2026/10/24/{key}/01-input.json"
-    assert world.s3.files[("urgent", s3_key)] == world.blobs.files[f"processed/urgent/normal/2026/10/24/{key}.json"]
+    urgent = world.blobs.for_source("urgent").files           # the container p360-urgent
+    assert world.s3.files[("urgent", s3_key)] == urgent[f"normal/2026/10/24/{key}/02-processed.json"]
 
 
 def test_the_order_is_urgent_then_symptom_checker_then_on_demand_then_batch(world):
@@ -75,24 +76,25 @@ def test_a_batch_uploads_its_jsonl_and_the_whole_batch_moves_on(world):
     [done] = world.dispatcher().run()
     assert done.unit.batch_id == batch.batch_id and world.store.batches[batch.batch_id]["status"] == "submitted"
     assert {v["stage"] for v in world.store.visits.values()} == {"sent_to_aws"}
-    jsonl_path = f"processed/batch/{batch.lane}-jsonls/2026/10/25/{batch.batch_id}.jsonl"
+    jsonl_path = f"{batch.lane}-jsonls/2026/10/25/{batch.batch_id}/02-processed.jsonl"
     s3_batch_key = f"{batch.lane}/2026/10/25/{batch.batch_id}/01-input.jsonl"
     assert world.s3.files[("batch", s3_batch_key)] \
-        == world.blobs.files[jsonl_path]
+        == world.blobs.for_source("batch").files[jsonl_path]
 
 
 @pytest.mark.parametrize("how", ["file_missing", "blob_down"])
 def test_a_lost_jsonl_is_rebuilt_from_the_visits_in_the_database(world, how):
     world.add("batch_normal", 100, count=3)
     [batch] = BatchTrigger(world.store, world.blobs, 3).run()
-    jsonl_path = f"processed/batch/{batch.lane}-jsonls/2026/10/25/{batch.batch_id}.jsonl"
-    original = world.blobs.files.pop(jsonl_path)
+    jsonl_path = f"{batch.lane}-jsonls/2026/10/25/{batch.batch_id}/02-processed.jsonl"
+    container = world.blobs.for_source("batch")
+    original = container.files.pop(jsonl_path)
     world.blobs.down = how == "blob_down"
     world.dispatcher().run()
     s3_key = ("batch", f"{batch.lane}/2026/10/25/{batch.batch_id}/01-input.jsonl")
     assert world.s3.files[s3_key] == original
     if how == "file_missing":
-        assert world.blobs.files[jsonl_path] == original     # and it is put back in Blob
+        assert container.files[jsonl_path] == original     # and it is put back in Blob
 
 
 def test_a_visit_saved_only_in_the_database_is_sent_from_there_and_put_back_in_blob(world):
@@ -101,13 +103,13 @@ def test_a_visit_saved_only_in_the_database_is_sent_from_there_and_put_back_in_b
     assert visit["processed_read_from"] == "postgresql"
     world.blobs.down = False
     world.dispatcher().run()
-    path = f"processed/urgent/normal/2026/10/24/{visit['idempotency_key']}.json"
-    assert world.s3.uploads and world.blobs.files[path] == next(iter(world.s3.files.values()))
+    path = f"normal/2026/10/24/{visit['idempotency_key']}/02-processed.json"
+    assert world.s3.uploads and world.blobs.for_source("urgent").files[path] == next(iter(world.s3.files.values()))
 
 
 def test_a_missing_blob_file_falls_back_to_the_database_copy(world):
     visit = world.add("urgent_mild", 1)
-    world.blobs.files.clear()
+    world.blobs.for_source("urgent").files.clear()
     world.dispatcher().run()
     sent = json.loads(next(iter(world.s3.files.values())))
     assert sent == single_visit_file(visit["idempotency_key"], visit["model_input"])

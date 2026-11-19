@@ -315,7 +315,8 @@ def test_a_visit_is_saved_already_processed_in_one_database_write(sample):
     assert outcome == Accepted(visit["visit_id"], key_of(visit), visit["source"], processed=True)
     saved = store.visits[visit["visit_id"]]
     assert saved["stage"] == "processed" and saved["tier"] and saved["model_input"]
-    assert any(name.startswith("processed/") for name in blobs.files)      # the file AWS reads is in Blob too
+    assert any(name.endswith("/02-processed.json") for name in blobs.for_source("urgent").files)   # in p360-urgent
+    assert not any("processed" in name for name in blobs.files)                                    # not in p360-raw
 
 
 def test_a_visit_whose_processing_failed_is_still_accepted_and_left_for_the_background(sample):

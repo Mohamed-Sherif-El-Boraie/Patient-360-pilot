@@ -48,10 +48,12 @@ def test_a_full_batch_writes_one_file_per_visit_and_the_jsonl(sample, parts):
     lane = batch.lane
     assert batch.batch_id == f"{lane}_000001" and batch.read_from == "blob"
     keys = [v["idempotency_key"] for v in store.visits.values()]
+    container = blobs.for_source("batch").files          # p360-batch, not p360-raw
     for key in keys:
-        assert f"processed/batch/{lane}/2026/10/25/{batch.batch_id}/{key}.json" in blobs.files
-    jsonl_path = f"processed/batch/{lane}-jsonls/2026/10/25/{batch.batch_id}.jsonl"
-    lines = [json.loads(line) for line in blobs.files[jsonl_path].decode().splitlines()]
+        assert f"{lane}/2026/10/25/{batch.batch_id}/{key}/02-processed.json" in container
+    jsonl_path = f"{lane}-jsonls/2026/10/25/{batch.batch_id}/02-processed.jsonl"
+    assert not any(name.startswith("processed/") for name in blobs.files)
+    lines = [json.loads(line) for line in container[jsonl_path].decode().splitlines()]
     assert sorted(line["recordId"] for line in lines) == sorted(keys)
     assert all(set(line) == {"recordId", "modelInput"} for line in lines)
     assert all("recordId" not in line["modelInput"] for line in lines)      # never wrapped twice
@@ -66,7 +68,7 @@ def test_the_default_batch_is_120_visits(sample, parts):
     assert BatchTrigger(store, blobs).run() == []
     add_visits(sample, store, blobs, "batch_normal", 2000, 1)
     [batch] = BatchTrigger(store, blobs).run()
-    jsonl = blobs.files[f"processed/batch/{batch.lane}-jsonls/2026/10/25/{batch.batch_id}.jsonl"]
+    jsonl = blobs.for_source("batch").files[f"{batch.lane}-jsonls/2026/10/25/{batch.batch_id}/02-processed.jsonl"]
     assert len(jsonl.decode().splitlines()) == 120
 
 

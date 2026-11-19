@@ -54,7 +54,8 @@ def _batch_rules(source: str, batch_id: str | None) -> None:
         raise ValueError("only a batch file has a batch_id")
 
 
-# p360-raw has three main folders: raw-jsons (a folder per source inside), _rejected and processed.
+# p360-raw has these main folders: raw-jsons (a folder per source inside), _rejected and _pending. The processed file is
+# not here: it goes to the container of its source (see ``processed_path``).
 RAW_FOLDER = "raw-jsons"
 
 
@@ -88,20 +89,24 @@ def pending_path(day: date, visit_id: int, raw_sha256_hex: str) -> str:
     return f"{PENDING_PREFIX}{_day(day)}/{visit_id}-{_name(raw_sha256_hex[:16], 'hash')}.json"
 
 
+PROCESSED_FILE = "02-processed"       # what we prepared for the model: next to AWS's 01-input and its 05/06 files
+
+
 def processed_path(source: str, lane: str, day: date, idempotency_key: str, batch_id: str | None = None) -> str:
-    """Azure Blob 1: the JSON prepared for the AI model. A batch visit sits inside its batch folder."""
+    """The JSON prepared for the AI model, in the visit's folder of the container of its source (``p360-<source>``, so
+    the source is not in the path). A batch visit sits inside its batch folder, next to ``06-backend-output.json``."""
     _check(source, lane)
     _batch_rules(source, batch_id)
     key = _key(idempotency_key)
     if batch_id is not None:
-        return f"processed/batch/{lane}/{_day(day)}/{_name(batch_id, 'batch_id')}/{key}.json"
-    return f"processed/{source}/{lane}/{_day(day)}/{key}.json"
+        return f"{lane}/{_day(day)}/{_name(batch_id, 'batch_id')}/{key}/{PROCESSED_FILE}.json"
+    return f"{lane}/{_day(day)}/{key}/{PROCESSED_FILE}.json"
 
 
 def batch_jsonl_path(lane: str, day: date, batch_id: str) -> str:
-    """Azure Blob 1: the 100-visit file for AWS."""
+    """The 100-visit file for AWS, in ``p360-batch``, next to AWS's ``05-output-merged.jsonl``."""
     _check("batch", lane)
-    return f"processed/batch/{lane}-jsonls/{_day(day)}/{_name(batch_id, 'batch_id')}.jsonl"
+    return f"{lane}-jsonls/{_day(day)}/{_name(batch_id, 'batch_id')}/{PROCESSED_FILE}.jsonl"
 
 
 OUTPUT_FILE = "05-output-merged"      # the phase file AWS writes last: the English and Arabic answer together

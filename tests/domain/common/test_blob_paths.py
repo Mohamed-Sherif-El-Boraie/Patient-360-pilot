@@ -39,18 +39,18 @@ def test_a_rejected_payload_is_named_by_its_visit_id():
     assert rejected_path("urgent", DAY, 2070000003) == "_rejected/urgent/2026/10/24/2070000003.json"
 
 
-def test_processed_files_go_to_the_lane_folder():
-    assert processed_path("on-demand", "normal", DAY, KEY) == f"processed/on-demand/normal/2026/10/24/{FILE}"
-    assert processed_path("urgent", "critical", DAY, KEY) == f"processed/urgent/critical/2026/10/24/{FILE}"
-    assert processed_path("symptom-checker", "normal", DAY, KEY) == (
-        f"processed/symptom-checker/normal/2026/10/24/{FILE}")
+def test_the_processed_file_sits_in_the_visit_folder_of_its_source_container():
+    # the source is the container (p360-<source>), so it is not in the path; the file is next to 05-output-merged.json
+    assert processed_path("on-demand", "normal", DAY, KEY) == f"normal/2026/10/24/{KEY}/02-processed.json"
+    assert processed_path("urgent", "critical", DAY, KEY) == f"critical/2026/10/24/{KEY}/02-processed.json"
+    assert processed_path("symptom-checker", "normal", DAY, KEY) == f"normal/2026/10/24/{KEY}/02-processed.json"
 
 
 def test_a_batch_visit_is_inside_its_batch_folder_and_the_batch_has_a_jsonl():
     assert processed_path("batch", "normal", DAY, KEY, batch_id="normal_000001") == (
-        f"processed/batch/normal/2026/10/24/normal_000001/{FILE}")
+        f"normal/2026/10/24/normal_000001/{KEY}/02-processed.json")     # beside 06-backend-output.json
     assert batch_jsonl_path("critical", DAY, "critical_000007") == (
-        "processed/batch/critical-jsonls/2026/10/24/critical_000007.jsonl")
+        "critical-jsonls/2026/10/24/critical_000007/02-processed.jsonl")     # beside 05-output-merged.jsonl
 
 
 def test_the_merged_output_lives_in_the_output_container_of_its_source():

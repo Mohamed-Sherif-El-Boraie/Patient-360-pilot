@@ -51,8 +51,9 @@ class BatchTrigger:
                  for v in claimed.visits}
         files[batch_jsonl_path(lane, day, claimed.batch_id)] = build_jsonl(claimed.visits)
         try:
+            container = self._blobs.for_source("batch")        # p360-batch
             for path, text in files.items():
-                self._blobs.put(path, text.encode())
+                container.put(path, text.encode())
             read_from = "blob"
         except BlobUnavailable:
             read_from = "postgresql"
