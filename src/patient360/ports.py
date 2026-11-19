@@ -285,7 +285,8 @@ class VisitStore(Protocol):
         ``ok`` otherwise, also while the visit has no result yet (the flag is not known: the check waits for it)."""
 
     def save_symptom_check(self, payload: dict[str, Any], raw: bytes, received_at: datetime,
-                           read_from: Literal["blob", "postgresql"]) -> None: ...
+                           read_from: Literal["blob", "postgresql"]) -> bool:
+        """``False`` when the symptom check of this visit was already received (nothing is saved)."""
 
     def save_rejected(self, source_id: int | None, raw: bytes, errors: list[dict[str, Any]],
                       blob_path: str | None) -> None: ...

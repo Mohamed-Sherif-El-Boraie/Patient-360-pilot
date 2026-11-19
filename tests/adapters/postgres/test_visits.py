@@ -235,6 +235,17 @@ def test_save_and_read_symptom_check(db, store, sample):
     assert (check.visit_id, check.received_at, check.raw) == (payload["visit_id"], NOW, raw)
 
 
+def test_only_the_first_of_two_symptom_saves_wins(db, store):
+    """Two requests can both read 'ok' before either saves: the save itself must claim the visit (pentest 4.2)."""
+    seed.add_visit(db, 10, patient_id=500)
+    first = store.save_symptom_check({"visit_id": 10, "patient_symptoms": "first"}, b'{"a": 1}', NOW, "blob")
+    second = store.save_symptom_check({"visit_id": 10, "patient_symptoms": "second"}, b'{"a": 2}', NOW, "blob")
+
+    assert (first, second) == (True, False)
+    assert seed.fetch(db, "SELECT patient_symptoms FROM visits") == [{"patient_symptoms": "first"}]
+    assert seed.fetch(db, "SELECT count(*) AS n FROM record_payloads WHERE analysis = 'symptom'") == [{"n": 1}]
+
+
 def test_stored_symptom_check_missing(db, store):
     seed.add_visit(db, 10)
     with pytest.raises(LookupError):

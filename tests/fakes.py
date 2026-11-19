@@ -406,8 +406,11 @@ class FakeStore:
     def save_symptom_check(self, payload, raw, received_at, read_from):
         if self.fail_on_save:
             raise RuntimeError("database down")
+        if payload["visit_id"] in self.symptom_checks:
+            return False
         self.symptom_checks[payload["visit_id"]] = {"payload": payload, "raw": raw, "received_at": received_at,
                                                     "read_from": read_from, "stage": "received_symptom"}
+        return True
 
     def save_rejected(self, source_id, raw, errors, blob_path):
         self.rejected.append({"source_id": source_id, "raw": raw, "errors": errors, "blob_path": blob_path})

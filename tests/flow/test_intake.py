@@ -242,6 +242,16 @@ def test_a_symptom_check_started_again_is_a_success_that_says_the_checker_is_clo
     assert intake.receive(raw(symptom_for(visit, sample))) == expected         # delivered: the same answer, no error
 
 
+def test_a_symptom_check_that_lost_the_race_is_answered_as_one_that_came_again(parts, sample):
+    """Both requests read 'ok'; the other one saved first. This one must not be Accepted (no second processing)."""
+    intake, store, _ = parts
+    visit = sample("urgent_mild")
+    intake.receive(raw(visit))
+    assert isinstance(intake.receive(raw(symptom_for(visit, sample))), Accepted)     # the winner
+    store.symptom_check_state = lambda visit_id, patient_id: "ok"                   # the loser still read 'ok'
+    assert isinstance(intake.receive(raw(symptom_for(visit, sample))), SymptomAgain)
+
+
 def test_a_symptom_check_for_a_stored_visit_is_accepted_once(parts, sample):
     intake, store, blobs = parts
     visit = sample("urgent_mild")

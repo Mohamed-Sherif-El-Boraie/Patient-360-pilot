@@ -156,14 +156,21 @@ class VisitsMixin:
         return "closed" if row["symptom_flag"] is False else "ok"       # no result yet (NULL): still open
 
     def save_symptom_check(self, payload: dict[str, Any], raw: bytes, received_at: datetime,
-                           read_from: Literal["blob", "postgresql"]) -> None:
-        """The symptom text, its arrival time, stage ``received_symptom`` and the raw bytes, in one transaction."""
+                           read_from: Literal["blob", "postgresql"]) -> bool:
+        """The symptom text, its arrival time, stage ``received_symptom`` and the raw bytes, in one transaction.
+        ``False`` (nothing saved) when another request claimed the visit first: the UPDATE is the lock, so two
+        requests that both read 'ok' cannot both save."""
         visit_id = payload["visit_id"]
         with self._db.transaction() as conn:
-            conn.execute("UPDATE visits SET patient_symptoms = %s, symptom_received_at = %s WHERE visit_id = %s",
-                         (payload["patient_symptoms"], received_at, visit_id))
+            claimed = conn.execute(
+                "UPDATE visits SET patient_symptoms = %s, symptom_received_at = %s "
+                "WHERE visit_id = %s AND symptom_received_at IS NULL",
+                (payload["patient_symptoms"], received_at, visit_id)).rowcount
+            if not claimed:
+                return False
             set_stage(conn, visit_id, "received_symptom")
             insert_payload(conn, visit_id, "symptom", "raw", json.loads(raw), raw_bytes=raw)
+            return True
 
     def stored_symptom_check(self, visit_id: int) -> StoredSymptomCheck:
         with self._db.transaction() as conn:

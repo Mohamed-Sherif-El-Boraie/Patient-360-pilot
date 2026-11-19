@@ -187,7 +187,8 @@ class Intake:
         processed = None
         if source_id == SYMPTOM_CHECKER:
             with step("saving the symptom check in the database", visit_id):
-                self._store.save_symptom_check(payload, raw, received_at, read_from)
+                if not self._store.save_symptom_check(payload, raw, received_at, read_from):
+                    return self._symptom_again(visit_id)      # another request saved it between our read and save
         else:
             processed = self._prepare_visit(source_id, key, raw, received_at)
             with step("saving the visit in the database", visit_id):
