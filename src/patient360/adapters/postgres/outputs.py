@@ -4,6 +4,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+import structlog
+from psycopg.types.json import Jsonb
+
 from patient360.adapters.postgres.db import (
     CLAIM_TIMEOUT,
     Analysis,
@@ -16,9 +19,12 @@ from patient360.adapters.postgres.db import (
     set_stage,
     source_priority_sql,
 )
+from patient360.adapters.postgres.pricing import ARABIC_MODEL_ID, call_cost, price_of
 from patient360.domain.builders.blocked import is_blocked_ai
+from patient360.domain.builders.guardrail import guardrail_checks
 from patient360.ports import NO_ANSWER, DeliveryUnit, Unanswered
 
+log = structlog.get_logger()
 BATCH_SOURCE_ID = 2
 ADVISORY_LEVELS = {"none", "discuss_with_doctor", "seek_care_promptly"}
 CHANGE_TYPES = {"kept", "added", "removed"}
@@ -45,6 +51,46 @@ def _text(value: dict[str, Any] | None, language: str) -> str | None:
 def _allowed(value: dict[str, Any] | None, allowed: set[str]) -> dict[str, Any] | None:
     """The {en, ar} value when its English text is one of the ``allowed`` words (any case), else ``None``."""
     return value if value and str(value.get("en", "")).strip().lower() in allowed else None
+
+
+def _insert_model_call(conn, visit_id: int, analysis: Analysis, purpose: str, model: str, mode: str,
+                       call: dict[str, Any]) -> None:
+    """One ``ai_model_calls`` row: the tokens AWS reported and the cost at the price valid now (NULL if unpriced)."""
+    usage = call.get("usage") or {}
+    written = usage.get("cache_creation") or {}      # the cache-write tokens, split by time to live
+    cost = call_cost(usage, price_of(conn, model, mode)) or {}
+    conn.execute(
+        "INSERT INTO ai_model_calls (visit_id, analysis, purpose, model_id, mode, input_tokens, output_tokens, "
+        "cache_creation_input_tokens, cache_creation_5m_input_tokens, cache_creation_1h_input_tokens, "
+        "cache_read_input_tokens, stop_reason, stop_sequence, input_cost_usd, output_cost_usd, cache_cost_usd, "
+        "total_cost_usd, price_input_per_1m, price_output_per_1m) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        (visit_id, analysis, purpose, model, mode, usage.get("input_tokens"), usage.get("output_tokens"),
+         usage.get("cache_creation_input_tokens"), written.get("ephemeral_5m_input_tokens"),
+         written.get("ephemeral_1h_input_tokens"), usage.get("cache_read_input_tokens"),
+         call.get("stop_reason"), call.get("stop_sequence"), cost.get("input_cost_usd"), cost.get("output_cost_usd"),
+         cost.get("cache_cost_usd"), cost.get("total_cost_usd"), cost.get("price_input_per_1m"),
+         cost.get("price_output_per_1m")))
+
+
+def _insert_guardrail_check(conn, visit_id: int, analysis: Analysis, check: dict[str, Any]) -> None:
+    """One ``guardrail_checks`` row and its ``guardrail_findings`` (the assessment as AWS gave it is kept as jsonb)."""
+    row = conn.execute(
+        "INSERT INTO guardrail_checks (visit_id, analysis, direction, guardrail_id, action, bypassed, latency_ms, "
+        "text_chars_guarded, text_chars_total, topic_policy_units, content_policy_units, word_policy_units, "
+        "sensitive_info_policy_units, sensitive_info_policy_free_units, contextual_grounding_policy_units, raw) "
+        "VALUES (%(visit_id)s, %(analysis)s, %(direction)s, %(guardrail_id)s, %(action)s, %(bypassed)s, "
+        "%(latency_ms)s, %(text_chars_guarded)s, %(text_chars_total)s, %(topic_policy_units)s, "
+        "%(content_policy_units)s, %(word_policy_units)s, %(sensitive_info_policy_units)s, "
+        "%(sensitive_info_policy_free_units)s, %(contextual_grounding_policy_units)s, %(raw)s) "
+        "ON CONFLICT DO NOTHING RETURNING guardrail_check_id",
+        {**check, "visit_id": visit_id, "analysis": analysis, "raw": Jsonb(check["raw"])}).fetchone()
+    for finding in check["findings"] if row else []:
+        conn.execute(
+            "INSERT INTO guardrail_findings (guardrail_check_id, policy, name, type, confidence, filter_strength, "
+            "action, raw) VALUES (%(check)s, %(policy)s, %(name)s, %(type)s, %(confidence)s, %(filter_strength)s, "
+            "%(action)s, %(raw)s)",
+            {**finding, "check": row["guardrail_check_id"], "raw": Jsonb(finding["raw"])})
 
 
 class OutputsMixin:
@@ -87,6 +133,7 @@ class OutputsMixin:
                 self._save_recommendation(conn, visit_id, analysis, recommendation)
             mode = "batch_inference" if analysis == "visit" and source_id == BATCH_SOURCE_ID else "on_demand"
             self._save_model_calls(conn, visit_id, analysis, internal_output, mode)
+            self._save_guardrail(conn, visit_id, analysis, internal_output)
             insert_payload(conn, visit_id, analysis, "output_internal", internal_output, raw_bytes=internal_raw)
             insert_payload(conn, visit_id, analysis, "output_public", public_output)
             conn.execute(
@@ -134,27 +181,25 @@ class OutputsMixin:
 
     @staticmethod
     def _save_model_calls(conn, visit_id: int, analysis: Analysis, internal: dict[str, Any], mode: str) -> None:
-        """The analysis call (metadata.en) and the translation call (metadata.ar, when there is one)."""
-        model = internal.get("model")
-        if not model:
-            return
+        """The analysis call (metadata.en, the output's own ``model``) and the translation call (metadata.ar, when there
+        is one: always the Arabic model; AWS puts no model id in metadata)."""
         metadata = internal.get("metadata") or {}
-        for purpose, language in (("analysis", "en"), ("translation", "ar")):
-            call = metadata.get(language)
-            if call is None and purpose == "translation":
-                continue
-            call = call or {}
-            usage = call.get("usage") or {}
-            written = usage.get("cache_creation") or {}      # the cache-write tokens, split by time to live
-            conn.execute(
-                "INSERT INTO ai_model_calls (visit_id, analysis, purpose, model_id, mode, input_tokens, output_tokens, "
-                "cache_creation_input_tokens, cache_creation_5m_input_tokens, cache_creation_1h_input_tokens, "
-                "cache_read_input_tokens, stop_reason, stop_sequence) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                (visit_id, analysis, purpose, model, mode, usage.get("input_tokens"), usage.get("output_tokens"),
-                 usage.get("cache_creation_input_tokens"), written.get("ephemeral_5m_input_tokens"),
-                 written.get("ephemeral_1h_input_tokens"), usage.get("cache_read_input_tokens"),
-                 call.get("stop_reason"), call.get("stop_sequence")))
+        for purpose, model, call in (("analysis", internal.get("model"), metadata.get("en") or {}),
+                                     ("translation", ARABIC_MODEL_ID, metadata.get("ar"))):
+            if model and call is not None:
+                _insert_model_call(conn, visit_id, analysis, purpose, model, mode, call)
+
+    @staticmethod
+    def _save_guardrail(conn, visit_id: int, analysis: Analysis, internal: dict[str, Any]) -> None:
+        """The guardrail checks and findings of this answer. An odd or unreadable guardrail object is logged and
+        skipped: it never stops the save (the savepoint keeps a failed insert from aborting the transaction)."""
+        try:
+            checks = guardrail_checks(internal)
+            with conn.transaction():
+                for check in checks:
+                    _insert_guardrail_check(conn, visit_id, analysis, check)
+        except Exception as error:
+            log.warning("guardrail_not_saved", visit_id=visit_id, error_type=type(error).__name__)
 
     def mark_output_failed(self, visit_id: int, error_type: str, analysis: Analysis = "visit") -> None:
         with self._db.transaction() as conn:
@@ -200,6 +245,16 @@ class OutputsMixin:
                     "%(lane)s, %(batch_id)s, %(failed_step)s, %(error)s, %(failed_at)s, %(aws_status)s, "
                     "%(record_id)s, %(details)s) "
                     "ON CONFLICT DO NOTHING", {**failure, "visit_id": visit_id, "analysis": analysis})
+                usage = failure.get("usage")
+                mode = "batch_inference" if analysis == "visit" and failure["source"] == "batch" else "on_demand"
+                if failure.get("model") and isinstance(usage, dict) and usage.get("input_tokens") is not None \
+                        and usage.get("output_tokens") is not None:
+                    # AWS billed a call that failed: keep its cost (on the 'error' output row made above)
+                    metadata = failure.get("metadata") or {"en": {"usage": usage}}
+                    self._save_model_calls(conn, visit_id, analysis, {"model": failure["model"], "metadata": metadata},
+                                           mode)
+                if isinstance(failure.get("guardrail"), dict):
+                    self._save_guardrail(conn, visit_id, analysis, {"guardrail": failure["guardrail"]})
             insert_payload(conn, visit_id, analysis, "output_public", public_output)
             conn.execute(
                 "INSERT INTO record_processing (visit_id, analysis, step, read_from, status) "

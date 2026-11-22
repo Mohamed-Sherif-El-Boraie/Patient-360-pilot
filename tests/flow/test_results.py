@@ -247,6 +247,23 @@ def test_a_merged_answer_with_status_failed_is_a_failure_even_when_it_has_a_mode
     assert visit["public_output"]["success"] is False
 
 
+def test_a_failed_batch_line_hands_its_billed_tokens_model_and_guardrail_to_the_store(world):
+    """The tokens of a failed batch visit sit in the 05 line (modelOutput.metadata), not in 06-failed."""
+    visits = world.add("batch_normal", 100, count=1)
+    [batch] = BatchTrigger(world.store, world.blobs, 1).run()
+    key = visits[0]["idempotency_key"]
+    billed = {"en": {"usage": {"input_tokens": 9355, "output_tokens": 800}},
+              "ar": {"usage": {"input_tokens": 2162, "output_tokens": 995}}}
+    guardrail = {"action": "NONE", "bypassed": True, "outputs": [], "assessments": []}
+    line = {"recordId": key, "model": "claude-sonnet-4-6", "status": "failed", "guardrail": guardrail,
+            "modelOutput": {"content": [{"type": "text", "text": "{}"}], "metadata": billed}}
+    path = world.write("batch", bpath(batch), line)
+    assert [r.outcome for r in world.receiver().receive("batch", path)] == ["failed"]
+    row = world.store.ai_failures[(100, "visit")]
+    assert row["model"] == "claude-sonnet-4-6" and row["metadata"] == billed and row["guardrail"] == guardrail
+    assert row["usage"] == {"input_tokens": 9355, "output_tokens": 800}
+
+
 FIVE_HOURS = 5 * 3600
 
 

@@ -72,12 +72,18 @@ def _failure_row(found: MergedOutput, line: dict[str, Any] | None, text: str) ->
     """What AWS said about a failed visit, as the ``ai_failures`` row (every field best effort). A line that could not
     be read keeps its raw text as ``details``."""
     line = line or {}
+    # a failed line of the merged batch file still carries what AWS billed: modelOutput.metadata (tokens), guardrail
+    billed = line.get("modelOutput") if isinstance(line.get("modelOutput"), dict) else {}
+    metadata = billed.get("metadata") if isinstance(billed.get("metadata"), dict) else None
+    en = (metadata or {}).get("en")
     step = line.get("failed_step")
     return {"source": found.source, "lane": found.lane, "batch_id": found.batch_id,
             "failed_step": step if isinstance(step, str) and _STEP_NAME.fullmatch(step) else None,
             "error": _cut(line.get("error"), 500), "failed_at": _moment(line.get("failed_at")),
             "aws_status": _cut(line.get("status"), 40), "record_id": _cut(line.get("recordId"), 100),
-            "details": _cut(line.get("details") if line else text, 8192)}
+            "details": _cut(line.get("details") if line else text, 8192),
+            "model": line.get("model"), "metadata": metadata, "guardrail": line.get("guardrail"),
+            "usage": line.get("usage") or (en.get("usage") if isinstance(en, dict) else None)}   # only if billed
 
 
 class OutputReceiver:

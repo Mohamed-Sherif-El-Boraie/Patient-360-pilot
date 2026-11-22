@@ -45,6 +45,12 @@ class MigrationError(Exception):
         self.version = version
 
 
+def in_one_transaction(sql: str, version: str) -> str:
+    """The file and its ``schema_migrations`` row in one transaction: a crash cannot leave one without the other."""
+    record = pgsql.SQL("INSERT INTO schema_migrations (version) VALUES ({})").format(pgsql.Literal(version))
+    return f"BEGIN;\n{sql}\n;{record.as_string()};\nCOMMIT;"
+
+
 def migrate(dsn: str, directory: Path, schema: str | None = None) -> list[str]:
     """Apply the files not yet recorded, in name order. Returns the versions applied now. ``schema``: where the tables
     (and ``schema_migrations``) live; made if absent."""
@@ -67,11 +73,12 @@ def migrate(dsn: str, directory: Path, schema: str | None = None) -> list[str]:
                     print(f"skipped {version} (already applied)")
                     continue
                 sql = path.read_text(encoding="utf-8-sig")
-                if not re.search(r"^\s*BEGIN\b", sql, re.IGNORECASE | re.MULTILINE):
-                    sql = f"BEGIN;\n{sql}\n;COMMIT;"
                 try:
-                    conn.execute(sql)
-                    conn.execute("INSERT INTO schema_migrations (version) VALUES (%s)", (version,))
+                    if re.search(r"^\s*BEGIN\b", sql, re.IGNORECASE | re.MULTILINE):
+                        conn.execute(sql)       # its own transaction: the record cannot join it
+                        conn.execute("INSERT INTO schema_migrations (version) VALUES (%s)", (version,))
+                    else:
+                        conn.execute(in_one_transaction(sql, version))
                 except psycopg.Error as error:
                     conn.execute("ROLLBACK")  # the script's own BEGIN leaves the session in a failed transaction
                     raise MigrationError(version, error) from error

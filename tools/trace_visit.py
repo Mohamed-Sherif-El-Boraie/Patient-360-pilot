@@ -36,8 +36,22 @@ ONE = {
         "SELECT analysis, source, lane, batch_id, failed_step, error, failed_at, aws_status, record_id, "
         "left(details, 200) AS details_preview, received_at FROM ai_failures WHERE visit_id = %s",
     "ai_model_calls": "SELECT analysis, purpose, model_id, mode, input_tokens, output_tokens, "
-                      "cache_creation_input_tokens, cache_read_input_tokens, stop_reason "
+                      "cache_creation_input_tokens, cache_read_input_tokens, stop_reason, input_cost_usd, "
+                      "output_cost_usd, cache_cost_usd, total_cost_usd, price_input_per_1m, price_output_per_1m "
                       "FROM ai_model_calls WHERE visit_id = %s ORDER BY analysis, purpose",
+    "ai_model_calls: total cost of the visit (USD; NULL calls have no price or no token count)":
+        "SELECT analysis, sum(total_cost_usd) AS total_cost_usd, count(*) AS calls, "
+        "count(*) FILTER (WHERE total_cost_usd IS NULL) AS calls_without_cost "
+        "FROM ai_model_calls WHERE visit_id = %s GROUP BY analysis ORDER BY analysis",
+    "guardrail_checks": "SELECT analysis, direction, guardrail_id, action, bypassed, latency_ms, text_chars_guarded, "
+                        "text_chars_total, topic_policy_units, content_policy_units, word_policy_units, "
+                        "sensitive_info_policy_units, sensitive_info_policy_free_units, "
+                        "contextual_grounding_policy_units FROM guardrail_checks WHERE visit_id = %s "
+                        "ORDER BY analysis, direction",
+    "guardrail_findings":
+        "SELECT c.analysis, c.direction, f.policy, f.name, f.type, f.confidence, f.filter_strength, f.action "
+        "FROM guardrail_findings f JOIN guardrail_checks c USING (guardrail_check_id) WHERE c.visit_id = %s "
+        "ORDER BY c.analysis, f.guardrail_finding_id",
     "record_payloads (kinds saved)": "SELECT analysis, kind, version, length(raw_bytes) AS bytes, created_at "
                                      "FROM record_payloads WHERE visit_id = %s ORDER BY created_at",
     "recommendations / alerts":

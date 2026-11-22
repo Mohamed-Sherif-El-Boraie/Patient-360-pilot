@@ -48,21 +48,48 @@ def _tables(dsn):
                        "WHERE table_schema = 'public' AND table_type = 'BASE TABLE'")
 
 
+def test_the_record_of_a_migration_is_inside_its_own_transaction():     # no database needed
+    script = runner.in_one_transaction("CREATE TABLE t (id int);", "003_x")
+    assert script.startswith("BEGIN;") and script.endswith("COMMIT;")
+    assert script.index("CREATE TABLE t") < script.index("INSERT INTO schema_migrations") < script.index("COMMIT;")
+    assert "VALUES ('003_x')" in script
+    assert "VALUES ('a''b')" in runner.in_one_transaction("SELECT 1;", "a'b")
+
+
+ALL = ["001_init", "002_ai_failures", "003_model_costs", "004_guardrail_raw"]
+
+
 def test_empty_database_gets_the_schema_and_a_second_run_does_nothing(empty_dsn):
-    assert migrate(empty_dsn, MIGRATION.parent) == ["001_init", "002_ai_failures"]
-    assert len(_tables(empty_dsn)) == 30 + 1  # the schema's 30 tables and schema_migrations
-    assert _recorded(empty_dsn) == ["001_init", "002_ai_failures"]
+    assert migrate(empty_dsn, MIGRATION.parent) == ALL
+    assert len(_tables(empty_dsn)) == 30 + 1 + 1  # 29 of 001, ai_failures, model_prices, ...
+    assert _recorded(empty_dsn) == ALL
     assert migrate(empty_dsn, MIGRATION.parent) == []
+
+
+def test_the_seed_prices_are_there_and_running_003_again_changes_nothing(empty_dsn):
+    migrate(empty_dsn, MIGRATION.parent)
+    assert _query(empty_dsn, "SELECT count(*) FROM model_prices") == [6]
+    sql = (MIGRATION.parent / "003_model_costs.sql").read_text(encoding="utf-8")
+    with psycopg.connect(empty_dsn, autocommit=True) as conn:
+        conn.execute(sql)
+    assert _query(empty_dsn, "SELECT count(*) FROM model_prices") == [6]
+    assert _query(empty_dsn, "SELECT count(*) FROM model_prices WHERE model_id = 'nova-2-lite'") == [2]
+
+
+def test_running_004_again_changes_nothing(empty_dsn):
+    migrate(empty_dsn, MIGRATION.parent)
+    with psycopg.connect(empty_dsn, autocommit=True) as conn:
+        conn.execute((MIGRATION.parent / "004_guardrail_raw.sql").read_text(encoding="utf-8"))
 
 
 def test_a_named_schema_is_made_and_holds_every_table_and_the_app_connection_finds_them(empty_dsn):
     options = "-c search_path=p360"
     with psycopg.connect(make_conninfo(empty_dsn, options=options)) as conn:   # before the schema exists: fine
         assert conn.execute("SELECT 1").fetchone()[0] == 1
-    assert migrate(empty_dsn, MIGRATION.parent, "p360") == ["001_init", "002_ai_failures"]
+    assert migrate(empty_dsn, MIGRATION.parent, "p360") == ALL
     where = ("SELECT table_name FROM information_schema.tables WHERE table_schema = '{}' "
              "AND table_type = 'BASE TABLE'")
-    assert len(_query(empty_dsn, where.format("p360"))) == 30 + 1 and _query(empty_dsn, where.format("public")) == []
+    assert len(_query(empty_dsn, where.format("p360"))) == 32 and _query(empty_dsn, where.format("public")) == []
     with psycopg.connect(make_conninfo(empty_dsn, options=options)) as conn:   # no schema name in the app's queries
         assert conn.execute("SELECT count(*) FROM visits").fetchone()[0] == 0
     assert migrate(empty_dsn, MIGRATION.parent, "p360") == []
@@ -70,9 +97,9 @@ def test_a_named_schema_is_made_and_holds_every_table_and_the_app_connection_fin
 
 def test_hand_applied_database_is_baselined_without_running(db, capsys):
     dsn = db._pool.conninfo
-    assert migrate(dsn, MIGRATION.parent) == ["002_ai_failures"]      # IF NOT EXISTS: a table made by hand is fine
+    assert migrate(dsn, MIGRATION.parent) == ALL[1:]      # IF NOT EXISTS: a table made by hand is fine
     assert "baselined 001_init" in capsys.readouterr().out
-    assert _recorded(dsn) == ["001_init", "002_ai_failures"]
+    assert _recorded(dsn) == ALL
     assert migrate(dsn, MIGRATION.parent) == []
     assert "skipped 001_init (already applied)" in capsys.readouterr().out
 

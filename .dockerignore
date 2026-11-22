@@ -7,6 +7,7 @@ tools/*
 !tools/check_connections.py
 !tools/check_s3_upload.py
 !tools/sample_processed_urgent.json
+!tools/set_price.py
 !tools/send_samples.py
 !tools/send_symptom.py
 !tools/trace_visit.py

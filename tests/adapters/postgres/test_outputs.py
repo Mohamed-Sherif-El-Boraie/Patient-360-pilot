@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 
 from patient360.adapters.postgres.outputs import OutputsMixin
+from patient360.adapters.postgres.pricing import ARABIC_MODEL_ID
 from patient360.flow.send_result import ResultSender
 from patient360.ports import DeliveryUnit
 from tests.adapters.postgres import seed
@@ -123,7 +125,141 @@ def test_model_calls_with_and_without_the_arabic_metadata(db, store, ready):
             analysis["cache_creation_1h_input_tokens"]) == (3, 2, 1)         # the total and its split
     assert (translation["purpose"], translation["stop_reason"], translation["cache_read_input_tokens"]) == (
         "translation", "max_tokens", None)
+    assert translation["model_id"] == ARABIC_MODEL_ID == "amazon.nova-2-lite-v1:0"     # never the English model
     assert translation["cache_creation_5m_input_tokens"] is None             # no split reported: nothing invented
+
+
+def test_each_call_is_priced_with_its_own_model_and_keeps_the_prices_it_was_billed_at(db, store, ready):
+    internal = internal_output()
+    internal["model"] = "eu.anthropic.claude-haiku-5-5"           # the English call
+    internal["metadata"]["en"]["usage"] = {"input_tokens": 1_000_000, "output_tokens": 1_000_000}
+    internal["metadata"]["ar"] = {"model": "ignored-model", "stop_reason": "end_turn",     # AWS puts no model here
+                                  "usage": {"input_tokens": 1_000_000, "output_tokens": 1_000_000}}
+    store.save_output(1, internal, public_output(1))
+    analysis, translation = fetch(db, "SELECT * FROM ai_model_calls ORDER BY purpose")
+    assert analysis["model_id"] == "eu.anthropic.claude-haiku-5-5"
+    assert translation["model_id"] == ARABIC_MODEL_ID
+    assert (analysis["total_cost_usd"], translation["total_cost_usd"]) == (Decimal("0.6"), Decimal("4.026"))
+    prices = (translation["price_input_per_1m"], translation["price_output_per_1m"])
+    assert prices == (Decimal("0.429"), Decimal("3.597"))
+    assert translation["cache_cost_usd"] is None
+
+
+def test_a_model_without_a_price_saves_the_call_with_no_cost(db, store, ready):
+    store.save_output(1, internal_output(), public_output(1))          # model-x has no price row, Nova has
+    analysis, translation = fetch(db, "SELECT * FROM ai_model_calls ORDER BY purpose")
+    assert analysis["total_cost_usd"] is None and analysis["price_input_per_1m"] is None and analysis["input_tokens"]
+    assert translation["total_cost_usd"] == Decimal("0.00002373")               # 5*0.429/1e6 + 6*3.597/1e6, 8 places
+
+
+def test_a_batch_visit_is_priced_with_the_batch_prices_of_sonnet_4_6_and_nova(db, store):
+    seed.add_visit(db, 2, source_id=2)
+    internal = {**internal_output(), "model": "claude-sonnet-4-6"}
+    internal["metadata"]["en"]["usage"] = {"input_tokens": 1_000_000, "output_tokens": 1_000_000}
+    internal["metadata"]["ar"]["usage"] = {"input_tokens": 1_000_000, "output_tokens": 1_000_000}
+    store.save_output(2, internal, public_output(2, [], source=2))
+    analysis, translation = fetch(db, "SELECT * FROM ai_model_calls ORDER BY purpose")
+    assert analysis["total_cost_usd"] == Decimal("18")                          # 3 + 15
+    assert translation["total_cost_usd"] == Decimal("2.193")                    # 0.2145 + 1.9785
+    assert (translation["price_input_per_1m"], translation["price_output_per_1m"]) == (
+        Decimal("0.2145"), Decimal("1.9785"))
+
+
+def test_the_cost_follows_the_price_row_valid_now_and_old_rows_keep_their_price(db, store, ready):
+    with db.transaction() as conn:
+        conn.execute("UPDATE model_prices SET effective_to = now() WHERE model_id = 'claude-haiku-5-5'")
+        conn.execute("INSERT INTO model_prices (model_id, mode, input_per_1m, output_per_1m) "
+                     "VALUES ('claude-haiku-5-5', 'on_demand', 1, 2)")
+    internal = {**internal_output(with_arabic=False), "model": "claude-haiku-5-5"}
+    internal["metadata"]["en"]["usage"] = {"input_tokens": 1_000_000, "output_tokens": 1_000_000}
+    store.save_output(1, internal, public_output(1))
+    call = fetch(db, "SELECT * FROM ai_model_calls")[0]
+    assert (call["total_cost_usd"], call["price_input_per_1m"]) == (Decimal("3"), Decimal("1"))
+
+
+def test_a_failed_call_that_reports_tokens_keeps_its_cost_on_the_error_output(db, store, ready):
+    failure = {"source": "urgent", "lane": "normal", "batch_id": None, "failed_step": None, "error": "x",
+               "failed_at": None, "aws_status": "failed", "record_id": "k", "details": None,
+               "model": "claude-haiku-5-5", "usage": {"input_tokens": 1_000_000, "output_tokens": 1_000_000}}
+    store.save_failed_output(1, public_output(1), failure=failure)
+    call = fetch(db, "SELECT * FROM ai_model_calls")[0]
+    assert (call["purpose"], call["mode"], call["total_cost_usd"]) == ("analysis", "on_demand", Decimal("0.6"))
+    assert fetch(db, "SELECT status FROM ai_outputs")[0]["status"] == "error"
+
+
+def test_a_failure_without_tokens_saves_no_call(db, store, ready):
+    failure = {"source": "urgent", "lane": "normal", "batch_id": None, "failed_step": None, "error": "x",
+               "failed_at": None, "aws_status": "failed", "record_id": "k", "details": None}
+    store.save_failed_output(1, public_output(1), failure=failure)
+    assert fetch(db, "SELECT * FROM ai_model_calls") == []
+
+
+BATCH_NONE = {"action": "NONE", "bypassed": True, "outputs": [], "assessments": [],
+              "usage": {"topicPolicyUnits": 0, "contentPolicyUnits": 0, "wordPolicyUnits": 0,
+                        "sensitiveInformationPolicyUnits": 0, "sensitiveInformationPolicyFreeUnits": 0,
+                        "contextualGroundingPolicyUnits": 0}}      # the real batch sample
+
+
+def test_a_none_guardrail_saves_one_check_row_and_no_findings(db, store, ready):
+    store.save_output(1, {**internal_output(), "guardrail": BATCH_NONE}, public_output(1))
+    [check] = fetch(db, "SELECT * FROM guardrail_checks")
+    assert (check["direction"], check["guardrail_id"], check["action"], check["bypassed"]) == (
+        "output", "unknown", "NONE", True)
+    assert check["topic_policy_units"] == 0 and check["contextual_grounding_policy_units"] == 0
+    assert fetch(db, "SELECT * FROM guardrail_findings") == []
+
+
+def test_an_intervened_assessment_saves_its_findings_and_the_raw_assessment(db, store, ready):
+    assessment = {"topicPolicy": {"topics": [{"name": "Dosing", "type": "DENY", "action": "BLOCKED"}]},
+                  "contentPolicy": {"filters": [{"type": "HATE", "confidence": "HIGH", "filterStrength": "HIGH",
+                                                 "action": "BLOCKED"}]},
+                  "wordPolicy": {"customWords": [{"match": "x", "action": "BLOCKED"}]},
+                  "sensitiveInformationPolicy": {"piiEntities": [{"match": "a", "type": "EMAIL",
+                                                                  "action": "ANONYMIZED"}]},
+                  "contextualGroundingPolicy": {"filters": [{"type": "GROUNDING", "threshold": 0.8, "score": 0.2,
+                                                             "action": "BLOCKED"}]},
+                  "invocationMetrics": {"guardrailProcessingLatency": 90, "usage": {"topicPolicyUnits": 1},
+                                        "guardrailCoverage": {"textCharacters": {"guarded": 7, "total": 9}}}}
+    guardrail = {"action": "GUARDRAIL_INTERVENED", "bypassed": False, "assessments": [assessment],
+                 "usage": {"topicPolicyUnits": 1, "contentPolicyUnits": 1}}
+    store.save_output(1, {**internal_output(), "guardrail": guardrail}, blocked_output(1))
+    [check] = fetch(db, "SELECT * FROM guardrail_checks")
+    assert (check["action"], check["bypassed"], check["latency_ms"], check["text_chars_guarded"]) == (
+        "INTERVENED", False, 90, 7)
+    assert (check["topic_policy_units"], check["content_policy_units"], check["word_policy_units"]) == (1, 1, None)
+    assert check["raw"] == [assessment]
+    findings = fetch(db, "SELECT * FROM guardrail_findings ORDER BY guardrail_finding_id")
+    assert [(f["policy"], f["name"], f["type"], f["action"]) for f in findings] == [
+        ("topic", "Dosing", "DENY", "BLOCKED"), ("content", None, "HATE", "BLOCKED"),
+        ("word", "x", "CUSTOM", "BLOCKED"), ("sensitive_info", None, "EMAIL", "ANONYMIZED"),
+        ("contextual_grounding", None, "GROUNDING", "BLOCKED")]
+    assert (findings[1]["confidence"], findings[1]["filter_strength"]) == ("HIGH", "HIGH")
+    assert findings[4]["raw"]["score"] == 0.2
+
+
+def test_an_invoke_model_input_block_of_a_symptom_check_saves_an_input_check(db, store, ready):
+    internal = {**internal_output(), "amazon-bedrock-guardrailAction": "INTERVENED", "amazon-bedrock-trace": {
+        "guardrail": {"input": {"gr7x": {"topicPolicy": {"topics": [
+            {"name": "Dosing", "type": "DENY", "action": "BLOCKED"}]}}}, "outputs": []}}}
+    store.save_output(1, internal, blocked_output(1), "symptom")
+    [check] = fetch(db, "SELECT * FROM guardrail_checks")
+    assert (check["analysis"], check["direction"], check["guardrail_id"], check["action"]) == (
+        "symptom", "input", "gr7x", "INTERVENED")
+
+
+@pytest.mark.parametrize("odd", ["text", {"action": 5, "assessments": [None, 3], "usage": {"topicPolicyUnits": "x"}},
+                                 {"assessments": [{"topicPolicy": {"topics": [{"name": "n", "type": None}]}}]}])
+def test_an_odd_guardrail_object_never_breaks_the_save(db, store, ready, odd):
+    store.save_output(1, {**internal_output(), "guardrail": odd}, public_output(1))
+    assert fetch(db, "SELECT status FROM ai_outputs") == [{"status": "success"}]
+
+
+def test_a_guardrail_that_cannot_be_inserted_is_skipped_and_the_answer_is_still_saved(db, store, ready):
+    guardrail = {"action": "NONE", "assessments": [{"topicPolicy": {"topics": [{"name": "a\x00b", "type": "DENY"}]}}]}
+    store.save_output(1, {**internal_output(), "guardrail": guardrail}, public_output(1))     # NUL: PostgreSQL refuses
+    assert fetch(db, "SELECT status FROM ai_outputs") == [{"status": "success"}]
+    assert fetch(db, "SELECT * FROM guardrail_checks") == []
+    assert len(fetch(db, "SELECT * FROM ai_model_calls")) == 2
 
 
 def test_the_status_aws_put_on_the_record_is_saved_for_analysis(db, store, ready):
@@ -135,6 +271,20 @@ def test_the_status_aws_put_on_the_record_is_saved_for_analysis(db, store, ready
 def test_an_answer_without_the_arabic_metadata_has_no_translation_call(db, store, ready):
     store.save_output(1, internal_output(with_arabic=False), public_output(1))
     assert [c["purpose"] for c in fetch(db, "SELECT purpose FROM ai_model_calls")] == ["analysis"]
+
+
+def test_a_failed_line_keeps_the_english_and_arabic_calls_and_its_guardrail_check(db, store, ready):
+    failure = {"source": "batch", "lane": "normal", "batch_id": None, "failed_step": None, "error": "x",
+               "failed_at": None, "aws_status": "failed", "record_id": "k", "details": None,
+               "model": "claude-sonnet-4-6", "usage": {"input_tokens": 1_000_000, "output_tokens": 1_000_000},
+               "metadata": {"en": {"usage": {"input_tokens": 1_000_000, "output_tokens": 1_000_000}},
+                            "ar": {"usage": {"input_tokens": 1_000_000, "output_tokens": 1_000_000}}},
+               "guardrail": BATCH_NONE}
+    store.save_failed_output(1, public_output(1), failure=failure)
+    analysis, translation = fetch(db, "SELECT * FROM ai_model_calls ORDER BY purpose")
+    assert (analysis["total_cost_usd"], translation["model_id"]) == (Decimal("18"), ARABIC_MODEL_ID)
+    assert translation["total_cost_usd"] == Decimal("2.193")
+    assert [c["action"] for c in fetch(db, "SELECT action FROM guardrail_checks")] == ["NONE"]
 
 
 def test_no_model_means_no_model_calls(db, store, ready):

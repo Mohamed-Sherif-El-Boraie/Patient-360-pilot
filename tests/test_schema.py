@@ -202,6 +202,33 @@ def test_model_usage_is_internal_in_its_own_table_and_there_is_no_cost_column():
     assert "PRIMARY KEY (visit_id, analysis, purpose)" in calls and "cost" not in calls
 
 
+COSTS = re.sub(r"[ \t]+", " ", (Path(__file__).parent.parent / "migrations" / "003_model_costs.sql")
+               .read_text(encoding="utf-8"))
+
+
+def test_003_adds_prices_and_cost_columns_without_touching_001_or_002():
+    prices = re.search(r"CREATE TABLE IF NOT EXISTS model_prices \((.*?)\n\);", COSTS, re.DOTALL).group(1)
+    assert "PRIMARY KEY (model_id, mode, effective_from)" in prices
+    assert "CHECK (mode IN ('on_demand','batch_inference'))" in prices
+    for column in ("effective_to timestamptz", "input_per_1m numeric", "output_per_1m numeric",
+                   "cache_write_1h_per_1m numeric", "cache_read_per_1m numeric"):
+        assert column in prices
+    for column in ("input_cost_usd", "output_cost_usd", "cache_cost_usd", "total_cost_usd",
+                   "price_input_per_1m", "price_output_per_1m"):
+        assert f"ADD COLUMN IF NOT EXISTS {column} numeric" in COSTS
+    assert "ON CONFLICT DO NOTHING" in COSTS and "DROP " not in COSTS
+    assert "'nova-2-lite', 'on_demand'" in COSTS and "'nova-2-lite', 'batch_inference'" in COSTS
+
+
+def test_004_adds_the_raw_guardrail_columns_and_the_other_policies_additively():
+    guardrail = (Path(__file__).parent.parent / "migrations" / "004_guardrail_raw.sql").read_text(encoding="utf-8")
+    for column in ("bypassed boolean", "raw jsonb"):
+        assert f"ADD COLUMN IF NOT EXISTS {column}" in re.sub(r"[ \t]+", " ", guardrail)
+    for policy in ("word", "sensitive_info", "contextual_grounding"):
+        assert f"'{policy}'" in guardrail
+    assert "DROP TABLE" not in guardrail and "DROP COLUMN" not in guardrail
+
+
 def test_the_cache_split_and_the_aws_review_status_are_stored():
     for column in ("cache_creation_5m_input_tokens int", "cache_creation_1h_input_tokens int"):
         assert column in table("ai_model_calls")

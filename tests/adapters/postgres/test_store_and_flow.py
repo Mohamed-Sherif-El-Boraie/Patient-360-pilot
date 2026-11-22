@@ -5,9 +5,12 @@ Blob, S3 and the Backend are still the in-memory fakes (their real versions come
 import inspect
 import json
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
+from patient360.adapters.postgres.pricing import ARABIC_MODEL_ID
 from patient360.adapters.postgres.store import PostgresCatalogue, PostgresStore
 from patient360.domain.common.blob_paths import merged_output_jsonl_path, merged_output_path
 from patient360.flow.batching import BatchTrigger
@@ -159,6 +162,52 @@ def test_a_batch_is_made_uploaded_answered_and_every_visit_delivered(world):
     assert [d.outcome for d in world.send()] == ["delivered"] * 3
     assert sorted(post["visit_id"] for post in world.backend.posts) == [100, 101, 102]
     assert {r["mode"] for r in seed.fetch(world.db, "SELECT mode FROM ai_model_calls")} == {"batch_inference"}
+
+
+def test_real_shaped_batch_lines_are_priced_ok_needs_review_and_failed_alike_and_keep_their_guardrail_check(world):
+    """Sonnet 4.6 batch (3 / 15 per 1M) for English, Nova 2 Lite batch (0.2145 / 1.9785) for Arabic; the numbers are
+    worked out by hand from the tokens in tests/fixtures/billing/batch-05-lines.jsonl."""
+    keys = [world.receive_visit("batch_normal", 100 + i, 7_000_000 + i) for i in range(3)]
+    for i in range(3):
+        world.process(100 + i)
+    [batch] = BatchTrigger(world.store, world.blobs, 3).run()
+    world.dispatch()
+    text = (Path(__file__).parents[2] / "fixtures" / "billing" / "batch-05-lines.jsonl").read_text(encoding="utf-8")
+    lines = [json.loads(line) for line in text.splitlines()]
+    for line, key in zip(lines, keys, strict=True):
+        line["recordId"] = key
+        line["modelOutput"]["content"][0]["text"] = answer_text()
+    path = merged_output_jsonl_path(batch.lane, date(2026, 10, 25), batch.batch_id)
+    assert [r.outcome for r in world.aws_answers("batch", path, *lines)] == ["saved", "saved", "failed"]
+
+    def calls(visit_id):
+        rows = seed.fetch(world.db, "SELECT * FROM ai_model_calls WHERE visit_id = %s ORDER BY purpose", (visit_id,))
+        return {r["purpose"]: r for r in rows}
+
+    D = Decimal
+    ok, review, failed = calls(100), calls(101), calls(102)
+    assert (ok["analysis"]["model_id"], ok["translation"]["model_id"]) == ("claude-sonnet-4-6", ARABIC_MODEL_ID)
+    assert (ok["analysis"]["mode"], ok["translation"]["mode"]) == ("batch_inference", "batch_inference")
+    assert (ok["analysis"]["input_tokens"], ok["analysis"]["output_tokens"]) == (9355, 800)
+    assert (ok["translation"]["input_tokens"], ok["translation"]["output_tokens"]) == (2162, 995)
+    # 9355*3/1e6 + 800*15/1e6 = 0.028065 + 0.012
+    assert ok["analysis"]["total_cost_usd"] == D("0.04006500")
+    # 2162*0.2145/1e6 + 995*1.9785/1e6 = 0.000463749 + 0.0019686075 = 0.0024323565, kept to 8 places
+    assert ok["translation"]["total_cost_usd"] == D("0.00243236")
+    # needs_review is saved as an answer: 2522*3/1e6 + 805*15/1e6 = 0.019641; 2146*0.2145/1e6 + 1008*1.9785/1e6
+    assert review["analysis"]["total_cost_usd"] == D("0.01964100")
+    assert review["translation"]["total_cost_usd"] == D("0.00245465")
+    # failed: AWS billed the calls all the same: 1000*3/1e6 + 100*15/1e6; 500*0.2145/1e6 + 50*1.9785/1e6
+    assert failed["analysis"]["total_cost_usd"] == D("0.00450000")
+    assert failed["translation"]["total_cost_usd"] == D("0.00020618")
+    assert seed.fetch(world.db, "SELECT status FROM ai_outputs WHERE visit_id = 102")[0]["status"] == "error"
+    assert seed.fetch(world.db, "SELECT aws_status FROM ai_failures WHERE visit_id = 102")[0]["aws_status"] == "failed"
+    assert seed.fetch(world.db, "SELECT aws_review_status FROM ai_outputs WHERE visit_id = 101")[0][
+        "aws_review_status"] == "needs_review"
+    checks = seed.fetch(world.db, "SELECT * FROM guardrail_checks ORDER BY visit_id")
+    assert [(c["visit_id"], c["direction"], c["action"], c["bypassed"], c["topic_policy_units"]) for c in checks] == [
+        (100, "output", "NONE", True, 0), (101, "output", "NONE", True, 0), (102, "output", "NONE", True, 0)]
+    assert seed.fetch(world.db, "SELECT * FROM guardrail_findings") == []
 
 
 def test_the_symptom_check_runs_its_own_way_after_the_visit_result(world):
